@@ -27,8 +27,8 @@ Then open http://localhost:3000.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Dev server with hot reload |
-| `npm run build` | Static export to `out/` |
-| `npm run serve:static` | Serve `out/` on :3100 (what Pages serves) |
+| `npm run build` | Production server build (`.next/`) |
+| `npm run start` | Run the built server (respects `PORT`) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run test:e2e` | Build, then run the Playwright suite |
 | `npm run test:e2e:only` | Run Playwright against an existing `out/` |
@@ -168,19 +168,12 @@ several headless browsers at once saturate it.
 
 ## Deployment
 
-Pushes to `main` run typecheck, lint, the static export and the Playwright suite
-before publishing `out/` to GitHub Pages (`.github/workflows/deploy.yml`).
+Deployed on **Railway** as a normal Next.js server (`npm run build` then
+`npm run start`), served from the domain root — so `BASE_PATH` resolves to
+`""` and no env var is needed there. Pushes to `main` run typecheck, lint and
+a build via GitHub Actions (`.github/workflows/ci.yml`); Railway's own GitHub
+integration handles the actual deploy on push, separately from that workflow.
 
-Pages serves this repo from `/myhitch-nexus`, so the build needs a `basePath`
-there and none locally. **Three things have to agree on that value** — the
-build, the static server, and Playwright's `baseURL` — so it is resolved once
-from `NEXT_PUBLIC_BASE_PATH` (with a `GITHUB_ACTIONS` fallback) and set for the
-whole job in the workflow. When they drift, the export requests
-`/myhitch-nexus/_next/...` from a server mounted at `/`, every asset 404s, and
-navigations hang rather than fail loudly.
-
-To reproduce the deployed configuration locally:
-
-```bash
-NEXT_PUBLIC_BASE_PATH=/myhitch-nexus npm run test:e2e
-```
+`BASE_PATH` (`src/lib/utils.ts`) still supports a `/myhitch-nexus`-style
+subpath via `NEXT_PUBLIC_BASE_PATH` if this ever needs to be published as a
+static export again (e.g. back to GitHub Pages), but Railway needs it unset.
