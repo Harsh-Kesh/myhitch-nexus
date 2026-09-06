@@ -1,0 +1,8 @@
+# `npm ci` fails intermittently here: eslint-config-next -> eslint-import-resolver-typescript
+# -> unrs-resolver pulls a wasm32-wasi fallback binary (needed on neither Windows dev machines
+# nor Railway's Linux target, since both have their own native binding) whose own optional
+# @emnapi/* sub-dependencies resolve to different versions across separate `npm install` runs.
+# That's harmless (lint-only, never touches the running app) but trips npm ci's strict
+# lockfile-match check. `npm install` reconciles it instead of failing the build.
+[phases.install]
+cmds = ["npm install"]

@@ -2,6 +2,9 @@
   "name": "myhitch-nexus",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "generate:assets": "node scripts/generate-assets.mjs",
     "dev": "node scripts/generate-assets.mjs && next dev",
