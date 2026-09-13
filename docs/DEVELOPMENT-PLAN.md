@@ -1,0 +1,296 @@
+# MYHitch Nexus — Development Plan
+
+Against `MYHitch_Nexus_Web_Development_Requirements.docx` v1.0 (July 2026).
+Requirement-level detail lives in [SRS-TRACEABILITY.md](SRS-TRACEABILITY.md); this document is **how we build it, in what order, and how we prove it's done**.
+
+Supersedes `PLAN-v1-prototype-derived.md`, which was written before the SRS existed by reverse-engineering the prototype. That plan was directionally right but under-scoped: it missed the MYHitch ecosystem integrations, the three administrative roles, the copyright workflow and the formal acceptance criteria.
+
+---
+
+## 1. The two facts that shape this plan
+
+**1. The prototype is a specification, not a product.** 53 routes, 11 admin screens matching SRS §9 exactly, ~120 typed mock API functions, 10 of the 11 SRS §10 entities already modelled in TypeScript. 48 of the 69 functional requirements have a working interface. **Zero are functionally complete** — there is no backend, no persistence beyond a browser tab, no media, no payments, no access control.
+
+**2. That makes this a backend and platform programme, not a build-from-scratch.** Most of the design and UX risk in §19's deliverables is already retired. The remaining risk sits in five places, all of which are currently at zero:
+
+| Risk area | Why it's the hard part |
+|---|---|
+| Media pipeline | Resumable upload → transcode → captions → packaging → signed delivery. Nothing exists. |
+| Entitlements & payments | AC-5 demands that failed payments never grant access. Needs idempotent, webhook-driven correctness. |
+| Access control | SEC-1: today *any* logged-in user can open `/admin`. Authorisation must be rebuilt server-side from nothing. |
+| Admin enforcement | The screens exist; the rules they claim to enforce (AC-3 publish gate, audit trail, copyright) do not. |
+| MYHitch integrations | §16 requires one in MVP. We have no API documentation for any of the six (DEC-13). |
+
+---
+
+## 2. Delivery strategy: strangle the mock API
+
+The prototype's `src/lib/mock-api/index.ts` is written as an explicit, typed service contract — its own header says the signatures *are* the contract. That gives us an unusually clean migration path:
+
+```
+Today:     UI → React Query hooks → mock-api function → in-memory store
+Target:    UI → React Query hooks → api client function → /api route handler → service → Postgres
+                                    └── same signature, same return type ──┘
+```
+
+We replace mock function bodies **one domain at a time** with real `fetch()` calls. The UI does not change. This means:
+
+- Every phase ships something demonstrable on the real site, not behind a rewrite.
+- The mock stays as the fallback for domains not yet migrated, so the app is never broken mid-programme.
+- The ~120 function signatures become the first draft of the OpenAPI specification (DEL-4).
+
+**Non-negotiable rule**: a domain is only "migrated" when its authorisation rules are enforced server-side. Moving data to the server while leaving permission checks in the browser would be worse than the mock.
+
+---
+
+## 3. Target architecture
+
+Aligned to SRS §13, sized for a launch product rather than a hypothetical scale-out.
+
+```mermaid
+flowchart TB
+    subgraph Client
+        WEB["Next.js web app<br/>(existing 53 routes)"]
+    end
+    subgraph Edge
+        CF["Cloudflare DNS/CDN"]
+    end
+    subgraph App["Railway — application"]
+        BFF["Next.js route handlers<br/>= API / BFF layer"]
+        WORKER["Worker service<br/>transcode callbacks · jobs · scheduled publish · rollups"]
+    end
+    subgraph Domain["Service modules (in-process, clear boundaries)"]
+        IDN["Identity & RBAC"]
+        CAT["Catalogue & rights"]
+        MED["Media orchestration"]
+        ENT["Entitlement & playback authz"]
+        COM["Commerce & ledger"]
+        MOD["Moderation & audit"]
+        ADS["Advertising (P6)"]
+        ANA["Analytics ingest"]
+        INTG["MYHitch integration gateway"]
+    end
+    subgraph External
+        AUTH0["Auth0 — identity, MFA"]
+        MUX["Mux — upload, transcode, captions, live, signed playback"]
+        STRIPE["Stripe — payments, billing, Connect payouts, tax"]
+        SEARCH["Typesense — catalogue index"]
+        MAIL["Postmark / Twilio — email, SMS"]
+        MYH["MYHitch Mart / Pass / …"]
+    end
+    subgraph Data
+        PG[("Supabase Postgres")]
+        REDIS[("Redis — cache, queues, rate limits")]
+        OBJ[("Object storage — documents, artefacts")]
+    end
+
+    WEB --> CF --> BFF
+    BFF --> IDN & CAT & MED & ENT & COM & MOD & ANA & INTG
+    WORKER --> MED & ANA & COM
+    IDN --> AUTH0
+    MED --> MUX
+    COM --> STRIPE
+    CAT --> SEARCH
+    MOD --> MAIL
+    INTG --> MYH
+    IDN & CAT & MED & ENT & COM & MOD & ANA --> PG
+    BFF & WORKER --> REDIS
+    MED & MOD --> OBJ
+```
+
+### Stack decisions
+
+| Layer | Decision | Rationale |
+|---|---|---|
+| Web + API | **Next.js 15 (existing app) with route handlers as the BFF** | Reuses 53 built routes; one language; SSR satisfies §13's SEO requirement. Not microservices — module boundaries now, extraction later only if load demands it. |
+| Workers | Separate Railway service, shared codebase | Transcode callbacks, scheduled publishing, report jobs, rollups must not compete with request traffic. |
+| Database | **Supabase Postgres** (provisioned; schema migration 1 applied) | Relational integrity is essential for entitlements, rights and ledger. ⚠️ currently `ap-south-1` — see DEC-14. |
+| Identity | **Auth0** (client decision) | Universal Login, social, MFA policy, and a credible path to being the shared MYHitch SSO (DEC-6/TPI-8). |
+| Media | **Mux** recommended | Direct resumable uploads, transcode, auto-captions, signed playback URLs, live ingest — covers FR-6.3/6.4/6.5 in one vendor. Abstracted behind our own media interface so it is replaceable. |
+| Payments | **Stripe** — Payments, Billing, Connect, Tax, Invoicing | Keeps card data out of scope (SEC-3), and Connect solves creator payouts (MON-10) without building a treasury. |
+| Search | **Typesense** | Faceted search matching FR-6.1.3/6.1.4 exactly; cheaper and simpler to operate than Elasticsearch at this scale. |
+| Analytics | Postgres event tables + scheduled rollups → **ClickHouse when events exceed ~50M/month** | Avoids standing up a warehouse before there is data to warehouse. Trigger point documented so the migration is planned, not panicked. |
+| Queues/cache | Redis (BullMQ) | Jobs, frequency caps, rate limits, live viewer counts. |
+| Observability | Sentry + structured logs + uptime monitoring + Railway metrics | NFR-8, AC-10. |
+| IaC | Railway IaC (`.railway/railway.ts` — current `railway.json` is deprecated from 2026-12-01) | NFR-10, DEL-5. |
+
+### Repository structure
+
+The repo is currently named `frontend` and will hold backend code. Restructure early, before it holds anything that hurts to move:
+
+```
+myhitch-nexus/
+├── apps/web/          # Next.js app (current src/) — UI + route handlers
+├── apps/worker/       # background jobs
+├── packages/core/     # domain services, shared types, the mock→real seam
+├── packages/db/       # schema, migrations, query layer
+├── docs/              # this plan, traceability, API spec, runbooks
+└── e2e/               # Playwright acceptance suites
+```
+
+---
+
+## 4. Phase plan
+
+Nine phases. **Phases 0–4 constitute the SRS §16 MVP**; the gate at the end of P4 is the §18 acceptance criteria, verified with evidence, not opinion.
+
+### P0 — Foundations *(partly complete)*
+
+| Done | Outstanding |
+|---|---|
+| ✅ Production hosting (Railway), custom domain + TLS (`myhitchnexus.com.au`) | Dev/test/staging environments (DEL-5) — only production exists |
+| ✅ Supabase project + first migration (`accounts`, `profiles`, `organizations`, `memberships`, `account_roles`) | Repo restructure to monorepo layout |
+| ✅ Migration runner (`npm run db:migrate`) | **Rotate the leaked Supabase service-role key and DB password (SEC-11)**, move secrets to a managed store |
+| ✅ CI (typecheck, lint, build) | Auth0 tenant, Sentry, Redis, Typesense provisioning |
+| | Confirm data region (DEC-9/DEC-14) **before real user data exists** |
+
+**Exit gate**: four environments, secrets managed, monorepo in place, OpenAPI skeleton published.
+
+### P1 — Identity, discovery and free playback
+
+Delivers: FR-6.1.1–6.1.7, FR-6.2.1–6.2.4, FR-6.2.6, FR-6.4.1–6.4.4, FR-6.6.1, FR-6.6.3, SEC-1 (core), SEC-2, ROLE-1/2/11.
+
+- Auth0 integration replacing the `sessionStorage` mock; real sessions surviving reload; Next.js middleware route protection.
+- Server-side RBAC foundation — deny by default, permission tests per role.
+- Catalogue, channel and taxonomy services; Typesense index; the missing **Creators directory** (FR-6.1.2).
+- Real playback of free content, watch progress, watchlist, follows, ratings, comments, in-app + email notifications.
+- OpenGraph/JSON-LD metadata (FR-6.1.7).
+
+**Exit gate**: a real account signs in, browses a real catalogue, watches a real free video, and progress resumes on another device.
+
+### P2 — Media pipeline and publishing workflow
+
+Delivers: FR-6.3.1–6.3.8, FR-6.2.5, FR-6.6.2, SEC-4, DM-4/5/6, part of FR-6.10 (review queue).
+
+- Resumable direct-to-storage upload; transcode ladder; auto thumbnails; caption ingest + auto-transcription; AD tracks.
+- Content/rights/asset model split (DM-4 vs DM-5); **server-enforced publish gate** (AC-3) — incomplete metadata or missing rights cannot publish, including via direct API call.
+- Publication state machine incl. scheduled publish; series/seasons/episodes.
+- Moderation triggers (18+, content labels, paid promotion) routing to the review queue; comment hold rules.
+- Organisation verification workflow with document upload.
+- Upload scanning, format validation, sandboxed processing.
+
+**Exit gate**: a creator publishes a real video end-to-end through review; an attempt to bypass the gate via API fails.
+
+### P3 — Commerce, entitlements and protected playback
+
+Delivers: MON-2/3/4, MON-7 (label), MON-10 (ledger), FR-6.4.5–6.4.7, FR-6.3.9, SEC-3, SEC-6, TPI-1/4/7, DM-7/8, UJ-1, UJ-3.
+
+- Stripe Checkout for PPV, rental and purchase; webhook-driven, **idempotent** entitlement creation; receipts and invoices.
+- Entitlement service as the single source of playback truth; playback authorisation evaluating entitlement + territory + release window + age rating + parental controls before minting a short-lived signed URL.
+- Preview/trailer limits for unentitled viewers; session watermarking.
+- Revenue ledger with configurable commission; creator earnings statements.
+- Bulk import for distributors; KYC for payout recipients.
+
+**Exit gate**: AC-5 evidence pack — declines, timeouts and duplicate webhooks produce correct ledger state and **never** grant access.
+
+### P4 — Administration, reporting, first integration, hardening → **MVP GATE**
+
+Delivers: FR-6.10.1–6.10.7, FR-6.6.4, FR-6.9.1–6.9.3, FR-6.9.5, FR-6.9.6, RPT-1/2/3/4/6/7/8, SEC-5, SEC-7–SEC-10, ROLE-8/9/10, INT-1 **or** INT-2, MON-10 payouts, NFR-1–NFR-10, all of §18.
+
+- Wire the 11 existing admin screens to real services: review queues, moderation actions, user/org management, platform configuration, cases, audit log.
+- Scoped admin roles (moderator / finance / super) with mandatory MFA and full audit.
+- Copyright notice-and-action, counter-notice, repeat-infringer strikes (SEC-5) — legally significant and entirely absent today.
+- Analytics pipeline and role-appropriate reports with privacy-safe thresholds; scheduled/downloadable reports.
+- Stripe Connect payouts and reconciliation.
+- **One MYHitch integration** (Pass or Mart per DEC-13) with conversion attribution.
+- Hardening: pen test, WCAG 2.2 AA audit, load test, backup/restore drill, rollback drill, runbooks.
+
+**Exit gate — the MVP acceptance gate**: AC-1 … AC-10 each signed off with named evidence (see §6 below). This is the point at which the SRS's MVP scope (§16) is objectively complete.
+
+### P5 — Live streaming *(if DEC-5 defers it from MVP, as recommended)*
+
+FR-6.5.1–6.5.6, INT-2 if not already delivered. Live ingest, access modes incl. ticketed, chat + moderation + polls, auto-record → replay, highlights, Pass ticket→entitlement.
+
+### P6 — Advertising platform and full monetisation
+
+FR-6.8.1–6.8.6, FR-6.4.8, FR-6.9.4, MON-1/5/6, RPT-5. Campaign lifecycle with mandatory admin approval, targeting, brand safety, frequency caps, VAST insertion, memberships and platform subscription, advertiser invoicing.
+
+### P7 — Community depth, ecosystem and enterprise
+
+FR-6.6 completion, INT-3/4/5/6, MON-9 (business hosting: private libraries, embedded players, enterprise analytics), TPI-9 partner APIs.
+
+### P8 — SRS §17 future capabilities
+
+AI transcription/translation/tagging/summarisation/recommendations, native mobile and smart-TV apps, advanced DRM and multi-territory release management, licensing marketplace, international currencies/taxes/languages/regional catalogues.
+
+---
+
+## 5. Indicative schedule and team
+
+**Estimates are indicative until DEC-1…DEC-14 are answered** — §20 exists precisely because these change the numbers materially (DRM level, live streaming in/out of MVP, number of launch markets, and integration API readiness are each worth weeks).
+
+Assumed team: 1 tech lead/architect · 2 full-stack engineers · 1 backend/media engineer · 0.5 QA + accessibility · 0.5 designer · 0.5 product/PM.
+
+| Phase | Indicative duration | Cumulative |
+|---|---|---|
+| P0 Foundations | 2 weeks *(part done)* | 2 |
+| P1 Identity & discovery | 4–5 weeks | 7 |
+| P2 Media & publishing | 5–6 weeks | 13 |
+| P3 Commerce & entitlements | 4–5 weeks | 18 |
+| P4 Admin, reporting, integration, hardening | 5–6 weeks | **~24 weeks → MVP** |
+| P5 Live streaming | 4 weeks | 28 |
+| P6 Advertising & full monetisation | 7–8 weeks | 36 |
+| P7 Community, ecosystem, enterprise | 7–8 weeks | 44 |
+| P8 Future capabilities | ongoing | — |
+
+**MVP ≈ 5–6 months** with that team. Compressing it means adding a second backend engineer to P2/P3 (media and commerce are the critical path and parallelise reasonably), not shortening hardening — P4's security, accessibility and operations work is where acceptance is won or lost.
+
+---
+
+## 6. How we guarantee nothing in the SRS is missed
+
+The mechanism, not the intention:
+
+1. **Every requirement has an ID.** 69 functional + 10 monetisation + 10 NFR + 10 security + 9 integrations + 8 reports + 11 entities + 11 roles + 4 journeys + 10 acceptance criteria + 11 deliverables, all enumerated in SRS-TRACEABILITY.md.
+2. **Every backlog item and pull request cites its requirement ID.** An item with no ID is either out of scope or a missing requirement — both need a decision, not silent implementation.
+3. **Phase exit requires every ID assigned to that phase to be verified**, with the verification method named in the matrix (test, report, drill or evidence artefact). Not "developer says done".
+4. **The four §7 user journeys are automated end-to-end tests** (UJ-1…UJ-4) and run in CI. A journey that regresses fails the build.
+5. **The MVP gate is an evidence pack, not a demo**: for AC-1…AC-10, one artefact each — test run, pen-test report, axe-core + manual accessibility audit, restore-drill log, rollback-drill log, ledger reconciliation, RBAC permission matrix results.
+6. **A closing traceability review** before launch: walk the SRS section by section against the matrix, with the client, and record any deferral as an explicit, signed decision rather than an omission.
+
+---
+
+## 7. Testing and quality strategy
+
+| Layer | Approach | Gate |
+|---|---|---|
+| Unit | Domain logic: entitlement resolution, commission maths, rights/territory evaluation, publish-gate rules | Coverage floor on `packages/core` |
+| Integration | Route handlers against a real test database; Stripe and Mux in test mode with recorded webhooks | Runs on every PR |
+| E2E | Playwright — the four SRS §7 journeys, desktop + mobile viewports (scaffold already exists) | Blocks merge |
+| Authorisation | Explicit matrix test: every role × every protected endpoint, expecting deny-by-default | Blocks release (AC-6, AC-8) |
+| Payments | Negative-path matrix: decline, timeout, duplicate webhook, partial refund, chargeback | Blocks release (AC-5) |
+| Accessibility | axe-core in CI + manual audit + screen-reader walkthrough of UJ-1/UJ-2 | Blocks release (AC-9) |
+| Performance | k6 load tests to NFR-1 targets; Lighthouse CI on catalogue pages | Blocks release (AC-4) |
+| Security | SCA on every build; pen test before launch; secrets scanning | Blocks release (AC-8) |
+| Operations | Restore drill and rollback drill, both documented | Blocks release (AC-10) |
+
+---
+
+## 8. Top risks
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| **MYHitch ecosystem APIs unavailable or undocumented** | §16 MVP explicitly requires one integration — could block the MVP gate outright | Resolve DEC-13 now; if no API exists, agree a reduced first integration (deep links + attribution) in writing before P4 |
+| **Media vendor cost at scale** | Transcode + egress can dominate unit economics once real volume arrives | Abstract behind our own media interface; model costs at projected volumes before committing; keep AWS path viable |
+| **Entitlement correctness bugs** | Revenue loss or unpaid access; AC-5 failure | Idempotency keys, ledger reconciliation job, negative-path test matrix, no playback URL without a passed authorisation check |
+| **Data residency (`ap-south-1`) vs AU launch** | Privacy/compliance exposure and a painful migration later | Decide DEC-14 **before** production data exists — cheap now, expensive after launch |
+| **Leaked service-role credentials** | Full database compromise | Rotate immediately (SEC-11), managed secrets store, restrict egress |
+| **Copyright workflow underestimated** | Legal exposure; SEC-5 is statutory in effect, not a feature | Scope it as a first-class P4 workstream with legal input (DEC-12), not an admin screen afterthought |
+| **Prototype mistaken for a working system** | Timeline expectations set from a demo that has no backend | This document; demo the gap explicitly to stakeholders |
+| **Scope creep from §17 into MVP** | Slips the MVP gate | §17 is contractually future scope; changes go through a written decision |
+
+---
+
+## 9. Immediate next actions
+
+**Client / boss decisions** (blocking firm estimates and P4 scope):
+1. Answer DEC-1…DEC-14 — especially **DEC-5** (live in MVP?), **DEC-13** (which MYHitch API, and do we have access?), **DEC-9/14** (hosting region for AU users).
+2. Nominate the legal owner for policies and distribution terms (DEC-12).
+3. Confirm the MVP monetisation set (DEC-3) — we recommend free + PPV + rental only.
+
+**Engineering, startable now without those answers:**
+4. **Rotate the exposed Supabase credentials** and move secrets to a managed store (SEC-11).
+5. Stand up dev/test/staging environments (DEL-5) and restructure the repo to the monorepo layout.
+6. Provision Auth0, Sentry, Redis, Typesense.
+7. Generate the OpenAPI specification from the existing ~120 mock-api signatures (DEL-4) and circulate for review.
+8. Begin P1: Auth0 integration and the server-side RBAC foundation — it is on the critical path for every later phase and is the single largest security gap today.
