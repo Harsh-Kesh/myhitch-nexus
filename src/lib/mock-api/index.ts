@@ -344,8 +344,21 @@ export async function getRelatedVideos(id: string, limit = 12): Promise<Video[]>
 }
 
 export async function getCategories(): Promise<Category[]> {
-  await latency("fast");
-  return clone(store.categories);
+  // First mock-api function to "go live" per this file's own header comment: real
+  // Postgres-backed categories exist now (supabase/migrations/20260914000003_catalogue.sql,
+  // served by src/app/api/categories/route.ts) and Category's fields are at full parity
+  // with what that endpoint returns, so this is a pure body swap — same signature, same
+  // shape, no caller changes. See docs/DEVELOPMENT-PLAN.md §2 for why other functions in
+  // this file (getVideo, getChannel, searchVideos) are NOT swapped yet: their real tables
+  // deliberately don't store engagement counters (views/likes/ratings) or a few Channel
+  // fields (languages, links) yet, so swapping them today would silently zero those out
+  // in the UI rather than genuinely serving them.
+  const res = await fetch("/api/categories/");
+  if (!res.ok) {
+    throw new Error(`GET /api/categories failed with ${res.status}`);
+  }
+  const data = (await res.json()) as { items: Category[] };
+  return data.items;
 }
 
 export async function getCategory(slug: string): Promise<Category | null> {

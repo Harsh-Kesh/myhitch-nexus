@@ -20,40 +20,47 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { BrowseView } from "@/components/discovery/browse-view";
-import { CONTENT_TYPE_LABELS, categories } from "@/lib/mock-api/data/categories";
+import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
+import { useCategories } from "@/lib/mock-api/hooks";
 import { compactNumber } from "@/lib/utils";
 
-function getCategoryIcon(id: string) {
-  switch (id) {
-    case "cat_brand_film":
+// Keyed on slug, not id: the real catalogue (supabase/migrations/20260914000003_catalogue.sql)
+// generates fresh uuids per category, so the mock's fixed "cat_brand_film"-style ids no
+// longer exist anywhere once getCategories() is backed by Postgres (see its comment in
+// src/lib/mock-api/index.ts). Slugs are stable across both — seeded directly from this
+// same mock data — so they're the correct, durable key for presentation-only lookups
+// like this one.
+function getCategoryIcon(slug: string) {
+  switch (slug) {
+    case "brand-films":
       return <IconBuildingStore className="size-4" />;
-    case "cat_product_launch":
+    case "product-launches":
       return <IconRocket className="size-4" />;
-    case "cat_feature_film":
+    case "feature-films":
       return <IconMovie className="size-4" />;
-    case "cat_short_film":
+    case "short-films":
       return <IconPlayerPlay className="size-4" />;
-    case "cat_series":
+    case "series":
       return <IconDeviceTv className="size-4" />;
-    case "cat_music":
+    case "music":
       return <IconMusic className="size-4" />;
-    case "cat_courses":
+    case "courses":
       return <IconSchool className="size-4" />;
-    case "cat_skills":
+    case "skills":
       return <IconCertificate className="size-4" />;
-    case "cat_investigations":
+    case "investigations":
       return <IconSearch className="size-4" />;
-    case "cat_news_bulletins":
+    case "news-bulletins":
       return <IconNews className="size-4" />;
-    case "cat_conferences":
+    case "conferences":
       return <IconMicrophone2 className="size-4" />;
-    case "cat_destinations":
+    case "destinations":
       return <IconCompass className="size-4" />;
-    case "cat_public_notices":
+    case "public-notices":
       return <IconBuildingCommunity className="size-4" />;
-    case "cat_impact":
+    case "impact":
       return <IconHeartHandshake className="size-4" />;
-    case "cat_creators":
+    case "creators":
       return <IconVideo className="size-4" />;
     default:
       return <IconMovie className="size-4" />;
@@ -61,6 +68,12 @@ function getCategoryIcon(id: string) {
 }
 
 export default function ExplorePage() {
+  // Real data as of 2026-09-14 (docs/DEVELOPMENT-PLAN.md P1) — getCategories() now reads
+  // Postgres via GET /api/categories/ instead of the in-memory mock store. BrowseView
+  // below still uses searchVideos(), which is deliberately not yet swapped (see the
+  // comment on getCategories() in src/lib/mock-api/index.ts for why).
+  const { data: categories, isLoading } = useCategories();
+
   return (
     <div>
       <section className="border-b border-border px-4 py-7 sm:px-6 lg:px-8">
@@ -74,13 +87,13 @@ export default function ExplorePage() {
             </p>
           </div>
           <span className="text-2xs font-medium text-fg-subtle">
-            {categories.length} categories available
+            {isLoading ? "Loading…" : `${categories?.length ?? 0} categories available`}
           </span>
         </div>
 
         {/* Compact, clean & minimal category cards */}
         <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {categories.map((category) => (
+          {(categories ?? []).map((category) => (
             <Link
               key={category.id}
               href={`/category/${category.slug}`}
@@ -90,7 +103,7 @@ export default function ExplorePage() {
                 {/* Header: Icon + Title count badge */}
                 <div className="flex items-center justify-between">
                   <div className="flex size-7 items-center justify-center rounded-md bg-surface-2 text-fg-muted transition-colors group-hover:bg-accent/10 group-hover:text-accent">
-                    {getCategoryIcon(category.id)}
+                    {getCategoryIcon(category.slug)}
                   </div>
                   <span className="rounded-full bg-surface-2 px-2 py-0.5 text-3xs font-medium text-fg-subtle transition-colors group-hover:bg-accent/10 group-hover:text-accent">
                     <span className="nx-tnum font-semibold">{compactNumber(category.videoCount)}</span> titles
