@@ -17,7 +17,7 @@ Resolved 2026-09-14. Supersedes the recommendations table in SRS-TRACEABILITY.md
 | DEC-3 | MVP monetisation models | Free + pay-per-view + rental (per recommendation) |
 | DEC-4 | Film protection / DRM | Signed URLs + visible watermark for MVP |
 | DEC-5 | Live streaming timing | **In scope, as Phase 5 immediately after MVP** — not deferred indefinitely, not pulled into the MVP gate itself |
-| DEC-6 | MYHitch identity | Auth0 tenant designed as the shared MYHitch SSO from the start |
+| DEC-6 | MYHitch identity | **Confirmed shared, and clarified 2026-09-14: Auth0 is already the identity provider for the other MYHitch platforms.** Nexus registers as a new Application inside that *existing* tenant — not a new tenant — so a user's login is identical across Mart/Pass/JetNRest/Connect/Lens/Impact/Nexus. Auth0 owns identity only (login, MFA, verification); Nexus's own role/org model (`accounts`/`account_roles`/`organizations`/`memberships`, already built, keyed on `auth0_sub`) stays entirely in our database and is not pushed into the shared tenant. **Blocked on tenant access** — see §9. |
 | DEC-7 | Payments/payouts | Stripe + Connect, AUD primary, monthly payouts, 30-day hold |
 | DEC-8 | Moderation | Internal team, business hours, SLA'd queue |
 | DEC-9 / DEC-14 | Data region | **Australia — done.** Supabase project recreated in Sydney (`ap-southeast-2`, ref `kdojrmscgtkfxuyaxnwv`); old Mumbai project deleted |
@@ -307,12 +307,13 @@ The mechanism, not the intention:
 
 **Resolved this session** (§0 decisions log): data residency, live streaming inclusion, MYHitch integration approach, legal ownership, credential exposure, MVP-first confirmed.
 
-**Still needed from the client, before P4 planning locks in:**
-1. Name an actual counterpart on the Mart/Pass side and get the integration contract + delivery slot agreed in writing (DEC-13 follow-through).
-2. A point of contact for the digital lawyer, so policy documents have somewhere to land when P4 needs them (DEC-12 follow-through).
+**Blockers — grouped for one meeting, per the client's preference (2026-09-14), rather than chased individually:**
+1. **Mart/Pass integration** (DEC-13 follow-through) — name a counterpart on their side, agree the integration contract (ticket→entitlement for Pass, product-link→attribution for Mart) and a delivery slot before P4.
+2. **Auth0 shared tenant access** (DEC-6 follow-through) — Nexus needs to be registered as an Application inside the *existing* MYHitch Auth0 tenant (not a new tenant), so login is shared across all MYHitch platforms. Need either dashboard access to register it ourselves, or the tenant domain + client ID/secret from whoever administers it.
+3. **Legal adviser contact** (DEC-12 follow-through) — a point of contact for the digital lawyer, so policy documents (privacy, terms, creator agreement, distribution terms) have somewhere to land when P4 needs the actual wording.
 
-**Engineering, startable immediately:**
-3. Stand up dev/test/staging environments (DEL-5) and restructure the repo to the monorepo layout.
-4. Provision Auth0, Sentry, Redis, Typesense.
-5. Generate the OpenAPI specification from the existing ~120 mock-api signatures (DEL-4) and circulate for review.
-6. Begin P1: Auth0 integration and the server-side RBAC foundation — it is on the critical path for every later phase and is the single largest security gap today.
+**Engineering, startable now regardless of the blockers above:**
+4. Stand up dev/test/staging environments (DEL-5) and restructure the repo to the monorepo layout.
+5. Provision Sentry, Redis, Typesense.
+6. Generate the OpenAPI specification from the existing ~120 mock-api signatures (DEL-4) and circulate for review.
+7. Scaffold the Auth0 integration and server-side RBAC foundation against placeholder env vars — session handling, middleware, login/callback routes, and our own `account_roles` authorization layer can all be built and unit-tested now. Only the actual end-to-end login flow needs to wait on blocker #2; everything else on the critical path does not.
