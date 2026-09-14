@@ -215,7 +215,7 @@ export async function getFeaturedContent(): Promise<FeaturedContent> {
 // getChannelVideos has switched to real ids — at that point one branch of each function
 // below is permanently dead code, not a decision to revisit.
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function looksLikeRealId(id: string): boolean {
+export function looksLikeRealId(id: string): boolean {
   return UUID_PATTERN.test(id);
 }
 

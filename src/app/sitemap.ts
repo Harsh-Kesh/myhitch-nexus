@@ -3,15 +3,12 @@ import { categories } from "@/lib/mock-api/data/categories";
 import { channels } from "@/lib/mock-api/data/channels";
 import { liveEvents } from "@/lib/mock-api/data/live";
 import { videos } from "@/lib/mock-api/data/videos";
+import { SITE_URL } from "@/lib/utils";
 
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.GITHUB_ACTIONS === "true"
-      ? "https://senura-d.github.io/myhitch-nexus"
-      : "http://localhost:3000");
+  const baseUrl = SITE_URL;
 
   const now = new Date();
 
@@ -28,6 +25,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified: now,
       changeFrequency: "daily",
       priority: 0.9,
+    },
+    {
+      url: `${baseUrl}/creators`,
+      lastModified: now,
+      changeFrequency: "daily",
+      priority: 0.8,
     },
     {
       url: `${baseUrl}/films`,

@@ -50,6 +50,7 @@ const PRIMARY_NAV: Array<{
   { href: "/education", label: "Education" },
   { href: "/news", label: "News" },
   { href: "/entertainment", label: "Entertainment" },
+  { href: "/creators", label: "Creators" },
   { href: "/explore", label: "Categories" },
 ];
 

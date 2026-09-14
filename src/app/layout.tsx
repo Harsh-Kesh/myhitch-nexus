@@ -1,17 +1,27 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { SITE_URL } from "@/lib/utils";
 import { Providers } from "./providers";
 
 // Font stacks live in tokens.css and resolve locally — see the typography note
 // there for why this build deliberately avoids next/font/google.
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "MYHitch Nexus",
     template: "%s · MYHitch Nexus",
   },
   description:
     "One platform for commercial video, films, education, live streams, corporate media, documentaries, news and creator content — with publishing, discovery, monetisation and commerce built in.",
+  openGraph: {
+    siteName: "MYHitch Nexus",
+    type: "website",
+    images: [{ url: "/images/brand/logo.png" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export const viewport: Viewport = {

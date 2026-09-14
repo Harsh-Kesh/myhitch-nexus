@@ -61,6 +61,15 @@ export function formatDuration(totalSeconds: number): string {
     : `${minutes}:${pad(seconds)}`;
 }
 
+/** 6960 -> "PT1H56M0S". For schema.org VideoObject.duration (JSON-LD wants ISO 8601). */
+export function isoDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds || 0));
+  const hours = Math.floor(s / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const seconds = s % 60;
+  return `PT${hours > 0 ? `${hours}H` : ""}${minutes > 0 ? `${minutes}M` : ""}${seconds}S`;
+}
+
 /** Long form used in metadata blocks: "1h 2m" / "45m" / "38s" */
 export function formatRuntime(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds || 0));
@@ -221,6 +230,24 @@ let idCounter = 0;
 export function mockId(prefix: string): string {
   idCounter += 1;
   return `${prefix}_${idCounter.toString().padStart(4, "0")}`;
+}
+
+// Single source of truth for the site's own origin — also used by src/app/layout.tsx's
+// metadataBase and src/app/sitemap.ts. Hardcoded fallback rather than localhost: a
+// relative image URL silently resolving against localhost would break every social/
+// crawler preview in production if the env var were ever unset (found 2026-09-14 —
+// that's exactly what had happened to sitemap.xml's own, separate fallback).
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://myhitchnexus.com.au";
+
+/**
+ * Resolves a possibly-relative path (as stored in the DB/mock data, e.g.
+ * "/images/posters/x.png") to an absolute URL. Needed for JSON-LD image/logo fields —
+ * unlike Next's `openGraph.images`, metadataBase does not auto-absolutize those.
+ */
+export function absoluteUrl(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 export const BASE_PATH =
