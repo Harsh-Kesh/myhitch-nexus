@@ -207,7 +207,7 @@ No integration of any kind exists today. §16 requires **one** in MVP (preferabl
 | INT-5 | MYHitch Lens | Embed/cross-publish news interviews, reports, documentaries | P7 | Lens content sync (bidirectional?) |
 | INT-6 | MYHitch Impact | Fundraising stories, project updates, donor reports | P7 | Impact campaign API |
 
-**Blocking unknown**: none of these APIs are documented to us yet. Raised as DEC-13.
+**Resolved (DEC-13, 2026-09-14)**: Mart and Pass are built in-house, so this is a co-design exercise rather than a dependency on external documentation — we specify the contract, their team builds to it. Still needs a named counterpart and a delivery slot agreed before P4.
 
 ---
 
@@ -336,6 +336,8 @@ These are the contractual gates. Each has a named verification method and eviden
 ## N. §20 Decisions Required Before Final Estimation
 
 Firm estimates and several design choices are blocked until these are answered. Our recommendation is given for each so the decision is a yes/no, not an essay.
+
+**Status 2026-09-14: all fourteen resolved.** This table is kept as the original analysis; see [DEVELOPMENT-PLAN.md §0](DEVELOPMENT-PLAN.md#0-decisions-log-20) for the actual answers, which in three cases (DEC-5 live streaming, DEC-9/14 data region, DEC-13 integrations) differ from what's recommended below.
 
 | ID | Decision | Our recommendation | Blocks |
 |---|---|---|---|

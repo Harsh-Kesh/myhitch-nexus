@@ -7,6 +7,30 @@ Supersedes `PLAN-v1-prototype-derived.md`, which was written before the SRS exis
 
 ---
 
+## 0. Decisions log (§20)
+
+Resolved 2026-09-14. Supersedes the recommendations table in SRS-TRACEABILITY.md §N where an actual decision has since been made.
+
+| ID | Decision | Resolution |
+|---|---|---|
+| DEC-1 | Launch markets | Australia first, architected for multi-region |
+| DEC-3 | MVP monetisation models | Free + pay-per-view + rental (per recommendation) |
+| DEC-4 | Film protection / DRM | Signed URLs + visible watermark for MVP |
+| DEC-5 | Live streaming timing | **In scope, as Phase 5 immediately after MVP** — not deferred indefinitely, not pulled into the MVP gate itself |
+| DEC-6 | MYHitch identity | Auth0 tenant designed as the shared MYHitch SSO from the start |
+| DEC-7 | Payments/payouts | Stripe + Connect, AUD primary, monthly payouts, 30-day hold |
+| DEC-8 | Moderation | Internal team, business hours, SLA'd queue |
+| DEC-9 / DEC-14 | Data region | **Australia — done.** Supabase project recreated in Sydney (`ap-southeast-2`, ref `kdojrmscgtkfxuyaxnwv`); old Mumbai project deleted |
+| DEC-10 | Applications | Web-only for MVP; native mobile/smart-TV stay §17 future scope |
+| DEC-11 | Branding | Formalise the prototype's existing visual system as the design system |
+| DEC-12 | Legal ownership | An external digital lawyer owns all policy/legal wording (privacy policy, terms, creator agreement, distribution terms, etc.) for the whole platform. **We build the mechanics only** — versioned documents, acceptance tracking, consent capture — and integrate the lawyer's actual text whenever it's supplied, without that blocking engineering progress. |
+| **DEC-13** | MYHitch ecosystem APIs | **Resolved favourably.** Mart and Pass are built in-house by the same organisation, so this is a co-design exercise, not a dependency on an external vendor's documentation. We specify the contract each integration needs (Pass: ticket → entitlement mapping; Mart: product-link → purchase attribution) and their team builds to it. Still needs a named counterpart and a timeline slot before P4. |
+| SEC-11 | Leaked Supabase credentials | **Resolved as a side effect of DEC-9/14** — the old project (and its leaked `service_role` key + DB password) was deleted outright rather than rotated, which is a stronger fix than rotation. New project uses Supabase's current key format (`sb_publishable_...` / `sb_secret_...`). |
+
+One scope question was raised and then withdrawn: building the entire platform (through advertising and all ecosystem integrations) before any public launch, rather than an MVP-first release. **Confirmed: staying with MVP-first (§16)**, phased exactly as below.
+
+---
+
 ## 1. The two facts that shape this plan
 
 **1. The prototype is a specification, not a product.** 53 routes, 11 admin screens matching SRS §9 exactly, ~120 typed mock API functions, 10 of the 11 SRS §10 entities already modelled in TypeScript. 48 of the 69 functional requirements have a working interface. **Zero are functionally complete** — there is no backend, no persistence beyond a browser tab, no media, no payments, no access control.
@@ -19,7 +43,7 @@ Supersedes `PLAN-v1-prototype-derived.md`, which was written before the SRS exis
 | Entitlements & payments | AC-5 demands that failed payments never grant access. Needs idempotent, webhook-driven correctness. |
 | Access control | SEC-1: today *any* logged-in user can open `/admin`. Authorisation must be rebuilt server-side from nothing. |
 | Admin enforcement | The screens exist; the rules they claim to enforce (AC-3 publish gate, audit trail, copyright) do not. |
-| MYHitch integrations | §16 requires one in MVP. We have no API documentation for any of the six (DEC-13). |
+| MYHitch integrations | §16 requires one in MVP. Now a co-design exercise rather than an external dependency (DEC-13 resolved) — but still needs a named counterpart and a delivery slot on their side before P4. |
 
 ---
 
@@ -197,7 +221,7 @@ Delivers: FR-6.10.1–6.10.7, FR-6.6.4, FR-6.9.1–6.9.3, FR-6.9.5, FR-6.9.6, RP
 
 **Exit gate — the MVP acceptance gate**: AC-1 … AC-10 each signed off with named evidence (see §6 below). This is the point at which the SRS's MVP scope (§16) is objectively complete.
 
-### P5 — Live streaming *(if DEC-5 defers it from MVP, as recommended)*
+### P5 — Live streaming *(confirmed in scope — DEC-5)*
 
 FR-6.5.1–6.5.6, INT-2 if not already delivered. Live ingest, access modes incl. ticketed, chat + moderation + polls, auto-record → replay, highlights, Pass ticket→entitlement.
 
@@ -270,27 +294,25 @@ The mechanism, not the intention:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **MYHitch ecosystem APIs unavailable or undocumented** | §16 MVP explicitly requires one integration — could block the MVP gate outright | Resolve DEC-13 now; if no API exists, agree a reduced first integration (deep links + attribution) in writing before P4 |
+| **MYHitch integration slips on their side** | Pass/Mart are in-house, so DEC-13 is no longer "do they have an API" but "will their team deliver the contract on our timeline" | Name a counterpart on the Pass/Mart side now and put the integration contract + delivery slot in writing before P4 starts, not during it |
 | **Media vendor cost at scale** | Transcode + egress can dominate unit economics once real volume arrives | Abstract behind our own media interface; model costs at projected volumes before committing; keep AWS path viable |
 | **Entitlement correctness bugs** | Revenue loss or unpaid access; AC-5 failure | Idempotency keys, ledger reconciliation job, negative-path test matrix, no playback URL without a passed authorisation check |
-| **Data residency (`ap-south-1`) vs AU launch** | Privacy/compliance exposure and a painful migration later | Decide DEC-14 **before** production data exists — cheap now, expensive after launch |
-| **Leaked service-role credentials** | Full database compromise | Rotate immediately (SEC-11), managed secrets store, restrict egress |
-| **Copyright workflow underestimated** | Legal exposure; SEC-5 is statutory in effect, not a feature | Scope it as a first-class P4 workstream with legal input (DEC-12), not an admin screen afterthought |
+| **Copyright workflow underestimated** | Legal exposure; SEC-5 is statutory in effect, not a feature | Scope it as a first-class P4 workstream; mechanics built by us, wording supplied by the digital lawyer (DEC-12) — don't let either block the other |
 | **Prototype mistaken for a working system** | Timeline expectations set from a demo that has no backend | This document; demo the gap explicitly to stakeholders |
-| **Scope creep from §17 into MVP** | Slips the MVP gate | §17 is contractually future scope; changes go through a written decision |
+| **Scope creep from §17, or from P5–P7, into the MVP gate** | Slips the ~24-week MVP timeline that was explicitly confirmed | §17 is contractually future scope; P5 (live) starts only after the P4 acceptance gate closes, not in parallel with it |
 
 ---
 
 ## 9. Immediate next actions
 
-**Client / boss decisions** (blocking firm estimates and P4 scope):
-1. Answer DEC-1…DEC-14 — especially **DEC-5** (live in MVP?), **DEC-13** (which MYHitch API, and do we have access?), **DEC-9/14** (hosting region for AU users).
-2. Nominate the legal owner for policies and distribution terms (DEC-12).
-3. Confirm the MVP monetisation set (DEC-3) — we recommend free + PPV + rental only.
+**Resolved this session** (§0 decisions log): data residency, live streaming inclusion, MYHitch integration approach, legal ownership, credential exposure, MVP-first confirmed.
 
-**Engineering, startable now without those answers:**
-4. **Rotate the exposed Supabase credentials** and move secrets to a managed store (SEC-11).
-5. Stand up dev/test/staging environments (DEL-5) and restructure the repo to the monorepo layout.
-6. Provision Auth0, Sentry, Redis, Typesense.
-7. Generate the OpenAPI specification from the existing ~120 mock-api signatures (DEL-4) and circulate for review.
-8. Begin P1: Auth0 integration and the server-side RBAC foundation — it is on the critical path for every later phase and is the single largest security gap today.
+**Still needed from the client, before P4 planning locks in:**
+1. Name an actual counterpart on the Mart/Pass side and get the integration contract + delivery slot agreed in writing (DEC-13 follow-through).
+2. A point of contact for the digital lawyer, so policy documents have somewhere to land when P4 needs them (DEC-12 follow-through).
+
+**Engineering, startable immediately:**
+3. Stand up dev/test/staging environments (DEL-5) and restructure the repo to the monorepo layout.
+4. Provision Auth0, Sentry, Redis, Typesense.
+5. Generate the OpenAPI specification from the existing ~120 mock-api signatures (DEL-4) and circulate for review.
+6. Begin P1: Auth0 integration and the server-side RBAC foundation — it is on the critical path for every later phase and is the single largest security gap today.
