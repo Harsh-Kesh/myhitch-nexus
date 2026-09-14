@@ -34,6 +34,9 @@ const videosSchema = {
     { name: "channel_id", type: "string" },
     { name: "channel_name", type: "string" },
     { name: "published_at_ts", type: "int64" },
+    { name: "views", type: "int64" },
+    { name: "rating_average", type: "float" },
+    { name: "has_subtitles", type: "bool" },
   ],
   default_sorting_field: "published_at_ts",
 };
@@ -58,7 +61,8 @@ async function main() {
   const { rows } = await pg.query(`
     select
       v.id, v.title, v.synopsis, v.content_type, v.duration_seconds, v.release_date,
-      v.language, v.country, v.published_at,
+      v.language, v.country, v.published_at, v.views, v.rating_average,
+      exists(select 1 from video_subtitle_tracks st where st.video_id = v.id) as has_subtitles,
       o.id as channel_id, o.name as channel_name,
       coalesce(p.access_models, array['free']) as access_models,
       coalesce(r.age_rating, 'U') as age_rating,
@@ -94,6 +98,9 @@ async function main() {
     channel_id: row.channel_id,
     channel_name: row.channel_name,
     published_at_ts: row.published_at ? Math.floor(new Date(row.published_at).getTime() / 1000) : 0,
+    views: Number(row.views),
+    rating_average: Number(row.rating_average),
+    has_subtitles: row.has_subtitles,
   }));
 
   console.log("Recreating the Typesense collection…");

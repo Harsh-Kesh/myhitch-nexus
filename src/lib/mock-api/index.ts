@@ -10,7 +10,6 @@
    ========================================================================= */
 
 import { sleep } from "@/lib/utils";
-import { CONTENT_TYPE_LABELS } from "./data/categories";
 import { buildAdminTrend, buildCampaignSeries, buildCreatorAnalytics, buildRevenueSummary } from "./data/analytics";
 import { NOW, daysAhead } from "./data/videos";
 import { nextId, persistLogin, recordAudit, store } from "./store";
@@ -205,120 +204,88 @@ export async function getFeaturedContent(): Promise<FeaturedContent> {
   };
 }
 
-function matchesFilters(video: Video, filters: SearchFilters): boolean {
-  const {
-    query,
-    contentTypes,
-    categoryIds,
-    languages,
-    countries,
-    accessModels,
-    ageRatings,
-    minDurationSeconds,
-    maxDurationSeconds,
-    releaseYearFrom,
-    releaseYearTo,
-    hasSubtitles,
-    freeOnly,
-    channelId,
-  } = filters;
-
-  if (query) {
-    const haystack = [
-      video.title,
-      video.synopsis,
-      video.tags.join(" "),
-      video.credits.map((credit) => credit.name).join(" "),
-      store.channels.find((channel) => channel.id === video.channelId)?.name ?? "",
-      CONTENT_TYPE_LABELS[video.contentType],
-    ]
-      .join(" ")
-      .toLowerCase();
-    if (!query.toLowerCase().split(/\s+/).every((term) => haystack.includes(term))) {
-      return false;
-    }
-  }
-  if (channelId && video.channelId !== channelId) return false;
-  if (contentTypes?.length && !contentTypes.includes(video.contentType)) return false;
-  if (categoryIds?.length && !video.categoryIds.some((id) => categoryIds.includes(id))) {
-    return false;
-  }
-  if (languages?.length && !languages.includes(video.language)) return false;
-  if (countries?.length && !countries.includes(video.country)) return false;
-  if (
-    accessModels?.length &&
-    !video.pricing.accessModels.some((model) => accessModels.includes(model))
-  ) {
-    return false;
-  }
-  if (ageRatings?.length && !ageRatings.includes(video.rights.ageRating)) return false;
-  if (minDurationSeconds != null && video.durationSeconds < minDurationSeconds) return false;
-  if (maxDurationSeconds != null && video.durationSeconds > maxDurationSeconds) return false;
-  const year = Number(video.releaseDate.slice(0, 4));
-  if (releaseYearFrom != null && year < releaseYearFrom) return false;
-  if (releaseYearTo != null && year > releaseYearTo) return false;
-  if (hasSubtitles && video.subtitles.length === 0) return false;
-  if (
-    freeOnly &&
-    !video.pricing.accessModels.some((model) => model === "free" || model === "ad-supported")
-  ) {
-    return false;
-  }
-  return true;
+// Real Postgres rows use fresh uuids; every id/slug this mock module generates itself
+// (store.videos, store.channels — "vid_xxx"/"ch_xxx") never looks like one. Route on
+// that shape rather than trying real-then-catch-404, because the two "not found"
+// reasons are different: a uuid genuinely missing from Postgres is a real 404, while a
+// mock-shaped id is a caller from a page that hasn't been migrated to real data yet
+// (the home rails, the vertical category pages, etc. — see
+// docs/DEVELOPMENT-PLAN.md's P1 entry) and should still work against the mock store
+// exactly as before. Remove this the day every caller of getVideo/getChannel/
+// getChannelVideos has switched to real ids — at that point one branch of each function
+// below is permanently dead code, not a decision to revisit.
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function looksLikeRealId(id: string): boolean {
+  return UUID_PATTERN.test(id);
 }
 
 export async function searchVideos(filters: SearchFilters = {}): Promise<SearchResult> {
-  await latency(filters.query ? "normal" : "fast");
+  // Live 2026-09-14 — real Typesense-backed faceted search via GET /api/videos/. Page/
+  // pageSize (this function's own contract) translate to limit/offset (the REST route's
+  // convention) here, at the one boundary that needs to know about both.
+  //
+  // One disclosed, deliberate behaviour difference from the mock: the mock includes
+  // "restricted"-status videos in search results alongside "published" ones; the real
+  // index only ever contains "published" rows (scripts/index-catalogue.mjs). Being more
+  // conservative about what counts as publicly discoverable is the safer default where
+  // the two disagree, not an oversight — revisit once "restricted" has a real access
+  // policy behind it rather than just a status label.
   const page = filters.page ?? 1;
   const pageSize = filters.pageSize ?? 24;
 
-  const visible = store.videos.filter(
-    (video) => video.status === "published" || video.status === "restricted",
-  );
-  const matched = visible.filter((video) => matchesFilters(video, filters));
+  const params = new URLSearchParams();
+  if (filters.query) params.set("query", filters.query);
+  if (filters.contentTypes?.length) params.set("contentTypes", filters.contentTypes.join(","));
+  if (filters.categoryIds?.length) params.set("categoryIds", filters.categoryIds.join(","));
+  if (filters.languages?.length) params.set("languages", filters.languages.join(","));
+  if (filters.countries?.length) params.set("countries", filters.countries.join(","));
+  if (filters.accessModels?.length) params.set("accessModels", filters.accessModels.join(","));
+  if (filters.ageRatings?.length) params.set("ageRatings", filters.ageRatings.join(","));
+  if (filters.minDurationSeconds != null) params.set("minDurationSeconds", String(filters.minDurationSeconds));
+  if (filters.maxDurationSeconds != null) params.set("maxDurationSeconds", String(filters.maxDurationSeconds));
+  if (filters.releaseYearFrom != null) params.set("releaseYearFrom", String(filters.releaseYearFrom));
+  if (filters.releaseYearTo != null) params.set("releaseYearTo", String(filters.releaseYearTo));
+  if (filters.hasSubtitles) params.set("hasSubtitles", "true");
+  if (filters.freeOnly) params.set("freeOnly", "true");
+  if (filters.channelId) params.set("channelId", filters.channelId);
+  // "relevance" (the mock's default) has no real sort_by equivalent — Typesense's own
+  // text-relevance ranking applies automatically when there's a query and no explicit
+  // sort is sent, which is exactly the same behaviour.
+  if (filters.sort && filters.sort !== "relevance") params.set("sort", filters.sort);
+  params.set("limit", String(pageSize));
+  params.set("offset", String((page - 1) * pageSize));
 
-  const sorted = [...matched].sort((a, b) => {
-    switch (filters.sort) {
-      case "newest":
-        return (b.publishedAt ?? "").localeCompare(a.publishedAt ?? "");
-      case "rating":
-        return b.ratingAverage - a.ratingAverage;
-      case "duration":
-        return b.durationSeconds - a.durationSeconds;
-      case "popular":
-        return b.views - a.views;
-      default:
-        return b.views - a.views;
-    }
-  });
-
-  const countBy = <T extends string>(pick: (video: Video) => T[]) => {
-    const counts = new Map<T, number>();
-    for (const video of matched) {
-      for (const value of pick(video)) {
-        counts.set(value, (counts.get(value) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .map(([value, count]) => ({ value, count }))
-      .sort((a, b) => b.count - a.count);
+  const res = await fetch(`/api/videos/?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error(`GET /api/videos failed with ${res.status}`);
+  }
+  const data = (await res.json()) as {
+    items: Video[];
+    total: number;
+    facets: SearchResult["facets"];
   };
 
-  return {
-    items: clone(sorted.slice((page - 1) * pageSize, page * pageSize)),
-    total: sorted.length,
-    page,
-    pageSize,
-    facets: {
-      contentTypes: countBy((video) => [video.contentType]),
-      languages: countBy((video) => [video.language]),
-      countries: countBy((video) => [video.country]),
-      accessModels: countBy((video) => video.pricing.accessModels),
-    },
-  };
+  return { items: data.items, total: data.total, page, pageSize, facets: data.facets };
 }
 
 export async function getVideo(id: string): Promise<Video | null> {
+  // Live 2026-09-14 for real ids only — see looksLikeRealId's comment above for why
+  // this function is still two-branch. Real Postgres via GET /api/videos/{id}/,
+  // matching by id or slug exactly like the mock branch below does. Video's full field
+  // set (subtitles, audio tracks, qualities, complete pricing, rights, engagement
+  // counters) is now at parity with the real schema — the counters are a seeded
+  // snapshot from this same mock dataset, not yet live-computed by a real analytics
+  // pipeline (SRS §6.9), and affiliateLinks/seriesId are the two still-unmodelled
+  // fields (see docs/DEVELOPMENT-PLAN.md P1 entry for why).
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`GET /api/videos/${id} failed with ${res.status}`);
+    }
+    return (await res.json()) as Video;
+  }
+
   await latency("fast");
   const video = store.videos.find((item) => item.id === id || item.slug === id);
   return video ? clone(video) : null;
@@ -348,11 +315,10 @@ export async function getCategories(): Promise<Category[]> {
   // Postgres-backed categories exist now (supabase/migrations/20260914000003_catalogue.sql,
   // served by src/app/api/categories/route.ts) and Category's fields are at full parity
   // with what that endpoint returns, so this is a pure body swap — same signature, same
-  // shape, no caller changes. See docs/DEVELOPMENT-PLAN.md §2 for why other functions in
-  // this file (getVideo, getChannel, searchVideos) are NOT swapped yet: their real tables
-  // deliberately don't store engagement counters (views/likes/ratings) or a few Channel
-  // fields (languages, links) yet, so swapping them today would silently zero those out
-  // in the UI rather than genuinely serving them.
+  // shape, no caller changes. Categories don't have the two-id-format problem
+  // getVideo/getChannel/getChannelVideos do (see looksLikeRealId's comment above) —
+  // slugs are the join key everywhere, and slugs are stable between mock and real data
+  // since the real ones were seeded from this same mock source.
   const res = await fetch("/api/categories/");
   if (!res.ok) {
     throw new Error(`GET /api/categories failed with ${res.status}`);
@@ -369,16 +335,36 @@ export async function getCategory(slug: string): Promise<Category | null> {
 /* ============================= Channels ================================= */
 
 export async function getChannel(id: string): Promise<Channel | null> {
+  // Live 2026-09-14 for real ids only — see looksLikeRealId's comment above. Real
+  // Postgres via GET /api/channels/{id}/, matching by id or handle exactly like the
+  // mock branch below does. Full parity with Channel, including bannerGradient/
+  // avatarGradient — found by clicking through the actual channel page, not static
+  // review: they're indexed directly by a gradient-rendering component with no
+  // fallback, so they turned out to be load-bearing UI rather than the cosmetic
+  // placeholder-art mechanism they first looked like (see the migration comment in
+  // supabase/migrations/20260914000007_channel_gradients.sql).
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/channels/${encodeURIComponent(id)}/`);
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`GET /api/channels/${id} failed with ${res.status}`);
+    }
+    return (await res.json()) as Channel;
+  }
+
   await latency("fast");
-  const channel = store.channels.find(
-    (item) => item.id === id || item.handle === id,
-  );
+  const channel = store.channels.find((item) => item.id === id || item.handle === id);
   return channel ? clone(channel) : null;
 }
 
 export async function getChannels(): Promise<Channel[]> {
-  await latency("fast");
-  return clone(store.channels);
+  // Live 2026-09-14 — real Postgres via GET /api/channels/.
+  const res = await fetch("/api/channels/");
+  if (!res.ok) {
+    throw new Error(`GET /api/channels failed with ${res.status}`);
+  }
+  const data = (await res.json()) as { items: Channel[] };
+  return data.items;
 }
 
 export async function updateChannel(
@@ -398,6 +384,23 @@ export async function getChannelVideos(
   channelId: string,
   opts: { includeUnpublished?: boolean } = {},
 ): Promise<Video[]> {
+  // Live 2026-09-14 for the public case, real ids only (see looksLikeRealId's comment
+  // above) — GET /api/channels/{id}/videos/ has no concept of a caller identity yet
+  // (Auth0 paused), so it can only ever serve published content, which is exactly what
+  // every viewer-facing caller needs. Studio/Business pages pass
+  // includeUnpublished:true to see their own drafts, which stays on mock until there's
+  // a real authenticated owner check to gate it — serving draft content through an
+  // unauthenticated route would be a real content-exposure bug, not a shortcut worth
+  // taking for a quick swap.
+  if (!opts.includeUnpublished && looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/videos/`);
+    if (!res.ok) {
+      throw new Error(`GET /api/channels/${channelId}/videos failed with ${res.status}`);
+    }
+    const data = (await res.json()) as { items: Video[] };
+    return data.items;
+  }
+
   await latency("fast");
   return clone(
     store.videos

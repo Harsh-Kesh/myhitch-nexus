@@ -32,6 +32,9 @@ export const videosSchema = {
     { name: "channel_id", type: "string" as const },
     { name: "channel_name", type: "string" as const },
     { name: "published_at_ts", type: "int64" as const },
+    { name: "views", type: "int64" as const },
+    { name: "rating_average", type: "float" as const },
+    { name: "has_subtitles", type: "bool" as const },
   ],
   default_sorting_field: "published_at_ts",
 };
@@ -52,6 +55,9 @@ export interface VideoDocument {
   channel_id: string;
   channel_name: string;
   published_at_ts: number;
+  views: number;
+  rating_average: number;
+  has_subtitles: boolean;
 }
 
 function requireEnv(name: string): string {
