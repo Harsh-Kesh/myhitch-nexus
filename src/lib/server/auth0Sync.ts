@@ -18,7 +18,17 @@
 // without needing Auth0 to understand Nexus's role taxonomy at all — the taxonomy itself
 // stays entirely in account_roles, exactly as docs/AUTH0_INTEGRATION_STANDARD.md §3
 // requires ("do not attempt to make Auth0 the source of truth for anything relational").
+//
+// Second adaptation: `findOrCreateAuth0UserForVerifiedEmail()` at the bottom of this file
+// is how SRS FR-6.2.1's optional Google/Apple sign-in stays "one flow, two front doors"
+// rather than a second parallel system. socialIdentity.ts verifies the provider's ID
+// token itself (no Auth0 involved, no redirect) and hands this file only a proven email
+// — from there it's the same Auth0 identity record, the same mfa_required mirroring, and
+// the same session issuance the password path uses. Pass's reference implementation has
+// no social login and so has no equivalent function; this is additive, not a divergence
+// from anything the standard specifies for the password path.
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { auth0Fetch, auth0ManagementFetch, Auth0ApiError } from "./auth0Client";
 
 function requireEnv(name: string): string {
@@ -348,4 +358,65 @@ export async function verifyAuth0MfaOtp(mfaToken: string, code: string): Promise
 
     throw err;
   }
+}
+
+// ─── findOrCreateAuth0UserForVerifiedEmail ────────────────────────────────────
+
+export interface FindOrCreateAuth0UserInput {
+  /** Already proven by some means other than an Auth0 password check — currently,
+   * a verified Google/Apple ID token (see socialIdentity.ts). Never pass an
+   * unverified, caller-asserted email here. */
+  email: string;
+  emailVerified: boolean;
+  mfaRequired?: boolean;
+}
+
+/**
+ * Resolves the Auth0 identity for an email whose ownership has already been proven
+ * outside of Auth0 — the social-sign-in front door (see the module header comment and
+ * DEVELOPMENT-PLAN.md DEC-6). If an Auth0 user already exists for this email, reuses it
+ * — this is what makes "signed up with a password on one flow, signed in with Google on
+ * another" and "signed up via Google here, later does a password reset elsewhere"
+ * both resolve to the same one identity. If not, creates one with a strong,
+ * caller-never-sees-it password — this is the only call site in this file where
+ * `createAuth0User()`'s password is not something the person themselves chose; every
+ * other call site uses a real password the person typed, at registration or during a
+ * change/reset.
+ *
+ * Does not issue a Nexus session, same as every other function in this file — the
+ * caller does that after this resolves.
+ */
+export async function findOrCreateAuth0UserForVerifiedEmail(
+  input: FindOrCreateAuth0UserInput,
+): Promise<CreateAuth0UserResult> {
+  const existing = await findAuth0UserByEmail(input.email);
+
+  if (existing) {
+    if (input.emailVerified && !existing.emailVerified) {
+      await updateAuth0User(existing.auth0UserId, { emailVerified: true });
+    }
+    return { auth0UserId: existing.auth0UserId, email: existing.email, emailVerified: true };
+  }
+
+  const created = await createAuth0User({
+    email: input.email,
+    password: generateUnusablePassword(),
+    mfaRequired: input.mfaRequired,
+  });
+
+  if (input.emailVerified) {
+    await updateAuth0User(created.auth0UserId, { emailVerified: true });
+  }
+
+  return { ...created, emailVerified: input.emailVerified };
+}
+
+/**
+ * Auth0's database connection requires a password on every user record even when, as
+ * here, the person will only ever authenticate via a social provider and will never be
+ * told this value. Two concatenated UUIDs comfortably clears Auth0's default
+ * password-strength policy without needing to inspect what that policy is.
+ */
+function generateUnusablePassword(): string {
+  return `${randomUUID()}${randomUUID()}`;
 }
