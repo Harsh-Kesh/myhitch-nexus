@@ -1,0 +1,6773 @@
+# MYHitch Nexus API — OpenAPI 3.1 specification
+# SRS deliverable DEL-4 (solution architecture, data model, API specification).
+# Generated from the mock-api service contract (src/lib/mock-api/index.ts, types.ts, hooks.ts).
+# Do not hand-edit structural sections without regenerating — see docs/DEVELOPMENT-PLAN.md §2 and §9 item 7.
+
+openapi: 3.1.0
+info:
+  title: MYHitch Nexus API
+  version: 0.1.0-draft
+  description: >-
+    REST API specification for MYHitch Nexus (SRS deliverable DEL-4: solution architecture, data model and API
+    specification).
+
+
+    This specification is derived directly from the frontend prototype's mock service contract at
+    `src/lib/mock-api/index.ts` — that file's own header states its ~96 typed async function signatures **are** the
+    contract the real backend must implement (see `docs/DEVELOPMENT-PLAN.md` §2, "Strangle the mock API"). Every
+    operation below traces to exactly one mock-api function, named in that operation's description as `Mock-API source`.
+
+
+    Status: **draft, pre-implementation**. Nothing behind this contract exists yet — no backend, persistence, media
+    pipeline or payment integration (see `docs/DEVELOPMENT-PLAN.md` §1). Endpoint shapes may still change as each domain
+    is migrated phase by phase (P1–P4 per the development plan); this document is the current best specification, not a
+    frozen contract.
+
+
+    Cross-references: functional requirement IDs (FR-x.x.x), acceptance criteria (AC-x), security requirements (SEC-x)
+    and data-model entities (DM-x) refer to `docs/SRS-TRACEABILITY.md`.
+  contact:
+    name: MYHitch Nexus Architecture
+servers:
+  - url: https://api.myhitchnexus.com.au/v1
+    description: Production (target)
+  - url: https://staging-api.myhitchnexus.com.au/v1
+    description: Staging (target)
+  - url: http://localhost:3000/api/v1
+    description: Local development (Next.js route handlers)
+security:
+  - bearerAuth: []
+tags:
+  - name: Discovery & Catalogue
+    description: Public homepage, search, catalogue browsing, channels and series (§6.1).
+  - name: Identity & Profiles
+    description: Registration, login, sessions, account/profile management, notifications (§6.2, §6.6.3).
+  - name: Media & Upload
+    description: Resumable upload, drafting, publishing, playlists (§6.3).
+  - name: Playback & Entitlements
+    description: Entitlement evaluation and watch-progress/resume (§6.4).
+  - name: Live
+    description: Live event scheduling, streaming, chat and polls (§6.5).
+  - name: Social & Engagement
+    description: Comments, ratings, likes, follows and watchlists (§6.6).
+  - name: Commerce & Payments
+    description: Purchases, rentals, subscriptions and the buyer-side commerce surface (§6.7).
+  - name: Advertising
+    description: Campaigns, creatives, leads and affiliate product links (§6.8).
+  - name: Analytics
+    description: Creator/business analytics and revenue reporting (§6.9).
+  - name: Admin & Moderation
+    description: Administration, moderation queue, audit log, case management, platform configuration (§6.10).
+paths:
+  /home/featured:
+    get:
+      operationId: getFeaturedContent
+      summary: Get the personalised homepage rails
+      description: >-
+        Returns the hero carousel and content rails for the homepage (FR-6.1.1): continue watching, live/upcoming,
+        films, followed channels, recommended, and per-vertical rails.
+
+
+        _Mock-API source: `getFeaturedContent`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: Homepage content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeaturedContent'
+      security: []
+  /videos:
+    get:
+      operationId: searchVideos
+      summary: Search and list published videos
+      description: >-
+        Advanced catalogue search with keyword, facet filters and pagination (FR-6.1.3, FR-6.1.4). Backed by a
+        Typesense/Elasticsearch index in the real implementation for typo tolerance and facet counts.
+
+
+        _Mock-API source: `searchVideos`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: Paginated, faceted search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      parameters:
+        - name: query
+          in: query
+          required: false
+          description: Free-text search across title, synopsis, tags, credits and channel name.
+          schema:
+            type: string
+        - name: contentTypes
+          in: query
+          required: false
+          description: Filter by content type(s).
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/ContentType'
+        - name: categoryIds
+          in: query
+          required: false
+          description: Filter by category id(s).
+          schema:
+            type: array
+            items:
+              type: string
+        - name: languages
+          in: query
+          required: false
+          description: Filter by language(s).
+          schema:
+            type: array
+            items:
+              type: string
+        - name: countries
+          in: query
+          required: false
+          description: Filter by country of origin.
+          schema:
+            type: array
+            items:
+              type: string
+        - name: accessModels
+          in: query
+          required: false
+          description: Filter by access model(s).
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/AccessModel'
+        - name: ageRatings
+          in: query
+          required: false
+          description: Filter by age rating(s).
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/AgeRating'
+        - name: minDurationSeconds
+          in: query
+          required: false
+          description: Minimum duration filter.
+          schema:
+            type: integer
+        - name: maxDurationSeconds
+          in: query
+          required: false
+          description: Maximum duration filter.
+          schema:
+            type: integer
+        - name: releaseYearFrom
+          in: query
+          required: false
+          description: Earliest release year.
+          schema:
+            type: integer
+        - name: releaseYearTo
+          in: query
+          required: false
+          description: Latest release year.
+          schema:
+            type: integer
+        - name: hasSubtitles
+          in: query
+          required: false
+          description: Only return videos with at least one subtitle track.
+          schema:
+            type: boolean
+        - name: freeOnly
+          in: query
+          required: false
+          description: Only return free or ad-supported videos.
+          schema:
+            type: boolean
+        - name: sort
+          in: query
+          required: false
+          description: Sort order.
+          schema:
+            type: string
+            enum:
+              - relevance
+              - popular
+              - newest
+              - rating
+              - duration
+        - name: channelId
+          in: query
+          required: false
+          description: Restrict results to one channel.
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          description: 1-based page number.
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: Results per page.
+          schema:
+            type: integer
+            default: 24
+      security: []
+    post:
+      operationId: publishDraft
+      summary: Create a video from a completed draft
+      description: >-
+        Submits the upload wizard's draft — metadata, rights, pricing and status — to create the content record.
+        **AC-3**: content that is sponsored, rated 18, or carries a content label is routed to the moderation queue
+        instead of publishing directly, and this gate must hold even for a direct API call, not only the UI wizard.
+
+
+        _Mock-API source: `publishDraft`._ Requires the 'creator', 'business' or 'producer' role.
+      tags:
+        - Media & Upload
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoDraft'
+  /videos/{id}:
+    get:
+      operationId: getVideo
+      summary: Get a video by id or slug
+      description: >-
+        Returns the full video-detail record (FR-6.1.5): synopsis, credits, ratings, language, subtitles and related
+        metadata.
+
+
+        _Mock-API source: `getVideo`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id or slug.
+          schema:
+            type: string
+      security: []
+    delete:
+      operationId: deleteVideo
+      summary: Delete a video
+      description: |-
+        Delete a video
+
+        _Mock-API source: `deleteVideo`._ Requires ownership of the video's channel or an admin role.
+      tags:
+        - Media & Upload
+      responses:
+        '204':
+          description: No content.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+  /videos/{id}/related:
+    get:
+      operationId: getRelatedVideos
+      summary: Get videos related to a given video
+      description: >-
+        Similarity-ranked related videos for the detail page's "related" rail (FR-6.1.5), scored by channel, content
+        type, shared categories/tags and popularity.
+
+
+        _Mock-API source: `getRelatedVideos`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of related videos to return.
+          schema:
+            type: integer
+            default: 12
+      security: []
+  /categories:
+    get:
+      operationId: getCategories
+      summary: List content categories
+      description: |-
+        Categories are platform configuration data (see /admin/config), not hardcoded — this proves that per FR-6.10.4.
+
+        _Mock-API source: `getCategories`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Category'
+      security: []
+  /categories/{slug}:
+    get:
+      operationId: getCategory
+      summary: Get a category by slug
+      description: |-
+        Get a category by slug
+
+        _Mock-API source: `getCategory`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: Category slug.
+          schema:
+            type: string
+      security: []
+  /channels/{id}:
+    get:
+      operationId: getChannel
+      summary: Get a channel by id or handle
+      description: |-
+        Channel page for creators, businesses, film studios, education, government and non-profit publishers (FR-6.1.6).
+
+        _Mock-API source: `getChannel`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Channel id or handle.
+          schema:
+            type: string
+      security: []
+    patch:
+      operationId: updateChannel
+      summary: Update a channel's profile
+      description: |-
+        Update a channel's profile
+
+        _Mock-API source: `updateChannel`._ Requires ownership of the channel (creator/business) or an admin role.
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Channel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Channel id or handle.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChannelUpdate'
+  /channels:
+    get:
+      operationId: getChannels
+      summary: List channels
+      description: |-
+        Backs the Creators directory (FR-6.1.2).
+
+        _Mock-API source: `getChannels`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Channel'
+      security: []
+  /channels/{id}/videos:
+    get:
+      operationId: getChannelVideos
+      summary: List a channel's videos
+      description: |-
+        List a channel's videos
+
+        _Mock-API source: `getChannelVideos`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+        - name: includeUnpublished
+          in: query
+          required: false
+          description: >-
+            Include draft/pending/scheduled videos. Requires ownership of the channel; ignored (treated as false)
+            otherwise.
+          schema:
+            type: boolean
+            default: false
+      security: []
+  /series:
+    get:
+      operationId: getSeries
+      summary: List series
+      description: |-
+        Series/season/episode groupings (FR-6.3.7).
+
+        _Mock-API source: `getSeries`._
+      tags:
+        - Discovery & Catalogue
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Series'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      parameters:
+        - name: channelId
+          in: query
+          required: false
+          description: Restrict to one channel's series.
+          schema:
+            type: string
+      security: []
+  /auth/register:
+    post:
+      operationId: register
+      summary: Register a new account
+      description: >-
+        Creates the account and role selection from the registration wizard (FR-6.2.2). Per DEC-6, this calls Auth0's
+        Authentication API server-side (headless Resource Owner Password Grant) — no hosted-login redirect ever reaches
+        the browser.
+
+
+        _Mock-API source: `register`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '201':
+          description: Account created; email/mobile verification is now required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      security: []
+  /auth/otp/verify:
+    post:
+      operationId: verifyOtp
+      summary: Verify an email/mobile OTP code
+      description: >-
+        Confirms the one-time code sent by our own notification service (never Auth0's mailer, per the Auth0 integration
+        standard) for FR-6.2.3 email/mobile verification.
+
+
+        _Mock-API source: `verifyOtp`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpVerificationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      security: []
+  /auth/login:
+    post:
+      operationId: login
+      summary: Sign in
+      description: >-
+        Verifies credentials against Auth0 server-side and issues Nexus's own session — the response is a Nexus session
+        token, not an Auth0 token (DEC-6).
+
+
+        _Mock-API source: `login`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: >-
+            Signed in; the session token is returned via an HttpOnly cookie or the Authorization header per the chosen
+            session strategy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      security: []
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Sign out
+      description: |-
+        Invalidates the current session.
+
+        _Mock-API source: `logout`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '204':
+          description: No content.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me:
+    get:
+      operationId: getCurrentUser
+      summary: Get the current account
+      description: |-
+        Get the current account
+
+        _Mock-API source: `getCurrentUser`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      operationId: updateUser
+      summary: Update the current account
+      description: >-
+        Profile management: name, country, language, notification preferences, parental controls, privacy settings
+        (FR-6.2.4).
+
+
+        _Mock-API source: `updateUser`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+  /me/active-profile:
+    post:
+      operationId: switchProfile
+      summary: Switch the active viewer profile
+      description: |-
+        Selects among the up-to-5 age-banded viewer profiles on the account (FR-6.2.6).
+
+        _Mock-API source: `switchProfile`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SwitchProfileRequest'
+  /me/active-role:
+    post:
+      operationId: setActiveRole
+      summary: Switch the active role context
+      description: >-
+        An account may hold multiple additive roles (SRS §4); this selects which one is active for the current session's
+        UI/permissions context.
+
+
+        _Mock-API source: `setActiveRole`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetActiveRoleRequest'
+  /me/request-country:
+    get:
+      operationId: getRequestCountry
+      summary: Get the simulated request country
+      description: >-
+        Development/QA-only endpoint used to exercise geo-restriction logic (FR-6.4.6). In production the country is
+        derived from the request (e.g. edge geo-IP), not read back from stored state.
+
+
+        _Mock-API source: `getRequestCountry`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestCountryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    put:
+      operationId: setRequestCountry
+      summary: Set the simulated request country
+      description: >-
+        Development/QA-only endpoint — see GET /me/request-country. Not present in the production surface once real
+        geo-IP resolution lands.
+
+
+        _Mock-API source: `setRequestCountry`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RequestCountryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetRequestCountryRequest'
+  /me/notifications:
+    get:
+      operationId: getNotifications
+      summary: List notifications
+      description: |-
+        New releases, live events, followed-channel activity, purchases and account activity (FR-6.6.3).
+
+        _Mock-API source: `getNotifications`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AppNotification'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: Mark one notification read
+      description: |-
+        Mark one notification read
+
+        _Mock-API source: `markNotificationRead`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '204':
+          description: No content.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Notification id.
+          schema:
+            type: string
+  /me/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      summary: Mark all notifications read
+      description: |-
+        Mark all notifications read
+
+        _Mock-API source: `markAllNotificationsRead`._
+      tags:
+        - Identity & Profiles
+      responses:
+        '204':
+          description: No content.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /uploads:
+    post:
+      operationId: createUploadSession
+      summary: Start a resumable upload session
+      description: >-
+        Begins a resumable direct-to-storage upload (FR-6.3.1). The real implementation issues a tus-protocol upload URL
+        against the media provider (Mux/Cloudflare); this session tracks progress for the wizard.
+
+
+        _Mock-API source: `createUploadSession`._
+      tags:
+        - Media & Upload
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadSessionRequest'
+  /uploads/{id}/chunks:
+    post:
+      operationId: advanceUpload
+      summary: Acknowledge the next uploaded chunk
+      description: >-
+        Advances the resumable transfer by one chunk, surfacing progress/failure state so the UI can pause, retry or
+        resume without restarting (FR-6.3.1). Not part of the tus protocol surface itself — represents the provider's
+        progress callback in the real system.
+
+
+        _Mock-API source: `advanceUpload`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Upload session id.
+          schema:
+            type: string
+  /uploads/{id}/pause:
+    post:
+      operationId: pauseUpload
+      summary: Pause an in-progress upload
+      description: |-
+        Pause an in-progress upload
+
+        _Mock-API source: `pauseUpload`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Upload session id.
+          schema:
+            type: string
+  /uploads/{id}/resume:
+    post:
+      operationId: resumeUpload
+      summary: Resume a paused or failed upload
+      description: |-
+        Resumes from the last completed chunk rather than restarting the transfer (FR-6.3.1).
+
+        _Mock-API source: `resumeUpload`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Upload session id.
+          schema:
+            type: string
+  /uploads/{id}:
+    get:
+      operationId: getUploadSession
+      summary: Get an upload session's status
+      description: |-
+        Get an upload session's status
+
+        _Mock-API source: `getUploadSession`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Upload session id.
+          schema:
+            type: string
+  /uploads/{id}/thumbnail-suggestions:
+    get:
+      operationId: getThumbnailSuggestions
+      summary: Get automated thumbnail suggestions
+      description: |-
+        Provider frame-extraction suggestions with confidence scores, alongside custom upload (FR-6.3.4).
+
+        _Mock-API source: `getThumbnailSuggestions`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ThumbnailSuggestion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Upload session id.
+          schema:
+            type: string
+  /videos/{id}/status:
+    patch:
+      operationId: updateVideoStatus
+      summary: Change a video's publication status
+      description: >-
+        Draft, private, unlisted, scheduled, published or archived (FR-6.3.6). **AC-3**: transitioning to 'published'
+        must re-run the same server-side completeness/rights gate as initial publish.
+
+
+        _Mock-API source: `updateVideoStatus`._ Requires ownership of the video's channel or an admin/moderator role.
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVideoStatusRequest'
+  /videos/bulk-import/validate:
+    post:
+      operationId: validateBulkImport
+      summary: Validate a bulk metadata import batch
+      description: >-
+        Row-level validation for CSV/XML bulk import, for approved enterprise/distributor accounts (FR-6.3.9). Returns a
+        per-row ready/warning/error report before any row is committed.
+
+
+        _Mock-API source: `validateBulkImport`._ Requires an approved enterprise/distributor account.
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BulkImportRow'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: The parsed import batch (CSV/XML) to validate. Shape mirrors the distributor bulk-import template.
+              additionalProperties: true
+  /channels/{channelId}/playlists:
+    get:
+      operationId: getPlaylists
+      summary: List a channel's playlists
+      description: |-
+        List a channel's playlists
+
+        _Mock-API source: `getPlaylists`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Playlist'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /playlists/{id}:
+    get:
+      operationId: getPlaylist
+      summary: Get a playlist
+      description: |-
+        Get a playlist
+
+        _Mock-API source: `getPlaylist`._
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playlist'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Playlist id.
+          schema:
+            type: string
+    patch:
+      operationId: updatePlaylist
+      summary: Update a playlist
+      description: |-
+        Update a playlist
+
+        _Mock-API source: `updatePlaylist`._ Requires ownership of the playlist's channel.
+      tags:
+        - Media & Upload
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playlist'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Playlist id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePlaylistRequest'
+  /playlists:
+    post:
+      operationId: createPlaylist
+      summary: Create a playlist
+      description: |-
+        Create a playlist
+
+        _Mock-API source: `createPlaylist`._ Requires ownership of the target channel.
+      tags:
+        - Media & Upload
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playlist'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaylistRequest'
+  /videos/{id}/entitlement:
+    get:
+      operationId: getEntitlement
+      summary: Evaluate playback entitlement for a video
+      description: >-
+        The single playback-authorisation check (DM-7): evaluates rights territory, release window, age rating/parental
+        controls and purchase/subscription state before any signed playback URL is issued. **FR-6.4.6 / no signed URL is
+        ever returned without a passing entitlement check.**
+
+
+        _Mock-API source: `getEntitlement`._
+      tags:
+        - Playback & Entitlements
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entitlement'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+  /videos/{id}/watch-progress:
+    get:
+      operationId: getWatchProgress
+      summary: Get watch progress for a video
+      description: |-
+        Get watch progress for a video
+
+        _Mock-API source: `getWatchProgress`._
+      tags:
+        - Playback & Entitlements
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchProgress'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+    put:
+      operationId: saveWatchProgress
+      summary: Save watch progress for a video
+      description: |-
+        Called on a heartbeat (~every 10s) so resume-across-devices works (FR-6.4.4).
+
+        _Mock-API source: `saveWatchProgress`._
+      tags:
+        - Playback & Entitlements
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchProgress'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveWatchProgressRequest'
+  /me/continue-watching:
+    get:
+      operationId: getContinueWatching
+      summary: List in-progress videos to continue watching
+      description: |-
+        List in-progress videos to continue watching
+
+        _Mock-API source: `getContinueWatching`._
+      tags:
+        - Playback & Entitlements
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContinueWatchingEntry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /live-events:
+    get:
+      operationId: getLiveEvents
+      summary: List live events
+      description: |-
+        List live events
+
+        _Mock-API source: `getLiveEvents`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiveEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by live-event status.
+          schema:
+            $ref: '#/components/schemas/LiveStatus'
+      security: []
+    post:
+      operationId: createLiveEvent
+      summary: Schedule a live event
+      description: >-
+        Title, description, time zone, poster, access rules and pricing (FR-6.5.1). The server assigns the stream key
+        and ingest URL — see FR-6.5.2 for key handling.
+
+
+        _Mock-API source: `createLiveEvent`._ Requires ownership of the channel.
+      tags:
+        - Live
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLiveEventRequest'
+  /live-events/{id}:
+    get:
+      operationId: getLiveEvent
+      summary: Get a live event
+      description: |-
+        Get a live event
+
+        _Mock-API source: `getLiveEvent`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveEvent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+      security: []
+  /channels/{channelId}/live-events:
+    get:
+      operationId: getChannelLiveEvents
+      summary: List a channel's live events
+      description: |-
+        List a channel's live events
+
+        _Mock-API source: `getChannelLiveEvents`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiveEvent'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+      security: []
+  /live-events/{id}/stream-key/regenerate:
+    post:
+      operationId: regenerateStreamKey
+      summary: Rotate a live event's stream key
+      description: |-
+        Stream keys are stored encrypted and never logged (FR-6.5.2).
+
+        _Mock-API source: `regenerateStreamKey`._ Requires ownership of the channel.
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  streamKey:
+                    type: string
+                required:
+                  - streamKey
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+  /live-events/{id}/replay/publish:
+    post:
+      operationId: publishReplay
+      summary: Publish the replay of an ended live event
+      description: |-
+        Auto-recorded stream becomes a VOD asset in the channel archive (FR-6.5.5).
+
+        _Mock-API source: `publishReplay`._ Requires ownership of the channel.
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+  /live-events/{id}/end:
+    post:
+      operationId: endLiveEvent
+      summary: End a live broadcast
+      description: |-
+        End a live broadcast
+
+        _Mock-API source: `endLiveEvent`._ Requires ownership of the channel.
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveEvent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+  /live-events/{id}/chat:
+    get:
+      operationId: getChatMessages
+      summary: List chat messages for a live event
+      description: |-
+        List chat messages for a live event
+
+        _Mock-API source: `getChatMessages`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+    post:
+      operationId: sendChatMessage
+      summary: Send a live chat message
+      description: |-
+        Live chat with moderation, slow mode and blocked-word rules (FR-6.5.4).
+
+        _Mock-API source: `sendChatMessage`._
+      tags:
+        - Live
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendChatMessageRequest'
+  /live-chat-messages/{messageId}/moderate:
+    post:
+      operationId: moderateChatMessage
+      summary: Moderate a live chat message
+      description: |-
+        Moderate a live chat message
+
+        _Mock-API source: `moderateChatMessage`._ Requires a moderator role on the hosting channel or an admin role.
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          description: Chat message id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerateChatMessageRequest'
+  /live-events/{id}/polls:
+    get:
+      operationId: getPolls
+      summary: List polls for a live event
+      description: |-
+        List polls for a live event
+
+        _Mock-API source: `getPolls`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Poll'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Live event id.
+          schema:
+            type: string
+  /polls/{pollId}/vote:
+    post:
+      operationId: votePoll
+      summary: Vote in a live poll
+      description: |-
+        Vote in a live poll
+
+        _Mock-API source: `votePoll`._
+      tags:
+        - Live
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Poll'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: pollId
+          in: path
+          required: true
+          description: Poll id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VotePollRequest'
+  /videos/{id}/comments:
+    get:
+      operationId: getComments
+      summary: List comments on a video
+      description: |-
+        List comments on a video
+
+        _Mock-API source: `getComments`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      security: []
+    post:
+      operationId: postComment
+      summary: Post a comment on a video
+      description: |-
+        Post a comment on a video
+
+        _Mock-API source: `postComment`._
+      tags:
+        - Social & Engagement
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCommentRequest'
+  /comments/{commentId}/replies:
+    post:
+      operationId: replyToComment
+      summary: Reply to a comment
+      description: |-
+        Reply to a comment
+
+        _Mock-API source: `replyToComment`._
+      tags:
+        - Social & Engagement
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          description: Parent comment id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostCommentRequest'
+  /comments/{commentId}/moderate:
+    post:
+      operationId: moderateComment
+      summary: Moderate a comment
+      description: |-
+        Publish, hold, remove, pin or heart — the channel-owner comment controls from FR-6.6.2.
+
+        _Mock-API source: `moderateComment`._ Requires ownership of the hosting channel or an admin/moderator role.
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: commentId
+          in: path
+          required: true
+          description: Comment id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerateCommentRequest'
+  /channels/{channelId}/comments/moderation-queue:
+    get:
+      operationId: getModerationComments
+      summary: List comments awaiting a channel's moderation
+      description: |-
+        List comments awaiting a channel's moderation
+
+        _Mock-API source: `getModerationComments`._ Requires ownership of the channel.
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /videos/{id}/rating:
+    put:
+      operationId: rateVideo
+      summary: Rate a video
+      description: |-
+        Rate a video
+
+        _Mock-API source: `rateVideo`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RateVideoResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateVideoRequest'
+  /videos/{id}/rating/me:
+    get:
+      operationId: getMyRating
+      summary: Get the current user's rating for a video
+      description: |-
+        Get the current user's rating for a video
+
+        _Mock-API source: `getMyRating`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rating'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+  /videos/{id}/like:
+    post:
+      operationId: likeVideo
+      summary: Like a video
+      description: |-
+        Like a video
+
+        _Mock-API source: `likeVideo`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+  /me/watchlist:
+    get:
+      operationId: getWatchlist
+      summary: Get the current user's watchlist
+      description: |-
+        Get the current user's watchlist
+
+        _Mock-API source: `getWatchlist`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Video'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/watchlist/{videoId}/toggle:
+    post:
+      operationId: toggleWatchlist
+      summary: Toggle a video's watchlist membership
+      description: |-
+        Toggle a video's watchlist membership
+
+        _Mock-API source: `toggleWatchlist`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WatchlistStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+  /channels/{id}/follow:
+    post:
+      operationId: toggleFollow
+      summary: Toggle following a channel
+      description: |-
+        Toggle following a channel
+
+        _Mock-API source: `toggleFollow`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /channels/{id}/follow-status:
+    get:
+      operationId: isFollowing
+      summary: Check whether the current user follows a channel
+      description: |-
+        Check whether the current user follows a channel
+
+        _Mock-API source: `isFollowing`._
+      tags:
+        - Social & Engagement
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /videos/{id}/purchases:
+    post:
+      operationId: purchaseAccess
+      summary: Purchase, rent or pay-per-view a video
+      description: >-
+        Creates a Stripe Checkout session server-side in the real implementation; the entitlement is granted only once
+        Stripe's webhook confirms payment. **AC-5: this must be implemented idempotently (an idempotency key per
+        checkout attempt) and a failed, timed-out or duplicate-webhook payment must never grant access.**
+
+
+        _Mock-API source: `purchaseAccess`._
+      tags:
+        - Commerce & Payments
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Video id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseRequest'
+  /subscriptions:
+    post:
+      operationId: startSubscription
+      summary: Start a platform or channel-membership subscription
+      description: >-
+        Stripe Billing subscription creation (MON-5/MON-6). Omit `channelId` for the platform plan; supply it for a
+        channel membership. Subject to the same AC-5 idempotency requirement as one-off purchases.
+
+
+        _Mock-API source: `startSubscription`._
+      tags:
+        - Commerce & Payments
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartSubscriptionRequest'
+  /me/purchases:
+    get:
+      operationId: getPurchases
+      summary: List the current user's purchases
+      description: |-
+        List the current user's purchases
+
+        _Mock-API source: `getPurchases`._
+      tags:
+        - Commerce & Payments
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PurchaseRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/subscriptions:
+    get:
+      operationId: getSubscriptions
+      summary: List the current user's subscriptions
+      description: |-
+        List the current user's subscriptions
+
+        _Mock-API source: `getSubscriptions`._
+      tags:
+        - Commerce & Payments
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/subscriptions/{id}/cancel:
+    post:
+      operationId: cancelSubscription
+      summary: Cancel a subscription
+      description: |-
+        Cancel a subscription
+
+        _Mock-API source: `cancelSubscription`._
+      tags:
+        - Commerce & Payments
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Subscription id.
+          schema:
+            type: string
+  /campaigns:
+    get:
+      operationId: getCampaigns
+      summary: List advertising campaigns
+      description: |-
+        List advertising campaigns
+
+        _Mock-API source: `getCampaigns`._ Advertisers see only their own campaigns; admins may see all.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: advertiserId
+          in: query
+          required: false
+          description: Restrict to one advertiser.
+          schema:
+            type: string
+    post:
+      operationId: createCampaign
+      summary: Create an advertising campaign
+      description: >-
+        Advertiser onboarding step: budget, dates, targeting and creative upload (FR-6.8.1). Created in 'pending' status
+        and automatically queued at /admin/moderation/queue — **FR-6.8.6: campaigns and their creatives cannot deliver
+        without administrative approval.**
+
+
+        _Mock-API source: `createCampaign`._ Requires the 'advertiser' or 'business' role.
+      tags:
+        - Advertising
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+  /campaigns/{id}:
+    get:
+      operationId: getCampaign
+      summary: Get a campaign
+      description: |-
+        Get a campaign
+
+        _Mock-API source: `getCampaign`._ Requires ownership of the campaign or an admin role.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Campaign id.
+          schema:
+            type: string
+  /campaigns/{id}/status:
+    patch:
+      operationId: updateCampaignStatus
+      summary: Change a campaign's status
+      description: >-
+        Change a campaign's status
+
+
+        _Mock-API source: `updateCampaignStatus`._ Requires an admin role for approval decisions; the owning advertiser
+        may pause/resume.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Campaign id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCampaignStatusRequest'
+  /channels/{channelId}/leads:
+    get:
+      operationId: getLeads
+      summary: List commercial leads for a channel
+      description: |-
+        List commercial leads for a channel
+
+        _Mock-API source: `getLeads`._ Requires ownership of the channel.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Lead'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /leads/{id}/status:
+    patch:
+      operationId: updateLeadStatus
+      summary: Update a lead's status
+      description: |-
+        Update a lead's status
+
+        _Mock-API source: `updateLeadStatus`._ Requires ownership of the lead's channel.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lead'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Lead id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLeadStatusRequest'
+  /channels/{channelId}/product-links:
+    get:
+      operationId: getProductLinks
+      summary: List a channel's affiliate product links
+      description: |-
+        'Shop this video' commerce links, optionally cross-linked to MYHitch Mart (MON-8, INT-1).
+
+        _Mock-API source: `getProductLinks`._
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductLink'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /product-links:
+    post:
+      operationId: createProductLink
+      summary: Create an affiliate product link
+      description: |-
+        Create an affiliate product link
+
+        _Mock-API source: `createProductLink`._ Requires ownership of the target channel.
+      tags:
+        - Advertising
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductLink'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProductLinkRequest'
+  /campaigns/{id}/timeseries:
+    get:
+      operationId: getCampaignSeries
+      summary: Get a campaign's daily performance time series
+      description: |-
+        Impressions, completed views, clicks, conversions and spend by day (FR-6.8.5).
+
+        _Mock-API source: `getCampaignSeries`._ Requires ownership of the campaign or an admin role.
+      tags:
+        - Advertising
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CampaignTimeseriesPoint'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Campaign id.
+          schema:
+            type: string
+        - name: days
+          in: query
+          required: false
+          description: Number of trailing days to return.
+          schema:
+            type: integer
+            default: 28
+  /channels/{channelId}/analytics:
+    get:
+      operationId: getCreatorAnalytics
+      summary: Get creator/business analytics for a channel
+      description: >-
+        Views, unique viewers, watch time, completion rate, retention curve, traffic sources and per-video revenue
+        (FR-6.9.1, FR-6.9.2). **FR-6.9.6: the real implementation must suppress cells below a minimum reporting
+        threshold and never expose per-viewer identity.**
+
+
+        _Mock-API source: `getCreatorAnalytics`._ Requires ownership of the channel or an admin role.
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorAnalytics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+        - name: range
+          in: query
+          required: false
+          description: Reporting window.
+          schema:
+            $ref: '#/components/schemas/AnalyticsRange'
+  /channels/{channelId}/revenue-summary:
+    get:
+      operationId: getRevenueSummary
+      summary: Get a channel's revenue and payout summary
+      description: >-
+        Available/pending/lifetime balances, revenue-by-stream breakdown and the transaction ledger feeding creator
+        earnings statements (MON-10).
+
+
+        _Mock-API source: `getRevenueSummary`._ Requires ownership of the channel or a finance-admin role.
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          description: Channel id.
+          schema:
+            type: string
+  /admin/summary:
+    get:
+      operationId: getAdminSummary
+      summary: Get the admin dashboard summary
+      description: >-
+        Pending content, reported content, copyright claims, live incidents, verification queue, campaigns awaiting
+        approval, revenue and payouts due (FR-6.10.1).
+
+
+        _Mock-API source: `getAdminSummary`._ Requires a moderator, finance-admin or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDashboardSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/moderation/queue:
+    get:
+      operationId: getModerationQueue
+      summary: List the moderation queue
+      description: |-
+        List the moderation queue
+
+        _Mock-API source: `getModerationQueue`._ Requires a moderator or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModerationItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: queue
+          in: query
+          required: false
+          description: Filter to one sub-queue.
+          schema:
+            type: string
+            enum:
+              - pending-review
+              - reported
+              - copyright
+              - live-incident
+              - verification
+  /admin/moderation/queue/{itemId}/action:
+    post:
+      operationId: actionModerationItem
+      summary: Apply a moderation action to a queue item
+      description: >-
+        Approve, reject, request changes, restrict, demonetise, geo-block, age-restrict, suspend or remove (FR-6.10.2).
+        Every application is written to the append-only audit log (FR-6.10.5, SEC-9) and propagated to the underlying
+        content/campaign/organisation/comment record.
+
+
+        _Mock-API source: `actionModerationItem`._ Requires a moderator or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationActionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          description: Moderation queue item id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActionModerationItemRequest'
+  /admin/audit-log:
+    get:
+      operationId: getAuditLog
+      summary: Search the audit log
+      description: >-
+        Append-only, tamper-evident trail of privileged actions (SEC-9, FR-6.10.5).
+
+
+        _Mock-API source: `getAuditLog`._ Requires a super-admin role (or a scoped admin role viewing its own action
+        history).
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLogEntry'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: actor
+          in: query
+          required: false
+          description: Filter by actor name.
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          description: Filter by severity.
+          schema:
+            type: string
+            enum:
+              - info
+              - notice
+              - warning
+              - critical
+        - name: targetType
+          in: query
+          required: false
+          description: Filter by target type.
+          schema:
+            type: string
+        - name: query
+          in: query
+          required: false
+          description: Free-text search across action, actor, reason and target id.
+          schema:
+            type: string
+  /admin/users:
+    get:
+      operationId: getAdminUsers
+      summary: List users for administration
+      description: |-
+        List users for administration
+
+        _Mock-API source: `getAdminUsers`._ Requires a super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminUserRow'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/users/{userId}/roles:
+    patch:
+      operationId: updateUserRole
+      summary: Update a user's roles
+      description: >-
+        Update a user's roles
+
+
+        _Mock-API source: `updateUserRole`._ Requires a super-admin role. Role grants require a reason (SEC-1,
+        FR-6.10.3).
+      tags:
+        - Admin & Moderation
+      responses:
+        '204':
+          description: No content.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+  /admin/users/{userId}/status:
+    patch:
+      operationId: updateUserStatus
+      summary: Update a user's account status
+      description: |-
+        Active, suspended, pending or closed (FR-6.10.3).
+
+        _Mock-API source: `updateUserStatus`._ Requires a super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '204':
+          description: No content.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: User id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+  /admin/organisations:
+    get:
+      operationId: getOrganisations
+      summary: List organisations pending or completed verification
+      description: |-
+        Business/organisation verification records with document and timeline state (FR-6.2.5).
+
+        _Mock-API source: `getOrganisations`._ Requires a moderator or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organisation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/organisations/{orgId}/status:
+    patch:
+      operationId: updateOrganisationStatus
+      summary: Decide an organisation's verification status
+      description: |-
+        Decide an organisation's verification status
+
+        _Mock-API source: `updateOrganisationStatus`._ Requires a moderator or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organisation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: orgId
+          in: path
+          required: true
+          description: Organisation id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrganisationStatusRequest'
+  /admin/cases:
+    get:
+      operationId: getCases
+      summary: List case-management cases
+      description: |-
+        Legal, safety, payment and copyright escalations (FR-6.10.6).
+
+        _Mock-API source: `getCases`._ Requires a moderator, finance-admin or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminCase'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/cases/{caseId}/notes:
+    post:
+      operationId: addCaseNote
+      summary: Add a note to a case
+      description: |-
+        A 'resolution' note closes the case; an 'escalation' note raises its status (FR-6.10.6).
+
+        _Mock-API source: `addCaseNote`._ Requires a moderator, finance-admin or super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminCase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      parameters:
+        - name: caseId
+          in: path
+          required: true
+          description: Case id.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCaseNoteRequest'
+  /admin/config:
+    get:
+      operationId: getPlatformConfig
+      summary: Get all platform configuration tables
+      description: |-
+        Categories, content labels, pricing rules, commissions, taxes, currencies and payout rules (FR-6.10.4).
+
+        _Mock-API source: `getPlatformConfig`._ Requires a super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformConfigTables'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/config/categories:
+    post:
+      operationId: addCategory
+      summary: Add a content category
+      description: |-
+        Add a content category
+
+        _Mock-API source: `addCategory`._ Requires a super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '201':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Category'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCategoryRequest'
+  /admin/config/{table}:
+    put:
+      operationId: updateConfigTable
+      summary: Replace the rows of one platform-configuration table
+      description: |-
+        Every change is versioned with an effective date and written to the audit log (FR-6.10.4).
+
+        _Mock-API source: `updateConfigTable`._ Requires a super-admin role.
+      tags:
+        - Admin & Moderation
+      responses:
+        '200':
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformConfigTables'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+      parameters:
+        - name: table
+          in: path
+          required: true
+          description: Configuration table name.
+          schema:
+            type: string
+            enum:
+              - categories
+              - contentLabels
+              - pricingRules
+              - commissions
+              - taxes
+              - currencies
+              - payoutRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConfigTableRequest'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: >-
+        Nexus's own session token, issued after our backend verifies credentials against Auth0 server-side (Resource
+        Owner Password Grant) or verifies a Google/Apple ID token directly against that provider's JWKS. This is
+        deliberately **not** an Auth0-issued access/id token: per `docs/DEVELOPMENT-PLAN.md`'s Auth0 integration
+        standard (DEC-6), Auth0 is called only for credential verification and MFA — no `auth0.com` URL, hosted-login
+        redirect, or Auth0 token ever reaches the browser. The bearer token here is Nexus's own session, carried as an
+        HttpOnly cookie or an Authorization header depending on client type.
+  responses:
+    BadRequest:
+      description: The request was malformed or failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: No valid session token was supplied.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: The authenticated user is not permitted to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    ContentType:
+      type: string
+      description: The 11-type content taxonomy driving discovery, IA and category rules (SRS §5, FR-6.1.1).
+      enum:
+        - commercial
+        - film
+        - entertainment
+        - education
+        - news
+        - documentary
+        - live
+        - tourism
+        - government
+        - nonprofit
+        - user-generated
+    ContentStatus:
+      type: string
+      description: >-
+        Publication state machine for a content record (FR-6.3.6). AC-3 requires the transition into 'published' to be
+        gated server-side.
+      enum:
+        - draft
+        - pending
+        - published
+        - scheduled
+        - private
+        - unlisted
+        - restricted
+        - rejected
+        - archived
+    AccessModel:
+      type: string
+      description: Monetisation model(s) a video can be offered under (§6.7).
+      enum:
+        - free
+        - ad-supported
+        - rent
+        - buy
+        - subscription
+        - ppv
+        - membership
+    AgeRating:
+      type: string
+      description: UK-style age classification.
+      enum:
+        - U
+        - PG
+        - '12'
+        - '15'
+        - '18'
+    ChannelKind:
+      type: string
+      description: Determines badge and publishing capabilities for a channel (FR-6.1.6).
+      enum:
+        - creator
+        - business
+        - film-studio
+        - education
+        - government
+        - nonprofit
+        - news
+    UserRole:
+      type: string
+      description: >-
+        Additive account roles (SRS §4 / ROLE-1..11). A user's `roles` array may hold more than one; `activeRole`
+        selects the current context.
+      enum:
+        - viewer
+        - creator
+        - business
+        - advertiser
+        - producer
+        - education
+        - organisation
+        - admin
+    LiveStatus:
+      type: string
+      enum:
+        - upcoming
+        - live
+        - ended
+        - replay
+        - cancelled
+    LiveAccessType:
+      type: string
+      description: Access mode for a live event (FR-6.5.3).
+      enum:
+        - public
+        - private
+        - ticketed
+        - subscriber-only
+        - invitation-only
+    CampaignStatus:
+      type: string
+      enum:
+        - draft
+        - pending
+        - active
+        - paused
+        - completed
+        - rejected
+    ModerationAction:
+      type: string
+      description: Single moderation-action vocabulary applied across content, comments, channels and campaigns (FR-6.10.2).
+      enum:
+        - approve
+        - reject
+        - request-changes
+        - restrict
+        - demonetise
+        - geo-block
+        - age-restrict
+        - suspend
+        - remove
+    EntitlementReason:
+      type: string
+      enum:
+        - free
+        - ad-supported
+        - purchased
+        - rented
+        - subscription
+        - membership
+        - ticket
+        - owner
+        - preview
+        - none
+    PlaybackBlockReason:
+      type: string
+      enum:
+        - entitlement-required
+        - geo-restricted
+        - preview-limit
+        - age-gate
+        - unavailable
+    NotificationEvent:
+      type: string
+      enum:
+        - new-upload
+        - live-starting
+        - reply
+        - mention
+        - purchase-receipt
+        - rental-expiring
+        - payout
+        - policy
+    AnalyticsRange:
+      type: string
+      enum:
+        - 7d
+        - 28d
+        - 90d
+        - 365d
+    CurrencyCode:
+      type: string
+      enum:
+        - GBP
+        - USD
+        - EUR
+        - LKR
+    UploadPhase:
+      type: string
+      enum:
+        - idle
+        - uploading
+        - paused
+        - failed
+        - processing
+        - complete
+    Error:
+      type: object
+      description: Standard error envelope returned for every non-2xx response.
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code, e.g. NOT_FOUND, VALIDATION_FAILED.
+            message:
+              type: string
+              description: Human-readable explanation.
+            details:
+              type: object
+              additionalProperties: true
+              description: Optional field-level validation errors or extra context.
+          required:
+            - code
+            - message
+      required:
+        - error
+    Money:
+      type: object
+      description: Monetary amount in minor units (pence/cents) so nothing hits float rounding.
+      properties:
+        amount:
+          type: integer
+          description: Amount in minor units.
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+      required:
+        - amount
+        - currency
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        contentType:
+          $ref: '#/components/schemas/ContentType'
+        featured:
+          type: boolean
+          description: Configurable from /admin/settings — categories are data, not code.
+        videoCount:
+          type: integer
+        accentToken:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+            - 6
+        imageUrl:
+          type: string
+          format: uri
+      required:
+        - id
+        - slug
+        - name
+        - description
+        - contentType
+        - featured
+        - videoCount
+        - accentToken
+    SubtitleTrack:
+      type: object
+      properties:
+        id:
+          type: string
+        language:
+          type: string
+        languageCode:
+          type: string
+        kind:
+          type: string
+          enum:
+            - subtitles
+            - captions
+            - sdh
+            - descriptions
+        autoGenerated:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - ready
+            - generating
+            - failed
+      required:
+        - id
+        - language
+        - languageCode
+        - kind
+        - status
+    AudioTrack:
+      type: object
+      properties:
+        id:
+          type: string
+        language:
+          type: string
+        languageCode:
+          type: string
+        kind:
+          type: string
+          enum:
+            - original
+            - dubbed
+            - audio-description
+            - commentary
+      required:
+        - id
+        - language
+        - languageCode
+        - kind
+    QualityLevel:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        height:
+          type: integer
+        bitrateKbps:
+          type: integer
+      required:
+        - id
+        - label
+        - height
+        - bitrateKbps
+    CreditEntry:
+      type: object
+      properties:
+        role:
+          type: string
+        name:
+          type: string
+        character:
+          type: string
+      required:
+        - role
+        - name
+    AffiliateCommerceLink:
+      type: object
+      description: A 'shop this video' affiliate link (MON-8), optionally cross-linked to a MYHitch Mart product (INT-1).
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        productName:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        martProductId:
+          type: string
+          description: MYHitch Mart catalogue reference, if cross-linked.
+        timestampSeconds:
+          type: integer
+      required:
+        - id
+        - label
+        - productName
+        - price
+    VideoPricing:
+      type: object
+      properties:
+        accessModels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessModel'
+        rentPrice:
+          $ref: '#/components/schemas/Money'
+        buyPrice:
+          $ref: '#/components/schemas/Money'
+        ppvPrice:
+          $ref: '#/components/schemas/Money'
+        rentalWindowHours:
+          type: integer
+        membershipTier:
+          type: string
+        sponsored:
+          type: boolean
+          description: 'MON-7: mandatory non-dismissible disclosure when true.'
+        sponsorName:
+          type: string
+        affiliateLinks:
+          type: array
+          items:
+            $ref: '#/components/schemas/AffiliateCommerceLink'
+      required:
+        - accessModels
+    VideoRights:
+      type: object
+      description: >-
+        Rights declaration gating publication (FR-6.3.8, DM-6). AC-3 requires this to be complete before a video can
+        publish.
+      properties:
+        declaredOwner:
+          type: string
+        ownershipConfirmed:
+          type: boolean
+        licenceStart:
+          type: string
+          format: date-time
+        licenceEnd:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        permittedCountries:
+          type: array
+          items:
+            type: string
+          description: ISO-3166 alpha-2. Empty array means worldwide.
+        blockedCountries:
+          type: array
+          items:
+            type: string
+        ageRating:
+          $ref: '#/components/schemas/AgeRating'
+        contentLabels:
+          type: array
+          items:
+            type: string
+      required:
+        - declaredOwner
+        - ownershipConfirmed
+        - licenceStart
+        - licenceEnd
+        - permittedCountries
+        - blockedCountries
+        - ageRating
+        - contentLabels
+    Video:
+      type: object
+      description: A content record (DM-5) — the editorial/catalogue view of a piece of video content.
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        title:
+          type: string
+        synopsis:
+          type: string
+        channelId:
+          type: string
+        contentType:
+          $ref: '#/components/schemas/ContentType'
+        categoryIds:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        status:
+          $ref: '#/components/schemas/ContentStatus'
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+        heroUrl:
+          type: string
+          format: uri
+        durationSeconds:
+          type: integer
+        releaseDate:
+          type: string
+          format: date
+        publishedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        scheduledFor:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        language:
+          type: string
+        languageCode:
+          type: string
+        country:
+          type: string
+        productionCompany:
+          type: string
+        credits:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditEntry'
+        subtitles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubtitleTrack'
+        audioTracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/AudioTrack'
+        qualities:
+          type: array
+          items:
+            $ref: '#/components/schemas/QualityLevel'
+        hasAudioDescription:
+          type: boolean
+        pricing:
+          $ref: '#/components/schemas/VideoPricing'
+        rights:
+          $ref: '#/components/schemas/VideoRights'
+        views:
+          type: integer
+        uniqueViewers:
+          type: integer
+        likes:
+          type: integer
+        ratingAverage:
+          type: number
+        ratingCount:
+          type: integer
+        commentCount:
+          type: integer
+        watchTimeSeconds:
+          type: integer
+        completionRate:
+          type: number
+        seriesId:
+          type: string
+        seasonNumber:
+          type: integer
+        episodeNumber:
+          type: integer
+        trailerAvailable:
+          type: boolean
+        sampleSrc:
+          type: string
+          description: Signed playback URL once entitled; short-lived (FR-6.4.6).
+        watermarkEnabled:
+          type: boolean
+      required:
+        - id
+        - slug
+        - title
+        - synopsis
+        - channelId
+        - contentType
+        - categoryIds
+        - tags
+        - status
+        - posterGradient
+        - durationSeconds
+        - releaseDate
+        - publishedAt
+        - scheduledFor
+        - language
+        - languageCode
+        - country
+        - credits
+        - subtitles
+        - audioTracks
+        - qualities
+        - hasAudioDescription
+        - pricing
+        - rights
+        - views
+        - uniqueViewers
+        - likes
+        - ratingAverage
+        - ratingCount
+        - commentCount
+        - watchTimeSeconds
+        - completionRate
+        - trailerAvailable
+        - sampleSrc
+        - watermarkEnabled
+    Channel:
+      type: object
+      properties:
+        id:
+          type: string
+        handle:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ChannelKind'
+        tagline:
+          type: string
+        about:
+          type: string
+        verified:
+          type: boolean
+        country:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string
+        followers:
+          type: integer
+        totalViews:
+          type: integer
+        videoCount:
+          type: integer
+        joinedAt:
+          type: string
+          format: date-time
+        bannerGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarUrl:
+          type: string
+          format: uri
+        bannerUrl:
+          type: string
+          format: uri
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              href:
+                type: string
+            required:
+              - label
+              - href
+        verificationStatus:
+          type: string
+          enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+        contactEmail:
+          type: string
+          format: email
+      required:
+        - id
+        - handle
+        - name
+        - kind
+        - tagline
+        - about
+        - verified
+        - country
+        - languages
+        - followers
+        - totalViews
+        - videoCount
+        - joinedAt
+        - bannerGradient
+        - avatarGradient
+        - links
+        - verificationStatus
+        - contactEmail
+    Series:
+      type: object
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        seasons:
+          type: array
+          items:
+            type: object
+            properties:
+              number:
+                type: integer
+              title:
+                type: string
+              episodeIds:
+                type: array
+                items:
+                  type: string
+            required:
+              - number
+              - title
+              - episodeIds
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+      required:
+        - id
+        - channelId
+        - title
+        - description
+        - seasons
+        - posterGradient
+    Playlist:
+      type: object
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - unlisted
+            - private
+        videoIds:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+      required:
+        - id
+        - channelId
+        - title
+        - description
+        - visibility
+        - videoIds
+        - updatedAt
+        - posterGradient
+    CommentReply:
+      type: object
+      description: A reply to a comment. Same shape as Comment minus `videoId` and nested `replies`.
+      properties:
+        id:
+          type: string
+        authorName:
+          type: string
+        authorHandle:
+          type: string
+        authorGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        likes:
+          type: integer
+        pinned:
+          type: boolean
+        heartedByCreator:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - published
+            - held
+            - removed
+        heldReason:
+          type: string
+      required:
+        - id
+        - authorName
+        - authorHandle
+        - authorGradient
+        - body
+        - createdAt
+        - likes
+        - pinned
+        - heartedByCreator
+        - status
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        authorName:
+          type: string
+        authorHandle:
+          type: string
+        authorGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        likes:
+          type: integer
+        pinned:
+          type: boolean
+        heartedByCreator:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - published
+            - held
+            - removed
+        heldReason:
+          type: string
+        videoId:
+          type: string
+        replies:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommentReply'
+      required:
+        - id
+        - videoId
+        - authorName
+        - authorHandle
+        - authorGradient
+        - body
+        - createdAt
+        - likes
+        - pinned
+        - heartedByCreator
+        - status
+        - replies
+    Rating:
+      type: object
+      properties:
+        videoId:
+          type: string
+        userId:
+          type: string
+        stars:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - videoId
+        - userId
+        - stars
+        - createdAt
+    LiveEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/LiveStatus'
+        accessType:
+          $ref: '#/components/schemas/LiveAccessType'
+        scheduledStart:
+          type: string
+          format: date-time
+        actualStart:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        endedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        timezone:
+          type: string
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+        viewerCount:
+          type: integer
+        peakViewers:
+          type: integer
+        price:
+          $ref: '#/components/schemas/Money'
+        streamKey:
+          type: string
+          description: Stored encrypted server-side; never logged (FR-6.5.2).
+        ingestUrl:
+          type: string
+        chatEnabled:
+          type: boolean
+        replayVideoId:
+          type:
+            - string
+            - 'null'
+        replayPublished:
+          type: boolean
+        categoryIds:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - channelId
+        - title
+        - description
+        - status
+        - accessType
+        - scheduledStart
+        - actualStart
+        - endedAt
+        - timezone
+        - posterGradient
+        - viewerCount
+        - peakViewers
+        - streamKey
+        - ingestUrl
+        - chatEnabled
+        - replayVideoId
+        - replayPublished
+        - categoryIds
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        liveEventId:
+          type: string
+        authorName:
+          type: string
+        authorGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        body:
+          type: string
+        sentAt:
+          type: string
+          format: date-time
+        role:
+          type: string
+          enum:
+            - viewer
+            - moderator
+            - host
+            - subscriber
+        status:
+          type: string
+          enum:
+            - visible
+            - held
+            - removed
+      required:
+        - id
+        - liveEventId
+        - authorName
+        - authorGradient
+        - body
+        - sentAt
+        - role
+        - status
+    Poll:
+      type: object
+      properties:
+        id:
+          type: string
+        liveEventId:
+          type: string
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              votes:
+                type: integer
+            required:
+              - id
+              - label
+              - votes
+        status:
+          type: string
+          enum:
+            - draft
+            - open
+            - closed
+      required:
+        - id
+        - liveEventId
+        - question
+        - options
+        - status
+    ViewerProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - adult
+            - child
+            - teen
+        avatarGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarUrl:
+          type: string
+          format: uri
+        maxAgeRating:
+          $ref: '#/components/schemas/AgeRating'
+        language:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - avatarGradient
+        - maxAgeRating
+        - language
+    NotificationChannels:
+      type: object
+      properties:
+        email:
+          type: boolean
+        push:
+          type: boolean
+        inApp:
+          type: boolean
+      required:
+        - email
+        - push
+        - inApp
+    NotificationPreferences:
+      type: object
+      description: Per-event notification channel preferences (FR-6.6.3).
+      properties:
+        new-upload:
+          $ref: '#/components/schemas/NotificationChannels'
+        live-starting:
+          $ref: '#/components/schemas/NotificationChannels'
+        reply:
+          $ref: '#/components/schemas/NotificationChannels'
+        mention:
+          $ref: '#/components/schemas/NotificationChannels'
+        purchase-receipt:
+          $ref: '#/components/schemas/NotificationChannels'
+        rental-expiring:
+          $ref: '#/components/schemas/NotificationChannels'
+        payout:
+          $ref: '#/components/schemas/NotificationChannels'
+        policy:
+          $ref: '#/components/schemas/NotificationChannels'
+      required:
+        - new-upload
+        - live-starting
+        - reply
+        - mention
+        - purchase-receipt
+        - rental-expiring
+        - payout
+        - policy
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        handle:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+        activeRole:
+          $ref: '#/components/schemas/UserRole'
+        country:
+          type: string
+        language:
+          type: string
+        avatarGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarUrl:
+          type: string
+          format: uri
+        emailVerified:
+          type: boolean
+        mobileVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - pending
+            - closed
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewerProfile'
+        activeProfileId:
+          type: string
+        channelId:
+          type: string
+        notificationPreferences:
+          $ref: '#/components/schemas/NotificationPreferences'
+        parentalControls:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            maxAgeRating:
+              $ref: '#/components/schemas/AgeRating'
+            pin:
+              type: string
+              description: Hashed (argon2) server-side; never returned in plaintext by the real API.
+          required:
+            - enabled
+            - maxAgeRating
+            - pin
+        privacy:
+          type: object
+          properties:
+            watchHistoryVisible:
+              type: boolean
+            watchlistPublic:
+              type: boolean
+            personalisedRecommendations:
+              type: boolean
+            personalisedAds:
+              type: boolean
+          required:
+            - watchHistoryVisible
+            - watchlistPublic
+            - personalisedRecommendations
+            - personalisedAds
+      required:
+        - id
+        - name
+        - email
+        - handle
+        - roles
+        - activeRole
+        - country
+        - language
+        - avatarGradient
+        - emailVerified
+        - mobileVerified
+        - mfaEnabled
+        - createdAt
+        - status
+        - profiles
+        - activeProfileId
+        - notificationPreferences
+        - parentalControls
+        - privacy
+    UserUpdate:
+      type: object
+      description: Partial User for profile updates (FR-6.2.4). Every field is optional; only supplied fields are changed.
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        handle:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+        activeRole:
+          $ref: '#/components/schemas/UserRole'
+        country:
+          type: string
+        language:
+          type: string
+        avatarGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarUrl:
+          type: string
+          format: uri
+        emailVerified:
+          type: boolean
+        mobileVerified:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - pending
+            - closed
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ViewerProfile'
+        activeProfileId:
+          type: string
+        channelId:
+          type: string
+        notificationPreferences:
+          $ref: '#/components/schemas/NotificationPreferences'
+        parentalControls:
+          type: object
+          properties:
+            enabled:
+              type: boolean
+            maxAgeRating:
+              $ref: '#/components/schemas/AgeRating'
+            pin:
+              type: string
+              description: Hashed (argon2) server-side; never returned in plaintext by the real API.
+          required:
+            - enabled
+            - maxAgeRating
+            - pin
+        privacy:
+          type: object
+          properties:
+            watchHistoryVisible:
+              type: boolean
+            watchlistPublic:
+              type: boolean
+            personalisedRecommendations:
+              type: boolean
+            personalisedAds:
+              type: boolean
+          required:
+            - watchHistoryVisible
+            - watchlistPublic
+            - personalisedRecommendations
+            - personalisedAds
+    ChannelUpdate:
+      type: object
+      description: Partial Channel for channel-settings updates.
+      properties:
+        id:
+          type: string
+        handle:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ChannelKind'
+        tagline:
+          type: string
+        about:
+          type: string
+        verified:
+          type: boolean
+        country:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string
+        followers:
+          type: integer
+        totalViews:
+          type: integer
+        videoCount:
+          type: integer
+        joinedAt:
+          type: string
+          format: date-time
+        bannerGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        avatarUrl:
+          type: string
+          format: uri
+        bannerUrl:
+          type: string
+          format: uri
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              href:
+                type: string
+            required:
+              - label
+              - href
+        verificationStatus:
+          type: string
+          enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+        contactEmail:
+          type: string
+          format: email
+    AppNotification:
+      type: object
+      properties:
+        id:
+          type: string
+        event:
+          $ref: '#/components/schemas/NotificationEvent'
+        title:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        read:
+          type: boolean
+        href:
+          type: string
+      required:
+        - id
+        - event
+        - title
+        - body
+        - createdAt
+        - read
+        - href
+    Entitlement:
+      type: object
+      description: >-
+        Sole source of playback authorisation truth (DM-7). FR-6.4.6: evaluated from rights territory + release window +
+        purchase/subscription state before any signed URL is minted.
+      properties:
+        videoId:
+          type: string
+        userId:
+          type: string
+        granted:
+          type: boolean
+        reason:
+          $ref: '#/components/schemas/EntitlementReason'
+        blockReason:
+          $ref: '#/components/schemas/PlaybackBlockReason'
+        expiresAt:
+          type: string
+          format: date-time
+        previewSeconds:
+          type: integer
+        requestCountry:
+          type: string
+          description: ISO-3166 alpha-2 country the request is evaluated against.
+      required:
+        - videoId
+        - userId
+        - granted
+        - reason
+        - requestCountry
+    WatchProgress:
+      type: object
+      properties:
+        videoId:
+          type: string
+        positionSeconds:
+          type: integer
+        durationSeconds:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+        completed:
+          type: boolean
+      required:
+        - videoId
+        - positionSeconds
+        - durationSeconds
+        - updatedAt
+        - completed
+    ContinueWatchingEntry:
+      type: object
+      properties:
+        video:
+          $ref: '#/components/schemas/Video'
+        progress:
+          $ref: '#/components/schemas/WatchProgress'
+      required:
+        - video
+        - progress
+    PurchaseRecord:
+      type: object
+      description: 'A transaction/entitlement-granting purchase (DM-8). AC-5: must never be created for a payment that failed.'
+      properties:
+        id:
+          type: string
+        videoId:
+          type: string
+        kind:
+          type: string
+          enum:
+            - buy
+            - rent
+            - ppv
+            - subscription
+            - membership
+        price:
+          $ref: '#/components/schemas/Money'
+        purchasedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        status:
+          type: string
+          enum:
+            - completed
+            - refunded
+            - expired
+            - active
+        invoiceNumber:
+          type: string
+      required:
+        - id
+        - videoId
+        - kind
+        - price
+        - purchasedAt
+        - expiresAt
+        - status
+        - invoiceNumber
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+            - platform
+            - channel-membership
+        channelId:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        interval:
+          type: string
+          enum:
+            - monthly
+            - annual
+        status:
+          type: string
+          enum:
+            - active
+            - cancelled
+            - past-due
+        renewsAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        benefits:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - name
+        - kind
+        - price
+        - interval
+        - status
+        - renewsAt
+        - startedAt
+        - benefits
+    UploadSession:
+      type: object
+      properties:
+        id:
+          type: string
+        fileName:
+          type: string
+        fileSizeBytes:
+          type: integer
+        uploadedBytes:
+          type: integer
+        phase:
+          $ref: '#/components/schemas/UploadPhase'
+        chunkIndex:
+          type: integer
+        totalChunks:
+          type: integer
+        error:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fileName
+        - fileSizeBytes
+        - uploadedBytes
+        - phase
+        - chunkIndex
+        - totalChunks
+        - createdAt
+    ThumbnailSuggestion:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        gradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        timestampSeconds:
+          type: integer
+        score:
+          type: number
+      required:
+        - id
+        - label
+        - gradient
+        - timestampSeconds
+        - score
+    VideoDraft:
+      type: object
+      description: Working draft assembled by the upload/publish wizard and submitted to create a Video (FR-6.3.3).
+      properties:
+        uploadSessionId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        contentType:
+          $ref: '#/components/schemas/ContentType'
+        categoryIds:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        participants:
+          type: array
+          items:
+            type: string
+        productionCompany:
+          type: string
+        releaseDate:
+          type: string
+          format: date
+        language:
+          type: string
+        country:
+          type: string
+        thumbnailId:
+          type:
+            - string
+            - 'null'
+        customThumbnailName:
+          type:
+            - string
+            - 'null'
+        subtitles:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubtitleTrack'
+        autoTranscribe:
+          type: boolean
+        audioDescription:
+          type: boolean
+        rights:
+          $ref: '#/components/schemas/VideoRights'
+        pricing:
+          $ref: '#/components/schemas/VideoPricing'
+        status:
+          $ref: '#/components/schemas/ContentStatus'
+        scheduledFor:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        playlistIds:
+          type: array
+          items:
+            type: string
+        seriesId:
+          type:
+            - string
+            - 'null'
+        seasonNumber:
+          type:
+            - integer
+            - 'null'
+        episodeNumber:
+          type:
+            - integer
+            - 'null'
+      required:
+        - uploadSessionId
+        - title
+        - description
+        - contentType
+        - categoryIds
+        - tags
+        - participants
+        - productionCompany
+        - releaseDate
+        - language
+        - country
+        - thumbnailId
+        - customThumbnailName
+        - subtitles
+        - autoTranscribe
+        - audioDescription
+        - rights
+        - pricing
+        - status
+        - scheduledFor
+        - playlistIds
+        - seriesId
+        - seasonNumber
+        - episodeNumber
+    BulkImportRow:
+      type: object
+      properties:
+        id:
+          type: string
+        fileName:
+          type: string
+        title:
+          type: string
+        contentType:
+          $ref: '#/components/schemas/ContentType'
+        language:
+          type: string
+        releaseDate:
+          type: string
+          format: date
+        ageRating:
+          $ref: '#/components/schemas/AgeRating'
+        accessModel:
+          $ref: '#/components/schemas/AccessModel'
+        status:
+          type: string
+          enum:
+            - ready
+            - warning
+            - error
+        message:
+          type: string
+      required:
+        - id
+        - fileName
+        - title
+        - contentType
+        - language
+        - releaseDate
+        - ageRating
+        - accessModel
+        - status
+    CampaignTargeting:
+      type: object
+      properties:
+        countries:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+        ageBands:
+          type: array
+          items:
+            type: string
+        interests:
+          type: array
+          items:
+            type: string
+        categoryIds:
+          type: array
+          items:
+            type: string
+        devices:
+          type: array
+          items:
+            type: string
+      required:
+        - countries
+        - languages
+        - ageBands
+        - interests
+        - categoryIds
+        - devices
+    CampaignCreative:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        format:
+          type: string
+          enum:
+            - pre-roll
+            - mid-roll
+            - post-roll
+            - overlay
+            - sponsored-card
+        durationSeconds:
+          type: integer
+        gradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        clickThroughLabel:
+          type: string
+        status:
+          type: string
+          enum:
+            - approved
+            - pending
+            - rejected
+      required:
+        - id
+        - name
+        - format
+        - durationSeconds
+        - gradient
+        - clickThroughLabel
+        - status
+    Campaign:
+      type: object
+      description: 'An advertising campaign (DM-9). FR-6.8.6: cannot deliver without administrative approval.'
+      properties:
+        id:
+          type: string
+        advertiserId:
+          type: string
+        advertiserName:
+          type: string
+        name:
+          type: string
+        objective:
+          type: string
+          enum:
+            - awareness
+            - consideration
+            - conversion
+            - traffic
+        status:
+          $ref: '#/components/schemas/CampaignStatus'
+        budget:
+          $ref: '#/components/schemas/Money'
+        dailyCap:
+          $ref: '#/components/schemas/Money'
+        spend:
+          $ref: '#/components/schemas/Money'
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        targeting:
+          $ref: '#/components/schemas/CampaignTargeting'
+        creatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampaignCreative'
+        placements:
+          type: array
+          items:
+            type: string
+        frequencyCap:
+          type: object
+          properties:
+            impressions:
+              type: integer
+            perHours:
+              type: integer
+          required:
+            - impressions
+            - perHours
+        brandSafety:
+          type: object
+          properties:
+            excludedLabels:
+              type: array
+              items:
+                type: string
+            minAgeRating:
+              $ref: '#/components/schemas/AgeRating'
+            blockUserGenerated:
+              type: boolean
+          required:
+            - excludedLabels
+            - minAgeRating
+            - blockUserGenerated
+        metrics:
+          type: object
+          properties:
+            impressions:
+              type: integer
+            completedViews:
+              type: integer
+            clicks:
+              type: integer
+            ctr:
+              type: number
+            conversions:
+              type: integer
+            cpm:
+              type: number
+          required:
+            - impressions
+            - completedViews
+            - clicks
+            - ctr
+            - conversions
+            - cpm
+        createdAt:
+          type: string
+          format: date-time
+        submittedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+      required:
+        - id
+        - advertiserId
+        - advertiserName
+        - name
+        - objective
+        - status
+        - budget
+        - dailyCap
+        - spend
+        - startDate
+        - endDate
+        - targeting
+        - creatives
+        - placements
+        - frequencyCap
+        - brandSafety
+        - metrics
+        - createdAt
+        - submittedAt
+    Lead:
+      type: object
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        company:
+          type: string
+        sourceVideoId:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum:
+            - new
+            - contacted
+            - qualified
+            - closed
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - channelId
+        - name
+        - email
+        - company
+        - sourceVideoId
+        - message
+        - status
+        - createdAt
+    ProductLink:
+      type: object
+      description: Affiliate/commerce product link with click and conversion attribution (MON-8, INT-1).
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        productName:
+          type: string
+        martProductId:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        attachedVideoIds:
+          type: array
+          items:
+            type: string
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        commissionRate:
+          type: number
+      required:
+        - id
+        - channelId
+        - productName
+        - martProductId
+        - price
+        - attachedVideoIds
+        - clicks
+        - conversions
+        - commissionRate
+    TimeSeriesPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        views:
+          type: integer
+        watchHours:
+          type: number
+        uniqueViewers:
+          type: integer
+        revenue:
+          type: number
+      required:
+        - date
+        - views
+        - watchHours
+        - uniqueViewers
+        - revenue
+    RetentionPoint:
+      type: object
+      properties:
+        percent:
+          type: number
+        audience:
+          type: number
+      required:
+        - percent
+        - audience
+    BreakdownSlice:
+      type: object
+      properties:
+        label:
+          type: string
+        value:
+          type: number
+        share:
+          type: number
+      required:
+        - label
+        - value
+        - share
+    CreatorAnalytics:
+      type: object
+      description: Creator/business analytics for a channel over a range (FR-6.9.1/6.9.2).
+      properties:
+        channelId:
+          type: string
+        range:
+          $ref: '#/components/schemas/AnalyticsRange'
+        totals:
+          type: object
+          properties:
+            views:
+              type: integer
+            uniqueViewers:
+              type: integer
+            watchTimeSeconds:
+              type: integer
+            completionRate:
+              type: number
+            averageViewDuration:
+              type: number
+            subscribersGained:
+              type: integer
+            subscribersLost:
+              type: integer
+            revenue:
+              $ref: '#/components/schemas/Money'
+          required:
+            - views
+            - uniqueViewers
+            - watchTimeSeconds
+            - completionRate
+            - averageViewDuration
+            - subscribersGained
+            - subscribersLost
+            - revenue
+        deltas:
+          type: object
+          properties:
+            views:
+              type: number
+            watchTime:
+              type: number
+            revenue:
+              type: number
+            uniqueViewers:
+              type: number
+          required:
+            - views
+            - watchTime
+            - revenue
+            - uniqueViewers
+        timeSeries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSeriesPoint'
+        retention:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetentionPoint'
+        trafficSources:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownSlice'
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownSlice'
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownSlice'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownSlice'
+        revenueByContent:
+          type: array
+          items:
+            type: object
+            properties:
+              videoId:
+                type: string
+              title:
+                type: string
+              revenue:
+                type: number
+              views:
+                type: integer
+              model:
+                $ref: '#/components/schemas/AccessModel'
+            required:
+              - videoId
+              - title
+              - revenue
+              - views
+              - model
+        adPerformance:
+          type: object
+          properties:
+            impressions:
+              type: integer
+            fillRate:
+              type: number
+            ecpm:
+              type: number
+            revenue:
+              type: number
+          required:
+            - impressions
+            - fillRate
+            - ecpm
+            - revenue
+        topVideos:
+          type: array
+          items:
+            type: object
+            properties:
+              videoId:
+                type: string
+              title:
+                type: string
+              views:
+                type: integer
+              watchHours:
+                type: number
+              completionRate:
+                type: number
+            required:
+              - videoId
+              - title
+              - views
+              - watchHours
+              - completionRate
+      required:
+        - channelId
+        - range
+        - totals
+        - deltas
+        - timeSeries
+        - retention
+        - trafficSources
+        - countries
+        - languages
+        - devices
+        - revenueByContent
+        - adPerformance
+        - topVideos
+    RevenueSummary:
+      type: object
+      description: Creator earnings/ledger summary feeding /studio/revenue (MON-10).
+      properties:
+        channelId:
+          type: string
+        currency:
+          $ref: '#/components/schemas/CurrencyCode'
+        available:
+          type: number
+        pending:
+          type: number
+        lifetime:
+          type: number
+        nextPayoutDate:
+          type: string
+          format: date
+        byStream:
+          type: array
+          items:
+            $ref: '#/components/schemas/BreakdownSlice'
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              date:
+                type: string
+                format: date
+              description:
+                type: string
+              kind:
+                type: string
+                enum:
+                  - advertising
+                  - rental
+                  - purchase
+                  - membership
+                  - ppv
+                  - payout
+              gross:
+                type: number
+              fee:
+                type: number
+              net:
+                type: number
+            required:
+              - id
+              - date
+              - description
+              - kind
+              - gross
+              - fee
+              - net
+      required:
+        - channelId
+        - currency
+        - available
+        - pending
+        - lifetime
+        - nextPayoutDate
+        - byStream
+        - transactions
+    CampaignTimeseriesPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        impressions:
+          type: integer
+        completedViews:
+          type: integer
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        spend:
+          type: number
+      required:
+        - date
+        - impressions
+        - completedViews
+        - clicks
+        - conversions
+        - spend
+    ModerationItem:
+      type: object
+      description: A queued moderation item spanning content, comments, live incidents, copyright and campaigns (DM-10, FR-6.10.1).
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - content
+            - comment
+            - live
+            - copyright
+            - channel
+            - campaign
+        targetId:
+          type: string
+        title:
+          type: string
+        channelId:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+        queue:
+          type: string
+          enum:
+            - pending-review
+            - reported
+            - copyright
+            - live-incident
+            - verification
+        reportReasons:
+          type: array
+          items:
+            type: string
+        reportCount:
+          type: integer
+        status:
+          type: string
+          enum:
+            - open
+            - actioned
+            - escalated
+            - dismissed
+        assignedTo:
+          type:
+            - string
+            - 'null'
+        notes:
+          type: string
+      required:
+        - id
+        - kind
+        - targetId
+        - title
+        - channelId
+        - submittedAt
+        - priority
+        - queue
+        - reportReasons
+        - reportCount
+        - status
+        - assignedTo
+        - notes
+    AuditLogEntry:
+      type: object
+      description: Append-only, tamper-evident audit trail entry (FR-6.10.5, SEC-9).
+      properties:
+        id:
+          type: string
+        actor:
+          type: string
+        actorRole:
+          $ref: '#/components/schemas/UserRole'
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        reason:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        ip:
+          type: string
+        severity:
+          type: string
+          enum:
+            - info
+            - notice
+            - warning
+            - critical
+      required:
+        - id
+        - actor
+        - actorRole
+        - action
+        - targetType
+        - targetId
+        - reason
+        - createdAt
+        - ip
+        - severity
+    AdminUserRow:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - pending
+            - closed
+        country:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+        channelId:
+          type: string
+        flags:
+          type: integer
+      required:
+        - id
+        - name
+        - email
+        - roles
+        - status
+        - country
+        - createdAt
+        - lastActiveAt
+        - flags
+    Organisation:
+      type: object
+      description: Organisation/business verification record (DM-2, FR-6.2.5).
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ChannelKind'
+        registrationNumber:
+          type: string
+        country:
+          type: string
+        representative:
+          type: string
+        representativeEmail:
+          type: string
+          format: email
+        verificationStatus:
+          type: string
+          enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+        submittedAt:
+          type: string
+          format: date-time
+        documents:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              type:
+                type: string
+              status:
+                type: string
+                enum:
+                  - received
+                  - verified
+                  - rejected
+              uploadedAt:
+                type: string
+                format: date-time
+            required:
+              - id
+              - name
+              - type
+              - status
+              - uploadedAt
+        timeline:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              at:
+                type: string
+                format: date-time
+              actor:
+                type: string
+              state:
+                type: string
+                enum:
+                  - done
+                  - current
+                  - pending
+                  - failed
+            required:
+              - id
+              - label
+              - at
+              - actor
+              - state
+        channelId:
+          type: string
+      required:
+        - id
+        - name
+        - kind
+        - registrationNumber
+        - country
+        - representative
+        - representativeEmail
+        - verificationStatus
+        - submittedAt
+        - documents
+        - timeline
+    CaseNote:
+      type: object
+      properties:
+        id:
+          type: string
+        caseId:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          enum:
+            - note
+            - escalation
+            - resolution
+      required:
+        - id
+        - caseId
+        - author
+        - body
+        - createdAt
+        - kind
+    AdminCase:
+      type: object
+      description: Case-management record for legal/safety/payment/copyright escalations (FR-6.10.6).
+      properties:
+        id:
+          type: string
+        reference:
+          type: string
+        subject:
+          type: string
+        domain:
+          type: string
+          enum:
+            - legal
+            - safety
+            - payment
+            - copyright
+        status:
+          type: string
+          enum:
+            - open
+            - investigating
+            - escalated
+            - resolved
+        priority:
+          type: string
+          enum:
+            - low
+            - normal
+            - high
+            - urgent
+        openedAt:
+          type: string
+          format: date-time
+        owner:
+          type: string
+        relatedId:
+          type: string
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseNote'
+      required:
+        - id
+        - reference
+        - subject
+        - domain
+        - status
+        - priority
+        - openedAt
+        - owner
+        - relatedId
+        - notes
+    PlatformConfigTables:
+      type: object
+      description: Versioned platform-configuration store (FR-6.10.4).
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        contentLabels:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              severity:
+                type: string
+                enum:
+                  - info
+                  - warning
+                  - restricted
+              autoAgeGate:
+                type: boolean
+            required:
+              - id
+              - label
+              - severity
+              - autoAgeGate
+        pricingRules:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              model:
+                $ref: '#/components/schemas/AccessModel'
+              minPrice:
+                $ref: '#/components/schemas/Money'
+              maxPrice:
+                $ref: '#/components/schemas/Money'
+              active:
+                type: boolean
+            required:
+              - id
+              - name
+              - model
+              - minPrice
+              - maxPrice
+              - active
+        commissions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              scope:
+                type: string
+              platformShare:
+                type: number
+              creatorShare:
+                type: number
+              effectiveFrom:
+                type: string
+                format: date
+            required:
+              - id
+              - scope
+              - platformShare
+              - creatorShare
+              - effectiveFrom
+        taxes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              country:
+                type: string
+              name:
+                type: string
+              rate:
+                type: number
+              appliesTo:
+                type: string
+            required:
+              - id
+              - country
+              - name
+              - rate
+              - appliesTo
+        currencies:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                $ref: '#/components/schemas/CurrencyCode'
+              name:
+                type: string
+              symbol:
+                type: string
+              rateToGbp:
+                type: number
+              enabled:
+                type: boolean
+            required:
+              - code
+              - name
+              - symbol
+              - rateToGbp
+              - enabled
+        payoutRules:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              method:
+                type: string
+              minimum:
+                $ref: '#/components/schemas/Money'
+              schedule:
+                type: string
+              holdDays:
+                type: integer
+              active:
+                type: boolean
+            required:
+              - id
+              - method
+              - minimum
+              - schedule
+              - holdDays
+              - active
+      required:
+        - categories
+        - contentLabels
+        - pricingRules
+        - commissions
+        - taxes
+        - currencies
+        - payoutRules
+    AdminDashboardSummary:
+      type: object
+      properties:
+        pendingContent:
+          type: integer
+        reportedContent:
+          type: integer
+        copyrightClaims:
+          type: integer
+        liveIncidents:
+          type: integer
+        verificationQueue:
+          type: integer
+        campaignsAwaitingApproval:
+          type: integer
+        activeLiveEvents:
+          type: integer
+        totalUsers:
+          type: integer
+        revenue30d:
+          $ref: '#/components/schemas/Money'
+        payoutsDue:
+          $ref: '#/components/schemas/Money'
+        trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              reviews:
+                type: integer
+              reports:
+                type: integer
+            required:
+              - date
+              - reviews
+              - reports
+      required:
+        - pendingContent
+        - reportedContent
+        - copyrightClaims
+        - liveIncidents
+        - verificationQueue
+        - campaignsAwaitingApproval
+        - activeLiveEvents
+        - totalUsers
+        - revenue30d
+        - payoutsDue
+        - trend
+    SearchFilters:
+      type: object
+      description: >-
+        The combined filter/sort/pagination shape accepted by GET /videos (FR-6.1.3, FR-6.1.4). Documented here as a
+        single schema for reference; on the wire each field is an individual query parameter (repeated for array-valued
+        fields).
+      properties:
+        query:
+          type: string
+        contentTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentType'
+        categoryIds:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+        countries:
+          type: array
+          items:
+            type: string
+        accessModels:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessModel'
+        ageRatings:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgeRating'
+        minDurationSeconds:
+          type: integer
+        maxDurationSeconds:
+          type: integer
+        releaseYearFrom:
+          type: integer
+        releaseYearTo:
+          type: integer
+        hasSubtitles:
+          type: boolean
+        freeOnly:
+          type: boolean
+        sort:
+          type: string
+          enum:
+            - relevance
+            - popular
+            - newest
+            - rating
+            - duration
+        channelId:
+          type: string
+        page:
+          type: integer
+        pageSize:
+          type: integer
+    SearchResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        facets:
+          type: object
+          properties:
+            contentTypes:
+              type: array
+              items:
+                type: object
+                properties:
+                  value:
+                    $ref: '#/components/schemas/ContentType'
+                  count:
+                    type: integer
+                required:
+                  - value
+                  - count
+            languages:
+              type: array
+              items:
+                type: object
+                properties:
+                  value:
+                    type: string
+                  count:
+                    type: integer
+                required:
+                  - value
+                  - count
+            countries:
+              type: array
+              items:
+                type: object
+                properties:
+                  value:
+                    type: string
+                  count:
+                    type: integer
+                required:
+                  - value
+                  - count
+            accessModels:
+              type: array
+              items:
+                type: object
+                properties:
+                  value:
+                    $ref: '#/components/schemas/AccessModel'
+                  count:
+                    type: integer
+                required:
+                  - value
+                  - count
+          required:
+            - contentTypes
+            - languages
+            - countries
+            - accessModels
+      required:
+        - items
+        - total
+        - page
+        - pageSize
+        - facets
+    HomeRail:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        subtitle:
+          type: string
+        href:
+          type: string
+        kind:
+          type: string
+          enum:
+            - poster
+            - wide
+            - live
+            - continue
+        videoIds:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - title
+        - href
+        - kind
+        - videoIds
+    FeaturedContent:
+      type: object
+      properties:
+        hero:
+          type: array
+          items:
+            $ref: '#/components/schemas/Video'
+        rails:
+          type: array
+          items:
+            $ref: '#/components/schemas/HomeRail'
+      required:
+        - hero
+        - rails
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/UserRole'
+        country:
+          type: string
+      required:
+        - name
+        - email
+        - role
+        - country
+    RegisterResponse:
+      type: object
+      properties:
+        userId:
+          type: string
+        verificationRequired:
+          type: boolean
+          enum:
+            - true
+      required:
+        - userId
+        - verificationRequired
+    VerifyOtpRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 6-digit one-time code sent to email/mobile.
+      required:
+        - code
+    OtpVerificationResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+      required:
+        - ok
+    LoginRequest:
+      type: object
+      description: >-
+        Resource Owner Password Grant credentials, verified server-side against Auth0; the response is Nexus's own
+        session, never an Auth0 token (DEC-6).
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+      required:
+        - email
+        - password
+    SwitchProfileRequest:
+      type: object
+      properties:
+        profileId:
+          type: string
+      required:
+        - profileId
+    SetActiveRoleRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/UserRole'
+      required:
+        - role
+    FollowStatus:
+      type: object
+      properties:
+        following:
+          type: boolean
+      required:
+        - following
+    WatchlistStatus:
+      type: object
+      properties:
+        inWatchlist:
+          type: boolean
+      required:
+        - inWatchlist
+    SetRequestCountryRequest:
+      type: object
+      description: >-
+        Development/QA utility to simulate the request's originating country for geo-restriction testing (FR-6.4.6). In
+        production this is derived from the request, not client-supplied.
+      properties:
+        country:
+          type: string
+      required:
+        - country
+    RequestCountryResponse:
+      type: object
+      properties:
+        country:
+          type: string
+      required:
+        - country
+    PurchaseRequest:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+            - buy
+            - rent
+            - ppv
+            - ticket
+      required:
+        - kind
+    StartSubscriptionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        channelId:
+          type: string
+          description: Omit for a platform subscription; supply for a channel membership.
+      required:
+        - name
+    SaveWatchProgressRequest:
+      type: object
+      properties:
+        positionSeconds:
+          type: integer
+        durationSeconds:
+          type: integer
+      required:
+        - positionSeconds
+        - durationSeconds
+    PostCommentRequest:
+      type: object
+      properties:
+        body:
+          type: string
+      required:
+        - body
+    ModerateCommentRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - publish
+            - hold
+            - remove
+            - pin
+            - heart
+      required:
+        - action
+    RateVideoRequest:
+      type: object
+      properties:
+        stars:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+      required:
+        - stars
+    RateVideoResponse:
+      type: object
+      properties:
+        videoId:
+          type: string
+        stars:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+      required:
+        - videoId
+        - stars
+    CreateLiveEventRequest:
+      type: object
+      description: Fields needed to schedule a live event (FR-6.5.1); server assigns id, stream key and ingest URL.
+      properties:
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          $ref: '#/components/schemas/LiveStatus'
+        accessType:
+          $ref: '#/components/schemas/LiveAccessType'
+        scheduledStart:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+        price:
+          $ref: '#/components/schemas/Money'
+        chatEnabled:
+          type: boolean
+        categoryIds:
+          type: array
+          items:
+            type: string
+      required:
+        - channelId
+        - title
+        - description
+        - status
+        - accessType
+        - scheduledStart
+        - timezone
+        - posterGradient
+        - chatEnabled
+        - categoryIds
+    SendChatMessageRequest:
+      type: object
+      properties:
+        body:
+          type: string
+      required:
+        - body
+    ModerateChatMessageRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum:
+            - hold
+            - remove
+            - restore
+      required:
+        - action
+    VotePollRequest:
+      type: object
+      properties:
+        optionId:
+          type: string
+      required:
+        - optionId
+    CreateUploadSessionRequest:
+      type: object
+      properties:
+        fileName:
+          type: string
+        fileSizeBytes:
+          type: integer
+      required:
+        - fileName
+        - fileSizeBytes
+    UpdateVideoStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/ContentStatus'
+      required:
+        - status
+    CreatePlaylistRequest:
+      type: object
+      properties:
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - unlisted
+            - private
+      required:
+        - channelId
+        - title
+        - description
+        - visibility
+    UpdatePlaylistRequest:
+      type: object
+      description: Partial Playlist.
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        visibility:
+          type: string
+          enum:
+            - public
+            - unlisted
+            - private
+        videoIds:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+        posterGradient:
+          type: array
+          items:
+            type: string
+          minItems: 2
+          maxItems: 2
+          description: 'Tuple of two hex colours: [from, to].'
+        thumbnailUrl:
+          type: string
+          format: uri
+    CreateCampaignRequest:
+      type: object
+      description: >-
+        Fields needed to create a campaign (FR-6.8.1); it is created in 'pending' status and routed to
+        /admin/moderation/queue for approval per FR-6.8.6.
+      properties:
+        advertiserId:
+          type: string
+        advertiserName:
+          type: string
+        name:
+          type: string
+        objective:
+          type: string
+          enum:
+            - awareness
+            - consideration
+            - conversion
+            - traffic
+        budget:
+          $ref: '#/components/schemas/Money'
+        dailyCap:
+          $ref: '#/components/schemas/Money'
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        targeting:
+          $ref: '#/components/schemas/CampaignTargeting'
+        creatives:
+          type: array
+          items:
+            $ref: '#/components/schemas/CampaignCreative'
+        placements:
+          type: array
+          items:
+            type: string
+        frequencyCap:
+          type: object
+          properties:
+            impressions:
+              type: integer
+            perHours:
+              type: integer
+          required:
+            - impressions
+            - perHours
+        brandSafety:
+          type: object
+          properties:
+            excludedLabels:
+              type: array
+              items:
+                type: string
+            minAgeRating:
+              $ref: '#/components/schemas/AgeRating'
+            blockUserGenerated:
+              type: boolean
+          required:
+            - excludedLabels
+            - minAgeRating
+            - blockUserGenerated
+      required:
+        - advertiserId
+        - advertiserName
+        - name
+        - objective
+        - budget
+        - dailyCap
+        - startDate
+        - endDate
+        - targeting
+        - creatives
+        - placements
+        - frequencyCap
+        - brandSafety
+    UpdateCampaignStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/CampaignStatus'
+        reason:
+          type: string
+      required:
+        - status
+    UpdateLeadStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - new
+            - contacted
+            - qualified
+            - closed
+      required:
+        - status
+    CreateProductLinkRequest:
+      type: object
+      properties:
+        channelId:
+          type: string
+        productName:
+          type: string
+        martProductId:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        attachedVideoIds:
+          type: array
+          items:
+            type: string
+        commissionRate:
+          type: number
+      required:
+        - channelId
+        - productName
+        - martProductId
+        - price
+        - attachedVideoIds
+        - commissionRate
+    ActionModerationItemRequest:
+      type: object
+      description: Applies one of the nine moderation actions (FR-6.10.2). Every application writes an audit-log entry (FR-6.10.5).
+      properties:
+        action:
+          $ref: '#/components/schemas/ModerationAction'
+        reason:
+          type: string
+      required:
+        - action
+        - reason
+    ModerationActionResult:
+      type: object
+      properties:
+        item:
+          $ref: '#/components/schemas/ModerationItem'
+        audit:
+          $ref: '#/components/schemas/AuditLogEntry'
+      required:
+        - item
+        - audit
+    UpdateUserRoleRequest:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserRole'
+      required:
+        - roles
+    UpdateUserStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - active
+            - suspended
+            - pending
+            - closed
+        reason:
+          type: string
+      required:
+        - status
+        - reason
+    UpdateOrganisationStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - unverified
+            - pending
+            - verified
+            - rejected
+        reason:
+          type: string
+      required:
+        - status
+        - reason
+    AddCaseNoteRequest:
+      type: object
+      properties:
+        body:
+          type: string
+        kind:
+          type: string
+          enum:
+            - note
+            - escalation
+            - resolution
+      required:
+        - body
+        - kind
+    AddCategoryRequest:
+      type: object
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        contentType:
+          $ref: '#/components/schemas/ContentType'
+        featured:
+          type: boolean
+          description: Configurable from /admin/settings — categories are data, not code.
+        accentToken:
+          type: integer
+          enum:
+            - 1
+            - 2
+            - 3
+            - 4
+            - 5
+            - 6
+        imageUrl:
+          type: string
+          format: uri
+      required:
+        - slug
+        - name
+        - description
+        - contentType
+        - featured
+        - accentToken
+    UpdateConfigTableRequest:
+      type: object
+      description: >-
+        Replacement row set for the named platform-configuration table (FR-6.10.4). The array shape must match the
+        `table` path parameter.
+      properties:
+        rows:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/Category'
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  label:
+                    type: string
+                  severity:
+                    type: string
+                    enum:
+                      - info
+                      - warning
+                      - restricted
+                  autoAgeGate:
+                    type: boolean
+                required:
+                  - id
+                  - label
+                  - severity
+                  - autoAgeGate
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  model:
+                    $ref: '#/components/schemas/AccessModel'
+                  minPrice:
+                    $ref: '#/components/schemas/Money'
+                  maxPrice:
+                    $ref: '#/components/schemas/Money'
+                  active:
+                    type: boolean
+                required:
+                  - id
+                  - name
+                  - model
+                  - minPrice
+                  - maxPrice
+                  - active
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  scope:
+                    type: string
+                  platformShare:
+                    type: number
+                  creatorShare:
+                    type: number
+                  effectiveFrom:
+                    type: string
+                    format: date
+                required:
+                  - id
+                  - scope
+                  - platformShare
+                  - creatorShare
+                  - effectiveFrom
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  country:
+                    type: string
+                  name:
+                    type: string
+                  rate:
+                    type: number
+                  appliesTo:
+                    type: string
+                required:
+                  - id
+                  - country
+                  - name
+                  - rate
+                  - appliesTo
+            - type: array
+              items:
+                type: object
+                properties:
+                  code:
+                    $ref: '#/components/schemas/CurrencyCode'
+                  name:
+                    type: string
+                  symbol:
+                    type: string
+                  rateToGbp:
+                    type: number
+                  enabled:
+                    type: boolean
+                required:
+                  - code
+                  - name
+                  - symbol
+                  - rateToGbp
+                  - enabled
+            - type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  method:
+                    type: string
+                  minimum:
+                    $ref: '#/components/schemas/Money'
+                  schedule:
+                    type: string
+                  holdDays:
+                    type: integer
+                  active:
+                    type: boolean
+                required:
+                  - id
+                  - method
+                  - minimum
+                  - schedule
+                  - holdDays
+                  - active
+      required:
+        - rows
