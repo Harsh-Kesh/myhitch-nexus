@@ -1,8 +1,8 @@
-// GET /api/videos — real implementation of a slice of docs/openapi.yaml's
-// `searchVideos` operation (see src/lib/server/catalogue.ts for what's implemented vs
-// deferred to Typesense). Public: no auth required, matching FR-6.1 (anonymous browsing).
+// GET /api/videos — real implementation of docs/openapi.yaml's `searchVideos` operation,
+// now backed by Typesense for full faceted search (see src/lib/server/catalogue.ts).
+// Public: no auth required, matching FR-6.1 (anonymous browsing).
 import { NextResponse, type NextRequest } from "next/server";
-import { searchVideos } from "@/lib/server/catalogue";
+import { searchVideos, type SearchVideosParams } from "@/lib/server/catalogue";
 
 function parseArrayParam(searchParams: URLSearchParams, key: string): string[] | undefined {
   const values = searchParams.getAll(key);
@@ -13,19 +13,38 @@ function parseArrayParam(searchParams: URLSearchParams, key: string): string[] |
   return values.flatMap((v) => v.split(",")).filter(Boolean);
 }
 
+function parseIntParam(searchParams: URLSearchParams, key: string): number | undefined {
+  const raw = searchParams.get(key);
+  if (!raw) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function parseSortParam(searchParams: URLSearchParams): SearchVideosParams["sort"] {
+  const raw = searchParams.get("sort");
+  if (raw === "newest" || raw === "duration" || raw === "popular" || raw === "rating") return raw;
+  return undefined;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-
-  const limitParam = searchParams.get("limit");
-  const offsetParam = searchParams.get("offset");
 
   try {
     const result = await searchVideos({
       searchQuery: searchParams.get("query") ?? undefined,
       contentTypes: parseArrayParam(searchParams, "contentTypes"),
       categoryIds: parseArrayParam(searchParams, "categoryIds"),
-      limit: limitParam ? Number(limitParam) : undefined,
-      offset: offsetParam ? Number(offsetParam) : undefined,
+      languages: parseArrayParam(searchParams, "languages"),
+      countries: parseArrayParam(searchParams, "countries"),
+      accessModels: parseArrayParam(searchParams, "accessModels"),
+      ageRatings: parseArrayParam(searchParams, "ageRatings"),
+      minDurationSeconds: parseIntParam(searchParams, "minDurationSeconds"),
+      maxDurationSeconds: parseIntParam(searchParams, "maxDurationSeconds"),
+      releaseYearFrom: parseIntParam(searchParams, "releaseYearFrom"),
+      releaseYearTo: parseIntParam(searchParams, "releaseYearTo"),
+      sort: parseSortParam(searchParams),
+      limit: parseIntParam(searchParams, "limit"),
+      offset: parseIntParam(searchParams, "offset"),
     });
     return NextResponse.json(result);
   } catch (err) {

@@ -5,15 +5,20 @@
 // of the in-memory store is a pure body replacement, per the strangler-fig strategy in
 // docs/DEVELOPMENT-PLAN.md §2 — no caller (hooks.ts, components) needs to change.
 //
-// Scope note: this implements a real but intentionally partial slice of GET /videos from
-// docs/openapi.yaml — text/content-type/category filtering and pagination, not the full
-// ~12-parameter faceted search (languages/countries/access models/duration/age rating/
-// release-year range). Full faceted search belongs on Typesense once that's provisioned;
-// building it as a growing pile of Postgres ILIKE/array-overlap conditions now would be
-// throwaway work. counts like `followers`/`totalViews` on a channel are analytics-pipeline
-// outputs that don't exist yet either — returned as 0 with a comment, not invented.
+// searchVideos() is now backed by Typesense (self-hosted on Railway) for full faceted
+// search — content type, category, language, country, access model, age rating, duration
+// range and release-year range, per docs/openapi.yaml's `searchVideos` operation. Postgres
+// remains the source of truth; scripts/index-catalogue.mjs is the one-way sync into the
+// search index, run after seeding/migrating published-video data. Typesense returns
+// ranked ids + total; this file hydrates the actual rows from Postgres afterward rather
+// than trusting field values baked into the index, so a stale reindex never shows wrong
+// data (only wrong ranking/recall until the next index run) — see getVideosByIds() below.
+//
+// counts like `followers`/`totalViews` on a channel are analytics-pipeline outputs that
+// don't exist yet either — returned as 0 with a comment, not invented.
 import "server-only";
 import { query, queryOne } from "./db";
+import { getTypesenseClient, VIDEOS_COLLECTION } from "./typesense";
 
 export interface VideoSummary {
   id: string;
@@ -78,6 +83,19 @@ export interface SearchVideosParams {
   searchQuery?: string;
   contentTypes?: string[];
   categoryIds?: string[];
+  languages?: string[];
+  countries?: string[];
+  accessModels?: string[];
+  ageRatings?: string[];
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number;
+  releaseYearFrom?: number;
+  releaseYearTo?: number;
+  /** "popular" and "rating" are accepted but currently fall back to "newest" — there is
+   * no real view-count/rating data yet (analytics-pipeline outputs, not built). Falling
+   * back rather than erroring keeps the frontend's existing sort dropdown working; the
+   * fallback is temporary, not a permanent design choice. */
+  sort?: "newest" | "duration" | "popular" | "rating";
   limit?: number;
   offset?: number;
 }
@@ -89,45 +107,43 @@ export interface SearchVideosResult {
   offset: number;
 }
 
-/** Only ever returns published content — draft/scheduled/private/etc. are never visible
- * through the public catalogue regardless of what filters are passed. */
-export async function searchVideos(params: SearchVideosParams): Promise<SearchVideosResult> {
-  const limit = Math.min(Math.max(params.limit ?? 24, 1), 100);
-  const offset = Math.max(params.offset ?? 0, 0);
+function typesenseFilters(params: SearchVideosParams): string[] {
+  const filters: string[] = [];
+  const inList = (field: string, values?: string[]) => {
+    if (values?.length) filters.push(`${field}:=[${values.map((v) => JSON.stringify(v)).join(",")}]`);
+  };
+  inList("content_type", params.contentTypes);
+  inList("category_ids", params.categoryIds);
+  inList("language", params.languages);
+  inList("country", params.countries);
+  inList("access_models", params.accessModels);
+  inList("age_rating", params.ageRatings);
+  if (params.minDurationSeconds !== undefined) filters.push(`duration_seconds:>=${params.minDurationSeconds}`);
+  if (params.maxDurationSeconds !== undefined) filters.push(`duration_seconds:<=${params.maxDurationSeconds}`);
+  if (params.releaseYearFrom !== undefined) filters.push(`release_year:>=${params.releaseYearFrom}`);
+  if (params.releaseYearTo !== undefined) filters.push(`release_year:<=${params.releaseYearTo}`);
+  return filters;
+}
 
-  const conditions: string[] = ["v.status = 'published'"];
-  const values: unknown[] = [];
-
-  if (params.searchQuery) {
-    values.push(`%${params.searchQuery}%`);
-    conditions.push(`(v.title ilike $${values.length} or v.synopsis ilike $${values.length})`);
+function typesenseSortBy(sort: SearchVideosParams["sort"], hasQuery: boolean): string {
+  switch (sort) {
+    case "duration":
+      return "duration_seconds:desc";
+    case "newest":
+    case "popular": // fallback — see the SearchVideosParams.sort comment
+    case "rating": // fallback — see the SearchVideosParams.sort comment
+      return "published_at_ts:desc";
+    default:
+      // No explicit sort: Typesense's text-relevance ranking when there's a query,
+      // otherwise newest first.
+      return hasQuery ? "" : "published_at_ts:desc";
   }
+}
 
-  if (params.contentTypes?.length) {
-    values.push(params.contentTypes);
-    conditions.push(`v.content_type = any($${values.length})`);
-  }
-
-  if (params.categoryIds?.length) {
-    values.push(params.categoryIds);
-    conditions.push(
-      `exists (select 1 from video_categories vc where vc.video_id = v.id and vc.category_id = any($${values.length}))`,
-    );
-  }
-
-  const whereClause = conditions.join(" and ");
-
-  const countRows = await query<{ count: string }>(
-    `select count(*) from videos v where ${whereClause}`,
-    values,
-  );
-  const total = Number(countRows[0]?.count ?? 0);
-
-  values.push(limit);
-  const limitParam = values.length;
-  values.push(offset);
-  const offsetParam = values.length;
-
+/** Hydrates full VideoSummary rows from Postgres for a set of ids, preserving the order
+ * `orderedIds` arrived in (Postgres's `= any(...)` does not guarantee row order). */
+async function getVideosByIds(orderedIds: string[]): Promise<VideoSummary[]> {
+  if (orderedIds.length === 0) return [];
   const rows = await query<VideoSummaryRow>(
     `select
        v.id, v.slug, v.title, v.synopsis, v.channel_id,
@@ -138,13 +154,45 @@ export async function searchVideos(params: SearchVideosParams): Promise<SearchVi
      from videos v
      join organizations o on o.id = v.channel_id
      left join video_pricing p on p.video_id = v.id
-     where ${whereClause}
-     order by v.published_at desc nulls last
-     limit $${limitParam} offset $${offsetParam}`,
-    values,
+     where v.id = any($1) and v.status = 'published'`,
+    [orderedIds],
   );
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return orderedIds.map((id) => byId.get(id)).filter((r): r is VideoSummaryRow => Boolean(r)).map(mapVideoSummary);
+}
 
-  return { items: rows.map(mapVideoSummary), total, limit, offset };
+/** Only ever returns published content — draft/scheduled/private/etc. are never in the
+ * search index in the first place (scripts/index-catalogue.mjs only indexes published
+ * rows), so there is no separate status filter to apply here. */
+export async function searchVideos(params: SearchVideosParams): Promise<SearchVideosResult> {
+  const limit = Math.min(Math.max(params.limit ?? 24, 1), 100);
+  const offset = Math.max(params.offset ?? 0, 0);
+  // Typesense paginates by page number, not offset — this assumes offset is always a
+  // multiple of limit (true for every caller today: page-based UI pagination). An
+  // arbitrary offset would need per_page padding this doesn't attempt.
+  const page = Math.floor(offset / limit) + 1;
+
+  const filters = typesenseFilters(params);
+  const sortBy = typesenseSortBy(params.sort, Boolean(params.searchQuery));
+
+  const searchParameters: Record<string, unknown> = {
+    q: params.searchQuery || "*",
+    query_by: "title,synopsis,channel_name,tags",
+    filter_by: filters.length ? filters.join(" && ") : undefined,
+    sort_by: sortBy || undefined,
+    per_page: limit,
+    page,
+  };
+
+  const result = await getTypesenseClient()
+    .collections(VIDEOS_COLLECTION)
+    .documents()
+    .search(searchParameters as never);
+
+  const ids = (result.hits ?? []).map((hit: { document: unknown }) => (hit.document as { id: string }).id);
+  const items = await getVideosByIds(ids);
+
+  return { items, total: result.found ?? 0, limit, offset };
 }
 
 export interface VideoDetail extends VideoSummary {
