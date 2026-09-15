@@ -307,6 +307,32 @@ async function getVideosByIds(orderedIds: string[]): Promise<VideoSummary[]> {
   return orderedIds.map((id) => byId.get(id)).filter((r): r is VideoSummaryRow => Boolean(r)).map(mapVideoSummary);
 }
 
+/** Whether a real (Postgres) video row exists for this id — the FK guard the write-path
+ * engagement routes (watchlist/rating/comments) use before touching a table whose
+ * video_id column has a real foreign key: an old mock-shaped id (still linked from the
+ * still-mock home rails/category pages) would otherwise surface as an opaque FK
+ * violation instead of a clean "this video isn't in the real catalogue yet" response. */
+export async function videoExists(id: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(`select id from videos where id = $1`, [id]);
+  return Boolean(row);
+}
+
+/** Full VideoSummary rows for everything a real account has bookmarked, newest first.
+ * No status filter, matching the mock's getWatchlist() — a video leaving "published"
+ * shouldn't make it silently vanish from someone's own list. */
+export async function getWatchlistVideos(accountId: string): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from watchlist_items w
+     join videos v on v.id = w.video_id
+     ${VIDEO_SUMMARY_JOINS}
+     where w.account_id = $1
+     order by w.created_at desc`,
+    [accountId],
+  );
+  return rows.map(mapVideoSummary);
+}
+
 /** Only ever returns published content — draft/scheduled/private/etc. are never in the
  * search index in the first place (scripts/index-catalogue.mjs only indexes published
  * rows), so there is no separate status filter to apply here. */

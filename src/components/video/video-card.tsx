@@ -73,7 +73,15 @@ export function VideoCard({
   const { data: user } = useCurrentUser();
   const isGuest = !user;
 
+  // Real (Postgres) video objects — cast through as `Video` at the fetch boundary the
+  // same way searchVideos()/getWatchlist() already do — carry their channel's name
+  // directly (VideoSummary.channelName) rather than a mock-shaped channelId that
+  // channelById() can resolve; without this fallback a real video's card silently
+  // dropped its channel line entirely (channelById(uuid) finds nothing to mock-lookup).
+  // No verified flag ships on that shape yet, so the checkmark just doesn't render here.
+  const realChannelName = (video as { channelName?: string }).channelName;
   const channel = channelById(video.channelId);
+  const channelDisplayName = channel?.name ?? realChannelName;
   const access = accessLabel(video);
   // Guests are redirected to login instead of going directly to the video page.
   const link = href ?? (isGuest ? "/auth/login" : `/video/${video.id}`);
@@ -173,11 +181,11 @@ export function VideoCard({
         {thumbnail}
         {!minimal ? (
           <div className={cn(isRow ? "min-w-0 flex-1 pt-0.5" : "mt-2.5 flex gap-2.5")}>
-            {showChannel && channel && !isRow ? (
+            {showChannel && channelDisplayName && !isRow ? (
               <Avatar
-                name={channel.name}
-                gradient={channel.avatarGradient}
-                src={channel.avatarUrl}
+                name={channelDisplayName}
+                gradient={channel?.avatarGradient}
+                src={channel?.avatarUrl}
                 size="sm"
                 className="mt-0.5"
               />
@@ -186,10 +194,10 @@ export function VideoCard({
               <h3 className="nx-clamp-2 text-sm font-medium leading-snug text-fg transition-colors group-hover:text-accent">
                 {video.title}
               </h3>
-              {showChannel && channel ? (
+              {showChannel && channelDisplayName ? (
                 <p className="mt-1 truncate text-xs text-fg-muted">
-                  {channel.name}
-                  {channel.verified ? (
+                  {channelDisplayName}
+                  {channel?.verified ? (
                     <span className="ml-1 text-info" aria-label="Verified">
                       ✓
                     </span>

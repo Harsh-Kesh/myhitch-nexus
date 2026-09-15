@@ -42,6 +42,7 @@ import type {
   Poll,
   ProductLink,
   PurchaseRecord,
+  Rating,
   RevenueSummary,
   SearchFilters,
   SearchResult,
@@ -651,7 +652,19 @@ export async function getContinueWatching(): Promise<
 
 /* =============================== Social ================================== */
 
+// Live 2026-09-15 — real comments (video_comments, joined to accounts for the author
+// fields) via /api/videos/{id}/comments, for real (Postgres) videos. A mock-shaped video
+// id (still-mock home rails/category pages — see looksLikeRealId's comment above) has no
+// row in the real `videos` table for a comment to reference, so it stays on the mock
+// store exactly as before; the two branches never mix within one video's thread.
 export async function getComments(videoId: string): Promise<Comment[]> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/comments/`);
+    if (!res.ok) throw new Error(`GET .../comments failed with ${res.status}`);
+    const data = (await res.json()) as { items: Comment[] };
+    return data.items;
+  }
+
   await latency("fast");
   return clone(
     store.comments
@@ -661,6 +674,19 @@ export async function getComments(videoId: string): Promise<Comment[]> {
 }
 
 export async function postComment(videoId: string, body: string): Promise<Comment> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/comments/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not post your comment.");
+    }
+    return (await res.json()) as Comment;
+  }
+
   await latency();
   const comment: Comment = {
     id: nextId("cmt"),
@@ -686,6 +712,20 @@ export async function replyToComment(
   commentId: string,
   body: string,
 ): Promise<Comment | null> {
+  if (looksLikeRealId(commentId)) {
+    const res = await fetch(`/api/comments/${commentId}/replies/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not post your reply.");
+    }
+    return (await res.json()) as Comment;
+  }
+
   await latency();
   const comment = store.comments.find((item) => item.id === commentId);
   if (!comment) return null;
@@ -741,7 +781,26 @@ export async function getModerationComments(channelId: string): Promise<Comment[
   );
 }
 
-export async function rateVideo(videoId: string, stars: 1 | 2 | 3 | 4 | 5) {
+// Live 2026-09-15 — real ratings (video_ratings, upserted; videos.rating_average/
+// rating_count recomputed from the real rows) via /api/videos/{id}/rating, for real
+// videos only — same looksLikeRealId split as getComments() above.
+export async function rateVideo(
+  videoId: string,
+  stars: 1 | 2 | 3 | 4 | 5,
+): Promise<{ videoId: string; stars: number }> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/rating/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stars }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not save your rating.");
+    }
+    return (await res.json()) as { videoId: string; stars: number };
+  }
+
   await latency("fast");
   const existing = store.ratings.find(
     (rating) => rating.videoId === videoId && rating.userId === store.user.id,
@@ -764,7 +823,14 @@ export async function rateVideo(videoId: string, stars: 1 | 2 | 3 | 4 | 5) {
   return { videoId, stars };
 }
 
-export async function getMyRating(videoId: string) {
+export async function getMyRating(videoId: string): Promise<Pick<Rating, "stars"> | null> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/rating/`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { stars: number | null };
+    return data.stars == null ? null : { stars: data.stars as Rating["stars"] };
+  }
+
   return (
     store.ratings.find(
       (rating) => rating.videoId === videoId && rating.userId === store.user.id,
@@ -778,7 +844,20 @@ export async function likeVideo(videoId: string) {
   return video ? clone(video) : null;
 }
 
+// Live 2026-09-15 — real watchlist_items via /api/videos/{id}/watchlist, for real videos
+// only — same looksLikeRealId split as getComments()/rateVideo() above. A guest's or a
+// mock-video's toggle stays purely local, exactly as before.
 export async function toggleWatchlist(videoId: string): Promise<boolean> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/watchlist/`, { method: "POST" });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not update your watchlist.");
+    }
+    const data = (await res.json()) as { inWatchlist: boolean };
+    return data.inWatchlist;
+  }
+
   await latency("fast");
   const index = store.watchlist.indexOf(videoId);
   if (index >= 0) {
@@ -789,13 +868,28 @@ export async function toggleWatchlist(videoId: string): Promise<boolean> {
   return true;
 }
 
+// Merges the two sources a watchlist can now draw from: real entries (watchlist_items,
+// resolved to full VideoSummary rows by the API — cast to Video the same way
+// searchVideos() already does, since VideoSummary carries everything VideoCard/VideoGrid
+// actually read) and whatever mock-shaped ids are still in the local store. A single
+// account's watchlist can genuinely contain both while the site is mid-migration.
 export async function getWatchlist(): Promise<Video[]> {
-  await latency("fast");
-  return clone(
-    store.watchlist
-      .map((id) => store.videos.find((video) => video.id === id))
-      .filter(Boolean) as Video[],
-  );
+  const [real, mock] = await Promise.all([
+    fetch("/api/watchlist/")
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((data) => (data as { items: Video[] }).items)
+      .catch(() => [] as Video[]),
+    (async () => {
+      await latency("fast");
+      return clone(
+        store.watchlist
+          .filter((id) => !looksLikeRealId(id))
+          .map((id) => store.videos.find((video) => video.id === id))
+          .filter(Boolean) as Video[],
+      );
+    })(),
+  ]);
+  return [...mock, ...real];
 }
 
 /* ================================ Live =================================== */

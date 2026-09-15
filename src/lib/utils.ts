@@ -221,6 +221,28 @@ export function hashString(input: string): number {
   return hash >>> 0;
 }
 
+// Same palette already used across the seeded channel avatars (data/channels.ts) — reused
+// rather than inventing new colors, so a real account with no authored gradient (comments
+// are the first place this comes up — accounts have no avatar_gradient column, unlike
+// videos/organizations) still looks like it belongs on the page.
+const AVATAR_GRADIENT_PALETTE: Array<[string, string]> = [
+  ["#8B5CF6", "#4C2889"],
+  ["#22D3EE", "#0E7490"],
+  ["#5B8DEF", "#243F80"],
+  ["#34C77B", "#12694A"],
+  ["#38A8E0", "#175E85"],
+  ["#2DD4BF", "#0F766E"],
+  ["#E5A83B", "#96661A"],
+  ["#4ADE80", "#15803D"],
+  ["#EC6AA8", "#9D2C6B"],
+];
+
+/** Deterministic pick from the palette above, keyed on any stable string (an account id
+ * works well) — same seed always renders the same colors, without persisting one. */
+export function pickGradient(seed: string): [string, string] {
+  return AVATAR_GRADIENT_PALETTE[hashString(seed) % AVATAR_GRADIENT_PALETTE.length];
+}
+
 export function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
