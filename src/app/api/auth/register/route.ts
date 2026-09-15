@@ -10,6 +10,7 @@
 // unverified for roles that need it; the studio/business surfaces they unlock stay
 // gated on that until the real verification workflow is built.
 import { NextResponse, type NextRequest } from "next/server";
+import { provisionChannelForRole } from "@/lib/server/channelProvisioning";
 import { query } from "@/lib/server/db";
 import { createLocalAccount, emailIsRegistered } from "@/lib/server/localPassword";
 import { toDbRole } from "@/lib/server/rbac";
@@ -19,8 +20,8 @@ const ROLES_REQUIRING_VERIFICATION = new Set([
   "business",
   "advertiser",
   "producer",
-  "education_provider",
-  "government_nonprofit",
+  "education",
+  "organisation",
 ]);
 
 interface RegisterBody {
@@ -65,6 +66,8 @@ export async function POST(request: NextRequest) {
      on conflict (account_id, role) do nothing`,
     [account.id, dbRole, !ROLES_REQUIRING_VERIFICATION.has(dbRole)],
   );
+
+  await provisionChannelForRole(account.id, dbRole, { name, country, email });
 
   const session = await createSession(account.id, {
     remember: true,

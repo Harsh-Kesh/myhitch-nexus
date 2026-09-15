@@ -1950,6 +1950,7 @@ interface RealAccount {
   country: string | null;
   preferredLanguage: string | null;
   roles: string[];
+  channelId: string | null;
 }
 
 // Overlays the real identity fields (from Postgres, via the session cookie) onto the
@@ -1965,6 +1966,7 @@ function applyRealAccount(account: RealAccount): void {
   if (account.avatarUrl) store.user.avatarUrl = account.avatarUrl;
   if (account.country) store.user.country = account.country;
   if (account.preferredLanguage) store.user.language = account.preferredLanguage;
+  if (account.channelId) store.user.channelId = account.channelId;
   if (account.roles.length > 0) {
     store.user.roles = account.roles as User["roles"];
     if (!store.user.roles.includes(store.user.activeRole)) {

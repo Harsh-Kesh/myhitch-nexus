@@ -1,9 +1,10 @@
-// Server-only. Role naming lives in two places with different vocabularies: the mock
-// UserRole type (src/lib/mock-api/types.ts — "education", "organisation") predates the
-// real schema, while account_roles.role (Phase 0 migration) uses the SRS §4 spelling
-// ("education_provider", "government_nonprofit"). Kept as an explicit two-way map rather
-// than renaming either side — the mock type is a public signature UI code already
-// depends on, and the DB check constraint mirrors the SRS document's own wording.
+// Server-only. account_roles.role was originally written from the SRS §4 spelling
+// ("education_provider", "government_nonprofit") but migration 20260914000002 realigned
+// the check constraint to the mock UserRole spelling instead ("education", "organisation")
+// — both tables were still empty at the time, so it was a plain constraint swap, not a
+// data migration (see that migration's own comment). Every mock role now has an identical
+// DB spelling; this map is kept explicit anyway (rather than a passthrough) so a future
+// re-divergence is a one-line diff here instead of a silent constraint violation.
 import "server-only";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -21,8 +22,8 @@ const MOCK_TO_DB_ROLE: Record<string, string> = {
   business: "business",
   advertiser: "advertiser",
   producer: "producer",
-  education: "education_provider",
-  organisation: "government_nonprofit",
+  education: "education",
+  organisation: "organisation",
   admin: "admin",
 };
 

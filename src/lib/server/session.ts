@@ -31,6 +31,9 @@ export interface SessionAccount {
   preferredLanguage: string | null;
   /** account_roles rows, mapped back to the mock-api's UserRole spelling — see rbac.ts. */
   roles: string[];
+  /** The organization this account owns, if its role provisioned one at registration —
+   * see channelProvisioning.ts. Null for viewer/admin-only accounts. */
+  channelId: string | null;
 }
 
 /**
@@ -86,6 +89,13 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
     [row.id],
   );
 
+  // An account owns at most one channel today (registration provisions exactly one org —
+  // see channelProvisioning.ts), so the earliest membership is unambiguous.
+  const channelRow = await queryOne<{ organization_id: string }>(
+    `select organization_id from memberships where account_id = $1 order by created_at asc limit 1`,
+    [row.id],
+  );
+
   return {
     id: row.id,
     email: row.email,
@@ -95,6 +105,7 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
     country: row.country,
     preferredLanguage: row.preferred_language,
     roles: roleRows.map((r) => r.role),
+    channelId: channelRow?.organization_id ?? null,
   };
 }
 
