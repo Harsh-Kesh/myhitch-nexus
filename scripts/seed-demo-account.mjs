@@ -30,6 +30,13 @@ const PASSWORD = "prototype";
 const FULL_NAME = "Mara Solace";
 const HANDLE = "marasolace";
 
+// Every role that has a dedicated protected workspace (see requireRole() calls in
+// src/app/{admin,studio,business}/layout.tsx) — this is the one account meant to reach
+// all of them, matching what it always could before those layouts enforced real roles
+// server-side. A normal registered account only gets the role(s) it actually chose at
+// signup.
+const ROLES = ["viewer", "creator", "business", "advertiser", "admin"];
+
 async function main() {
   const pg = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await pg.connect();
@@ -46,13 +53,15 @@ async function main() {
   const accountId = rows[0].id;
   console.log(`Demo account ready: ${EMAIL} (${accountId})`);
 
-  await pg.query(
-    `insert into account_roles (account_id, role, verified)
-     values ($1, 'viewer', true)
-     on conflict (account_id, role) do nothing`,
-    [accountId],
-  );
-  console.log("  role: viewer");
+  for (const role of ROLES) {
+    await pg.query(
+      `insert into account_roles (account_id, role, verified)
+       values ($1, $2, true)
+       on conflict (account_id, role) do nothing`,
+      [accountId, role],
+    );
+  }
+  console.log(`  roles: ${ROLES.join(", ")}`);
 
   await pg.end();
 }

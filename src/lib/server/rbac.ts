@@ -5,8 +5,15 @@
 // than renaming either side — the mock type is a public signature UI code already
 // depends on, and the DB check constraint mirrors the SRS document's own wording.
 import "server-only";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
-import { getSessionAccount, readSessionToken, type SessionAccount } from "./session";
+import {
+  getSessionAccount,
+  readSessionToken,
+  SESSION_COOKIE_NAME,
+  type SessionAccount,
+} from "./session";
 
 const MOCK_TO_DB_ROLE: Record<string, string> = {
   viewer: "viewer",
@@ -46,4 +53,31 @@ export async function getRequestAccount(request: NextRequest): Promise<SessionAc
 export async function accountHasRole(request: NextRequest, role: string): Promise<boolean> {
   const account = await getRequestAccount(request);
   return Boolean(account?.roles.includes(toDbRole(role)));
+}
+
+/**
+ * Server Component / layout guard — real, server-side enforcement of SEC-1 ("today any
+ * logged-in user can open /admin"), replacing the client-only AuthGuard's "is anyone
+ * logged in" check, which never looked at *which* roles they held. Reads the session
+ * cookie via next/headers (layouts have no NextRequest to read, unlike route handlers)
+ * and redirects before anything protected renders or ships to the browser.
+ *
+ * Not signed in -> /auth/login, same destination the old client guard used. Signed in
+ * but missing every one of `roles` -> / (home) — deliberately a plain redirect rather
+ * than a dedicated "access denied" page, since none exists yet and this is the honest
+ * minimum rather than a half-built extra surface.
+ */
+export async function requireRole(roles: string | string[]): Promise<SessionAccount> {
+  const required = (Array.isArray(roles) ? roles : [roles]).map(toDbRole);
+
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+  if (!token) redirect("/auth/login");
+
+  const account = await getSessionAccount(token);
+  if (!account) redirect("/auth/login");
+
+  if (!account.roles.some((role) => required.includes(role))) redirect("/");
+
+  return account;
 }

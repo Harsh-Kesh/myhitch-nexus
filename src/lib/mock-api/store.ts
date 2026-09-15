@@ -88,9 +88,11 @@ export interface MockStore {
 /**
  * The rest of the store deliberately does not persist — a reload should
  * reseed the catalogue, purchases, comments etc. back to a clean demo state.
- * Login is the one exception: without this, AuthGuard'd routes (Studio,
- * Admin, Business, Account, video pages) would sign a viewer back out on
- * every refresh, direct link or new tab, which no real session behaves like.
+ * Login is the one exception: without this, protected routes (Account behind
+ * the client AuthGuard; Studio/Admin/Business behind their own server-side
+ * requireRole() now — see src/lib/server/rbac.ts; video pages via their own
+ * inline redirect) would sign a viewer back out on every refresh, direct
+ * link or new tab, which no real session behaves like.
  */
 const LOGIN_STORAGE_KEY = "nx-logged-in";
 
