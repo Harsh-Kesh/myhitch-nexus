@@ -414,7 +414,20 @@ export async function getChannelVideos(
   );
 }
 
+// Live 2026-09-15 — real channel_follows via /api/channels/{id}/follow, for real
+// (Postgres) channels only — same looksLikeRealId split as getVideo()/getChannel()
+// above. A mock channel's follow state stays purely local exactly as before.
 export async function toggleFollow(channelId: string): Promise<boolean> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/channels/${channelId}/follow/`, { method: "POST" });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not update your follow status.");
+    }
+    const data = (await res.json()) as { following: boolean };
+    return data.following;
+  }
+
   await latency("fast");
   const index = store.following.indexOf(channelId);
   if (index >= 0) {
@@ -426,6 +439,13 @@ export async function toggleFollow(channelId: string): Promise<boolean> {
 }
 
 export async function isFollowing(channelId: string): Promise<boolean> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/channels/${channelId}/follow/`);
+    if (!res.ok) return false;
+    const data = (await res.json()) as { following: boolean };
+    return data.following;
+  }
+
   return store.following.includes(channelId);
 }
 
@@ -614,7 +634,18 @@ export async function getRequestCountry(): Promise<string> {
 
 /* ============================== Playback ================================= */
 
+// Live 2026-09-15 — real watch_progress via /api/videos/{id}/progress, for real videos
+// only — same looksLikeRealId split as getComments()/rateVideo() above. durationSeconds
+// comes back from the video's own row server-side (watch_progress doesn't store one),
+// so the caller-supplied durationSeconds argument is only used on the mock branch.
 export async function getWatchProgress(videoId: string): Promise<WatchProgress | null> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/progress/`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { progress: WatchProgress | null };
+    return data.progress;
+  }
+
   return store.watchProgress.find((entry) => entry.videoId === videoId) ?? null;
 }
 
@@ -623,6 +654,19 @@ export async function saveWatchProgress(
   positionSeconds: number,
   durationSeconds: number,
 ): Promise<WatchProgress> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/progress/`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ positionSeconds }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not save your watch progress.");
+    }
+    return (await res.json()) as WatchProgress;
+  }
+
   const existing = store.watchProgress.find((entry) => entry.videoId === videoId);
   const record: WatchProgress = {
     videoId,
@@ -636,18 +680,31 @@ export async function saveWatchProgress(
   return record;
 }
 
+// Merges the two sources the same way getWatchlist() does: real entries (watch_progress,
+// resolved to full VideoSummary rows, cast to Video the same way searchVideos() already
+// does) and whatever mock-shaped video ids are still in the local store.
 export async function getContinueWatching(): Promise<
   Array<{ video: Video; progress: WatchProgress }>
 > {
-  await latency("fast");
-  return store.watchProgress
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map((progress) => ({
-      progress,
-      video: store.videos.find((video) => video.id === progress.videoId)!,
-    }))
-    .filter((entry) => Boolean(entry.video))
-    .map((entry) => clone(entry));
+  const [real, mock] = await Promise.all([
+    fetch("/api/continue-watching/")
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((data) => (data as { items: Array<{ video: Video; progress: WatchProgress }> }).items)
+      .catch(() => [] as Array<{ video: Video; progress: WatchProgress }>),
+    (async () => {
+      await latency("fast");
+      return clone(
+        store.watchProgress
+          .filter((entry) => !looksLikeRealId(entry.videoId))
+          .map((progress) => ({
+            progress,
+            video: store.videos.find((video) => video.id === progress.videoId)!,
+          }))
+          .filter((entry) => Boolean(entry.video)),
+      );
+    })(),
+  ]);
+  return [...mock, ...real].sort((a, b) => b.progress.updatedAt.localeCompare(a.progress.updatedAt));
 }
 
 /* =============================== Social ================================== */

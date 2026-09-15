@@ -333,6 +333,50 @@ export async function getWatchlistVideos(accountId: string): Promise<VideoSummar
   return rows.map(mapVideoSummary);
 }
 
+/** Same FK guard as videoExists(), for channel_follows.organization_id. */
+export async function organizationExists(id: string): Promise<boolean> {
+  const row = await queryOne<{ id: string }>(`select id from organizations where id = $1`, [id]);
+  return Boolean(row);
+}
+
+export interface EngagementProgress {
+  videoId: string;
+  positionSeconds: number;
+  durationSeconds: number;
+  updatedAt: string;
+  completed: boolean;
+}
+
+/** Full VideoSummary + progress pairs for everything a real account has a watch_progress
+ * row for, most recently updated first — no completed filter, matching the mock's
+ * getContinueWatching(), which doesn't drop finished titles from the list either. */
+export async function getContinueWatchingVideos(
+  accountId: string,
+): Promise<Array<{ video: VideoSummary; progress: EngagementProgress }>> {
+  const rows = await query<
+    VideoSummaryRow & { position_seconds: number; wp_completed: boolean; wp_updated_at: string }
+  >(
+    `select ${VIDEO_SUMMARY_COLUMNS},
+       wp.position_seconds, wp.completed as wp_completed, wp.updated_at as wp_updated_at
+     from watch_progress wp
+     join videos v on v.id = wp.video_id
+     ${VIDEO_SUMMARY_JOINS}
+     where wp.account_id = $1
+     order by wp.updated_at desc`,
+    [accountId],
+  );
+  return rows.map((row) => ({
+    video: mapVideoSummary(row),
+    progress: {
+      videoId: row.id,
+      positionSeconds: row.position_seconds,
+      durationSeconds: row.duration_seconds,
+      updatedAt: row.wp_updated_at,
+      completed: row.wp_completed,
+    },
+  }));
+}
+
 /** Only ever returns published content — draft/scheduled/private/etc. are never in the
  * search index in the first place (scripts/index-catalogue.mjs only indexes published
  * rows), so there is no separate status filter to apply here. */

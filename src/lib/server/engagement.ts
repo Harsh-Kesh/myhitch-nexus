@@ -1,8 +1,9 @@
 // Server-only. Account-scoped write paths that were blocked on having a real signed-in
-// account to attach them to (docs/DEVELOPMENT-PLAN.md §9) — watchlist, ratings and
-// comments. Reads that return full video display data (getWatchlistVideos) live in
-// catalogue.ts instead, next to the other VideoSummary-shaped queries they share a join
-// with; this file is the mutations plus the reads that are cheap and video-independent.
+// account to attach them to (docs/DEVELOPMENT-PLAN.md §9) — watchlist, ratings, comments,
+// follows and watch progress. Reads that return full video/channel display data
+// (getWatchlistVideos, getContinueWatchingVideos) live in catalogue.ts instead, next to
+// the other VideoSummary-shaped queries they share a join with; this file is the
+// mutations plus the reads that are cheap and video/channel-independent.
 import "server-only";
 import { pickGradient, slugify } from "@/lib/utils";
 import { query, queryOne } from "./db";
@@ -232,4 +233,119 @@ export async function replyToComment(
   if (!parentRow) return null;
   const replies = rows.filter((row) => row.parent_comment_id === commentId).map(mapReplyRow);
   return { ...mapCommentRow(parentRow), replies };
+}
+
+/* -------------------------------- Follows ---------------------------------- */
+
+export async function toggleFollow(accountId: string, organizationId: string): Promise<boolean> {
+  const existing = await queryOne(
+    `select 1 from channel_follows where account_id = $1 and organization_id = $2`,
+    [accountId, organizationId],
+  );
+  let following: boolean;
+  if (existing) {
+    await query(
+      `delete from channel_follows where account_id = $1 and organization_id = $2`,
+      [accountId, organizationId],
+    );
+    following = false;
+  } else {
+    await query(
+      `insert into channel_follows (account_id, organization_id) values ($1, $2)`,
+      [accountId, organizationId],
+    );
+    following = true;
+  }
+  // Same transition as rateVideo()'s rating_average/rating_count: organizations.followers
+  // stops being the seeded snapshot and starts being live the moment anyone actually
+  // follows the channel for real.
+  await query(
+    `update organizations set followers = (select count(*) from channel_follows where organization_id = $1) where id = $1`,
+    [organizationId],
+  );
+  return following;
+}
+
+export async function isFollowing(accountId: string, organizationId: string): Promise<boolean> {
+  const row = await queryOne(
+    `select 1 from channel_follows where account_id = $1 and organization_id = $2`,
+    [accountId, organizationId],
+  );
+  return Boolean(row);
+}
+
+/* ---------------------------- Watch progress -------------------------------- */
+
+export interface EngagementProgress {
+  videoId: string;
+  positionSeconds: number;
+  durationSeconds: number;
+  updatedAt: string;
+  completed: boolean;
+}
+
+/** durationSeconds comes from the video row, not watch_progress (which doesn't store
+ * one — see the migration) — a video's own length is a property of the video, not of any
+ * one account's progress through it. */
+export async function getWatchProgress(
+  accountId: string,
+  videoId: string,
+): Promise<EngagementProgress | null> {
+  const row = await queryOne<{
+    position_seconds: number;
+    completed: boolean;
+    updated_at: string;
+    duration_seconds: number;
+  }>(
+    `select wp.position_seconds, wp.completed, wp.updated_at, v.duration_seconds
+     from watch_progress wp
+     join videos v on v.id = wp.video_id
+     where wp.account_id = $1 and wp.video_id = $2`,
+    [accountId, videoId],
+  );
+  if (!row) return null;
+  return {
+    videoId,
+    positionSeconds: row.position_seconds,
+    durationSeconds: row.duration_seconds,
+    updatedAt: row.updated_at,
+    completed: row.completed,
+  };
+}
+
+/** Same >95%-watched threshold as the mock's saveWatchProgress(). watch_progress has no
+ * updated_at trigger (unlike accounts/organizations — see the Phase 0 migration), so it's
+ * set explicitly here on every write, insert or update. */
+export async function saveWatchProgress(
+  accountId: string,
+  videoId: string,
+  positionSeconds: number,
+): Promise<EngagementProgress | null> {
+  const video = await queryOne<{ duration_seconds: number }>(
+    `select duration_seconds from videos where id = $1`,
+    [videoId],
+  );
+  if (!video) return null;
+
+  const clampedPosition = Math.max(0, Math.round(positionSeconds));
+  const completed = video.duration_seconds > 0 && clampedPosition / video.duration_seconds > 0.95;
+
+  const row = await queryOne<{ updated_at: string }>(
+    `insert into watch_progress (account_id, video_id, position_seconds, completed, updated_at)
+     values ($1, $2, $3, $4, now())
+     on conflict (account_id, video_id) do update set
+       position_seconds = excluded.position_seconds,
+       completed = excluded.completed,
+       updated_at = excluded.updated_at
+     returning updated_at`,
+    [accountId, videoId, clampedPosition, completed],
+  );
+
+  return {
+    videoId,
+    positionSeconds: clampedPosition,
+    durationSeconds: video.duration_seconds,
+    updatedAt: row!.updated_at,
+    completed,
+  };
 }
