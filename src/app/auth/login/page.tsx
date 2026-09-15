@@ -41,12 +41,21 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (values: FormValues) => {
-    await login.mutateAsync(values.email);
-    toast({
-      title: "Signed in",
-      description: "Mock session — no credentials were sent anywhere.",
-    });
-    router.push("/");
+    try {
+      await login.mutateAsync({
+        email: values.email,
+        password: values.password,
+        remember: values.remember,
+      });
+      toast({ title: "Signed in" });
+      router.push("/");
+    } catch (err) {
+      toast({
+        title: "Couldn't sign you in",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        tone: "error",
+      });
+    }
   };
 
   return (

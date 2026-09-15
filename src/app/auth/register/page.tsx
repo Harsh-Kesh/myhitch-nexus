@@ -250,21 +250,30 @@ export default function RegisterPage() {
 
   const submit = async () => {
     setSubmitting(true);
-    await registerUser({ name, email, role, country });
-    setSubmitting(false);
-    toast({
-      title: "Account created",
-      description: needsOrg
-        ? "Your organisation is pending verification. You can browse while it is reviewed."
-        : "Welcome to Nexus.",
-    });
-    router.push(
-      role === "creator"
-        ? "/studio/dashboard"
-        : role === "business" || role === "advertiser"
-          ? "/business/channel"
-          : "/",
-    );
+    try {
+      await registerUser({ name, email, password, role, country });
+      toast({
+        title: "Account created",
+        description: needsOrg
+          ? "Your organisation is pending verification. You can browse while it is reviewed."
+          : "Welcome to Nexus.",
+      });
+      router.push(
+        role === "creator"
+          ? "/studio/dashboard"
+          : role === "business" || role === "advertiser"
+            ? "/business/channel"
+            : "/",
+      );
+    } catch (err) {
+      toast({
+        title: "Couldn't create your account",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+        tone: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -814,9 +823,9 @@ export default function RegisterPage() {
             </Card>
 
             <p className="text-xs leading-relaxed text-fg-subtle">
-              Creating this account writes to the in-browser mock store only. No
-              identity checks, document verification or fraud detection run
-              anywhere in this build.
+              This creates a real account you can sign back into. Document
+              verification, fraud detection and multi-factor enrollment are not
+              yet live in this build.
             </p>
           </div>
         ) : null}

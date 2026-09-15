@@ -1781,9 +1781,51 @@ export async function updateConfigTable<K extends keyof PlatformConfigTables>(
 
 /* ============================== Account ================================== */
 
+interface RealAccount {
+  id: string;
+  email: string;
+  fullName: string;
+  handle: string | null;
+  avatarUrl: string | null;
+  country: string | null;
+  preferredLanguage: string | null;
+  roles: string[];
+}
+
+// Overlays the real identity fields (from Postgres, via the session cookie) onto the
+// otherwise-still-mock store.user — profiles, notification/privacy settings, parental
+// controls etc. have nowhere real to live yet and stay exactly as the in-memory store
+// seeds them. See src/lib/server/session.ts and docs/DEVELOPMENT-PLAN.md §9 (blocker #2)
+// for why identity/sessions are real today but not yet Auth0-backed.
+function applyRealAccount(account: RealAccount): void {
+  store.user.id = account.id;
+  store.user.email = account.email;
+  store.user.name = account.fullName;
+  if (account.handle) store.user.handle = account.handle;
+  if (account.avatarUrl) store.user.avatarUrl = account.avatarUrl;
+  if (account.country) store.user.country = account.country;
+  if (account.preferredLanguage) store.user.language = account.preferredLanguage;
+  if (account.roles.length > 0) {
+    store.user.roles = account.roles as User["roles"];
+    if (!store.user.roles.includes(store.user.activeRole)) {
+      store.user.activeRole = store.user.roles[0];
+    }
+  }
+}
+
 export async function getCurrentUser(): Promise<User | null> {
-  await latency("fast");
-  if (!store.loggedIn) return null;
+  const res = await fetch("/api/auth/me");
+  const data = (await res.json()) as { account: RealAccount | null };
+
+  if (!data.account) {
+    store.loggedIn = false;
+    persistLogin(false);
+    return null;
+  }
+
+  applyRealAccount(data.account);
+  store.loggedIn = true;
+  persistLogin(true);
   return clone(store.user);
 }
 
@@ -1840,15 +1882,34 @@ export async function markAllNotificationsRead(): Promise<void> {
 
 /* ------------------------------- Auth ---------------------------------- */
 
+// Live 2026-09-15 — real account creation + session issuance via POST /api/auth/register
+// (src/lib/server/localPassword.ts + session.ts), a temporary local-password front door
+// standing in for Auth0 while shared-tenant access is blocked (docs/DEVELOPMENT-PLAN.md
+// §9, blocker #2). Deliberately narrow: this covers identity/session/roles only, not the
+// rest of the registration wizard's steps (org verification documents, MFA enrollment,
+// mobile OTP) — those still need P2's document storage, real Auth0 MFA and an SMS
+// provider respectively, so they stay exactly the cosmetic mock UI they already were.
 export async function register(payload: {
   name: string;
   email: string;
+  password: string;
   role: User["activeRole"];
   country: string;
 }): Promise<{ userId: string; verificationRequired: true }> {
-  await latency("slow");
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Could not create your account.");
+  }
+  const data = (await res.json()) as { userId: string; verificationRequired: true };
+
   store.user = {
     ...store.user,
+    id: data.userId,
     name: payload.name,
     email: payload.email,
     country: payload.country,
@@ -1857,10 +1918,14 @@ export async function register(payload: {
     emailVerified: false,
     mobileVerified: false,
   };
-  return { userId: store.user.id, verificationRequired: true };
+  store.loggedIn = true;
+  persistLogin(true);
+  return data;
 }
 
-/** Mock OTP. The code is always 000000 and is shown in the UI on purpose. */
+/** Mock OTP. The code is always 000000 and is shown in the UI on purpose. Still mock —
+ * see register()'s comment above on why: no SMS/email provider exists yet to send a real
+ * one, and this was never blocking anything real either way. */
 export const MOCK_OTP = "000000";
 
 export async function verifyOtp(code: string): Promise<{ ok: boolean; message?: string }> {
@@ -1873,16 +1938,36 @@ export async function verifyOtp(code: string): Promise<{ ok: boolean; message?: 
   return { ok: true };
 }
 
-export async function login(email: string): Promise<User> {
-  await latency();
-  store.user.email = email || store.user.email;
+// Live 2026-09-15 — real credential check + session issuance via POST /api/auth/login.
+// Same temporary-local-password caveat as register() above.
+export async function login(payload: {
+  email: string;
+  password: string;
+  remember?: boolean;
+}): Promise<User> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "Could not sign you in.");
+  }
+  const data = (await res.json()) as { account: RealAccount };
+
+  applyRealAccount(data.account);
   store.loggedIn = true;
   persistLogin(true);
   return clone(store.user);
 }
 
 export async function logout(): Promise<void> {
-  await latency("fast");
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {
+    // Best-effort: even if the network call fails, the client still forgets the
+    // session below — worst case a still-valid server-side session outlives this tab,
+    // which expires on its own (session.ts's expiry) rather than leaking access.
+  });
   store.loggedIn = false;
   persistLogin(false);
 }
