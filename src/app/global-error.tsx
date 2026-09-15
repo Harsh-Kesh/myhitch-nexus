@@ -1,5 +1,6 @@
 "use client";
 
+import * as Sentry from "@sentry/nextjs";
 import * as React from "react";
 import "./globals.css";
 
@@ -18,6 +19,7 @@ export default function GlobalError({
 }) {
   React.useEffect(() => {
     console.error("[nexus] fatal error:", error);
+    Sentry.captureException(error);
   }, [error]);
 
   return (

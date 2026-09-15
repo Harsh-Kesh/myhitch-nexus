@@ -1,6 +1,7 @@
 "use client";
 
 import { IconAlertTriangle, IconHome, IconRefresh } from "@tabler/icons-react";
+import * as Sentry from "@sentry/nextjs";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { StatusLinks, StatusScreen } from "@/components/layout/status-screen";
@@ -18,9 +19,8 @@ export default function RouteError({
   reset: () => void;
 }) {
   React.useEffect(() => {
-    // A real deployment would report this. There is no telemetry service in
-    // this build, so the console is the honest destination.
     console.error("[nexus] route error:", error);
+    Sentry.captureException(error);
   }, [error]);
 
   return (

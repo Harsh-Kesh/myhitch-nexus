@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 /**
  * Deployed as a normal Next.js server (Railway), served from the domain
@@ -26,4 +27,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// No SENTRY_AUTH_TOKEN is configured, so source-map upload is skipped (this just means
+// Sentry's stack traces show minified code until one is added — error capture itself is
+// unaffected). `silent: true` keeps that skip quiet rather than warning on every build.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+});
