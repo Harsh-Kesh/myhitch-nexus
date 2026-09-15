@@ -368,10 +368,29 @@ export async function getChannels(): Promise<Channel[]> {
   return data.items;
 }
 
+// Live 2026-09-15 for real ids — PATCH /api/channels/{id}/, restricted server-side to the
+// six real profile fields (name/handle/tagline/about/contactEmail/languages/country).
+// avatarUrl/bannerUrl are deliberately never sent for a real channel — see the settings
+// page, which disables those two controls there instead of letting them silently no-op
+// (they're a browser-local blob: URL with nowhere real to persist to until P2's media
+// pipeline exists).
 export async function updateChannel(
   id: string,
   patch: Partial<Channel>,
 ): Promise<Channel> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/channels/${encodeURIComponent(id)}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `PATCH /api/channels/${id} failed with ${res.status}`);
+    }
+    return (await res.json()) as Channel;
+  }
+
   await latency("fast");
   const channel = store.channels.find(
     (item) => item.id === id || item.handle === id,

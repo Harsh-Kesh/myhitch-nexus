@@ -11,6 +11,7 @@ import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import { useChannel, useCurrentUser, useUpdateChannel } from "@/lib/mock-api/hooks";
 import { compactNumber, formatDate } from "@/lib/utils";
@@ -22,6 +23,7 @@ const LANGUAGES = [
 export default function ChannelSettingsPage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
+  const isRealChannel = looksLikeRealId(channelId);
   const { data: channel } = useChannel(channelId);
   const updateChannel = useUpdateChannel(channelId);
   const { toast } = useToast();
@@ -58,7 +60,7 @@ export default function ChannelSettingsPage() {
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
   const [autoApprove, setAutoApprove] = React.useState(false);
 
-  React.useEffect(() => {
+  const resetFromChannel = React.useCallback(() => {
     if (!channel) return;
     setName(channel.name);
     setHandle(channel.handle);
@@ -69,7 +71,24 @@ export default function ChannelSettingsPage() {
     setCountry(channel.country);
   }, [channel]);
 
+  React.useEffect(resetFromChannel, [resetFromChannel]);
+
   if (!channel) return null;
+
+  const saveProfile = () => {
+    updateChannel.mutate(
+      { name, handle, tagline, about, contactEmail, languages, country },
+      {
+        onSuccess: () => toast({ title: "Channel settings saved" }),
+        onError: (error) =>
+          toast({
+            title: "Couldn't save channel settings",
+            description: error instanceof Error ? error.message : undefined,
+            tone: "error",
+          }),
+      },
+    );
+  };
 
   return (
     <>
@@ -115,16 +134,18 @@ export default function ChannelSettingsPage() {
                   seed={`${channel.id}-banner`}
                   ratio="banner"
                 />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="absolute right-3 top-3"
-                  loading={updateChannel.isPending}
-                  onClick={() => bannerInputRef.current?.click()}
-                >
-                  <IconPencil />
-                  Change banner
-                </Button>
+                {!isRealChannel && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="absolute right-3 top-3"
+                    loading={updateChannel.isPending}
+                    onClick={() => bannerInputRef.current?.click()}
+                  >
+                    <IconPencil />
+                    Change banner
+                  </Button>
+                )}
               </div>
               <div className="flex flex-wrap items-center gap-4 bg-surface-2 p-4">
                 <Avatar
@@ -140,16 +161,23 @@ export default function ChannelSettingsPage() {
                   <p className="text-xs text-fg-muted nx-tnum">
                     @{channel.handle} · {compactNumber(channel.followers)} followers
                   </p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="mt-2"
-                    loading={updateChannel.isPending}
-                    onClick={() => avatarInputRef.current?.click()}
-                  >
-                    <IconPencil />
-                    Change avatar
-                  </Button>
+                  {isRealChannel ? (
+                    <p className="mt-2 text-2xs text-fg-subtle">
+                      Avatar and banner uploads arrive with the media pipeline — this
+                      channel&rsquo;s colours are generated for now.
+                    </p>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="mt-2"
+                      loading={updateChannel.isPending}
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      <IconPencil />
+                      Change avatar
+                    </Button>
+                  )}
                 </div>
                 <Badge tone="accent" size="sm">
                   {CHANNEL_KIND_LABELS[channel.kind]}
@@ -209,7 +237,10 @@ export default function ChannelSettingsPage() {
                   value={country}
                   onChange={(event) => setCountry(event.target.value)}
                 >
-                  {["GB", "IE", "DE", "FR", "PT", "US", "LK", "AU"].map((code) => (
+                  {/* Matches auth/register's own COUNTRIES list — a real account can be
+                      registered with any of these, so this dropdown needs to offer them
+                      all too, not just the subset the mock demo channels happened to use. */}
+                  {["GB", "IE", "DE", "FR", "PT", "ES", "US", "CA", "AU", "LK", "IN", "NL"].map((code) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
@@ -228,11 +259,10 @@ export default function ChannelSettingsPage() {
             </Field>
 
             <div className="flex justify-end gap-2 border-t border-border pt-4">
-              <Button variant="ghost">Reset</Button>
-              <Button
-                variant="primary"
-                onClick={() => toast({ title: "Channel settings saved" })}
-              >
+              <Button variant="ghost" onClick={resetFromChannel}>
+                Reset
+              </Button>
+              <Button variant="primary" loading={updateChannel.isPending} onClick={saveProfile}>
                 Save changes
               </Button>
             </div>
