@@ -52,7 +52,7 @@ export function LiveViewerClient() {
   const { toast } = useToast();
 
   const { data: event, isLoading } = useLiveEvent(id);
-  const { data: currentUser } = useCurrentUser();
+  const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
   const router = useRouter();
   const { data: messages = [] } = useChatMessages(id);
   const { data: polls = [] } = usePolls(id);
@@ -61,12 +61,13 @@ export function LiveViewerClient() {
   const votePoll = useVotePoll(id);
   const toggleFollow = useToggleFollow();
 
-  // Redirect guests to the login page
+  // Redirect guests to the login page — same fix as video-client.tsx's: gated on the
+  // *current user* query's own loading state, not the live event's.
   React.useEffect(() => {
-    if (!isLoading && currentUser === null) {
+    if (!isCurrentUserLoading && currentUser === null) {
       router.replace("/auth/login");
     }
-  }, [isLoading, currentUser, router]);
+  }, [isCurrentUserLoading, currentUser, router]);
 
   const [draft, setDraft] = React.useState("");
   const [tab, setTab] = React.useState("chat");

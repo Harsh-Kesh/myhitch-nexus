@@ -897,7 +897,7 @@ export interface HomeRail {
   subtitle?: string;
   href: string;
   kind: "poster" | "wide" | "live" | "continue";
-  videoIds: string[];
+  videos: Video[];
 }
 
 export interface FeaturedContent {

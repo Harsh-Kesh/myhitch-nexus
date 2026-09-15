@@ -377,6 +377,233 @@ export async function getContinueWatchingVideos(
   }));
 }
 
+/* ============================ Home / Featured ============================ */
+
+async function getVideosByType(contentType: string, limit: number): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from videos v
+     ${VIDEO_SUMMARY_JOINS}
+     where v.status = 'published' and v.content_type = $1
+     order by v.views desc
+     limit $2`,
+    [contentType, limit],
+  );
+  return rows.map(mapVideoSummary);
+}
+
+async function getTopViewedVideos(limit: number): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from videos v
+     ${VIDEO_SUMMARY_JOINS}
+     where v.status = 'published'
+     order by v.views desc
+     limit $1`,
+    [limit],
+  );
+  return rows.map(mapVideoSummary);
+}
+
+/** Top-rated published videos, excluding `excludeIds` (typically whatever's already in
+ * the viewer's own "Continue watching" rail) — the home page's "Recommended for you".
+ * Not a real recommendation model (no such pipeline exists — SRS §6.9), same honest
+ * limitation the mock version it replaces had; `= any('{}')` matches nothing, so an
+ * empty exclude list (a guest, or nothing in progress) is a no-op filter, not an error. */
+async function getRecommendedVideos(excludeIds: string[], limit: number): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from videos v
+     ${VIDEO_SUMMARY_JOINS}
+     where v.status = 'published' and not (v.id = any($1::uuid[]))
+     order by v.rating_average desc, v.rating_count desc
+     limit $2`,
+    [excludeIds, limit],
+  );
+  return rows.map(mapVideoSummary);
+}
+
+/** Real videos from organizations `accountId` follows, most recently published first —
+ * the "From channels you follow" home rail's account-scoped counterpart to
+ * getWatchlistVideos() above. */
+async function getFollowedChannelVideos(accountId: string, limit: number): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from videos v
+     ${VIDEO_SUMMARY_JOINS}
+     join channel_follows cf on cf.organization_id = v.channel_id
+     where cf.account_id = $1 and v.status = 'published'
+     order by v.published_at desc nulls last
+     limit $2`,
+    [accountId, limit],
+  );
+  return rows.map(mapVideoSummary);
+}
+
+export interface FeaturedRail {
+  id: string;
+  title: string;
+  subtitle?: string;
+  href: string;
+  kind: "poster" | "wide" | "live" | "continue";
+  videos: VideoSummary[];
+}
+
+export interface FeaturedCatalogue {
+  hero: VideoSummary[];
+  rails: FeaturedRail[];
+}
+
+/**
+ * Real Postgres equivalent of the mock's getFeaturedContent() — see
+ * src/app/api/home/route.ts. `accountId` personalizes "Continue watching" and "From
+ * channels you follow"; both are simply omitted (not an error, not a stand-in rail) for
+ * a signed-out request, same as the mock rails did when there was nothing to show.
+ *
+ * There is no admin-curated "featured" flag on videos (SRS has no such field yet), so
+ * "hero" is the most-viewed published videos rather than an editorial pick — a
+ * defensible, data-driven stand-in for what a human curator would otherwise choose.
+ */
+export async function getFeaturedRails(accountId: string | null): Promise<FeaturedCatalogue> {
+  const continueEntries = accountId ? await getContinueWatchingVideos(accountId) : [];
+  const continueVideos = continueEntries
+    .filter((entry) => !entry.progress.completed)
+    .map((entry) => entry.video)
+    .slice(0, 10);
+  const continueIds = continueVideos.map((video) => video.id);
+
+  const [
+    followedVideos,
+    films,
+    commercial,
+    education,
+    news,
+    documentary,
+    entertainment,
+    creators,
+    government,
+    nonprofit,
+    tourism,
+    recommended,
+    hero,
+  ] = await Promise.all([
+    accountId ? getFollowedChannelVideos(accountId, 12) : Promise.resolve([]),
+    getVideosByType("film", 12),
+    getVideosByType("commercial", 12),
+    getVideosByType("education", 12),
+    getVideosByType("news", 6),
+    getVideosByType("documentary", 6),
+    getVideosByType("entertainment", 12),
+    getVideosByType("user-generated", 12),
+    getVideosByType("government", 4),
+    getVideosByType("nonprofit", 4),
+    getVideosByType("tourism", 4),
+    getRecommendedVideos(continueIds, 12),
+    getTopViewedVideos(4),
+  ]);
+
+  const rails: FeaturedRail[] = [
+    ...(continueVideos.length
+      ? [
+          {
+            id: "rail_continue",
+            title: "Continue watching",
+            subtitle: "Picks up where you stopped, on any device",
+            href: "/account/history",
+            kind: "continue" as const,
+            videos: continueVideos,
+          },
+        ]
+      : []),
+    {
+      id: "rail_live",
+      title: "Live and upcoming",
+      subtitle: "Streaming now, plus what is scheduled",
+      href: "/live",
+      kind: "live",
+      videos: [],
+    },
+    {
+      id: "rail_films",
+      title: "Films & cinema",
+      subtitle: "Rent, buy or watch with Premium",
+      href: "/films",
+      kind: "poster",
+      videos: films,
+    },
+    ...(followedVideos.length
+      ? [
+          {
+            id: "rail_following",
+            title: "From channels you follow",
+            href: "/explore",
+            kind: "wide" as const,
+            videos: followedVideos,
+          },
+        ]
+      : []),
+    {
+      id: "rail_commercial",
+      title: "Commercial & brand",
+      subtitle: "Launch films, brand documentaries and product work",
+      href: "/commercial",
+      kind: "wide",
+      videos: commercial,
+    },
+    {
+      id: "rail_recommended",
+      title: "Recommended for you",
+      subtitle: "Based on what you have watched",
+      href: "/explore",
+      kind: "wide",
+      videos: recommended,
+    },
+    {
+      id: "rail_education",
+      title: "Education",
+      subtitle: "Accredited courses, lectures and workplace training",
+      href: "/education",
+      kind: "wide",
+      videos: education,
+    },
+    {
+      id: "rail_news",
+      title: "News & documentary",
+      subtitle: "Bulletins and long-form investigations",
+      href: "/news",
+      kind: "wide",
+      videos: [...news, ...documentary],
+    },
+    {
+      id: "rail_entertainment",
+      title: "Entertainment",
+      href: "/entertainment",
+      kind: "wide",
+      videos: entertainment,
+    },
+    {
+      id: "rail_creators",
+      title: "Creator uploads",
+      href: "/explore?type=user-generated",
+      kind: "wide",
+      videos: creators,
+    },
+    {
+      id: "rail_public",
+      title: "Public, community & impact",
+      subtitle: "Government, non-profit and tourism channels",
+      href: "/explore?type=government",
+      kind: "wide",
+      videos: [...government, ...nonprofit, ...tourism],
+    },
+  ];
+
+  return {
+    hero,
+    rails: rails.filter((rail) => rail.kind === "live" || rail.videos.length > 0),
+  };
+}
+
 /** Only ever returns published content — draft/scheduled/private/etc. are never in the
  * search index in the first place (scripts/index-catalogue.mjs only indexes published
  * rows), so there is no separate status filter to apply here. */

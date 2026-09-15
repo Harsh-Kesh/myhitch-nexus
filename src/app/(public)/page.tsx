@@ -66,13 +66,6 @@ export default function HomePage() {
     [continueWatching],
   );
 
-  const videoLookup = React.useMemo(() => {
-    const map = new Map<string, Video>();
-    for (const entry of continueWatching) map.set(entry.video.id, entry.video);
-    for (const video of featured?.hero ?? []) map.set(video.id, video);
-    return map;
-  }, [continueWatching, featured]);
-
   return (
     <div className="pb-4">
       <Hero
@@ -94,14 +87,17 @@ export default function HomePage() {
         {featured?.rails.map((rail) =>
           rail.kind === "live" ? (
             <LiveRail key={rail.id} events={liveEvents} />
-          ) : (
-            <HydratedRail
+          ) : rail.videos.length > 0 ? (
+            <Rail
               key={rail.id}
-              rail={rail}
-              lookup={videoLookup}
+              title={rail.title}
+              subtitle={rail.subtitle}
+              href={rail.href}
+              videos={rail.videos}
+              layout={rail.kind === "poster" ? "poster" : "wide"}
               progressFor={rail.kind === "continue" ? progressFor : undefined}
             />
-          ),
+          ) : null,
         )}
       </div>
     </div>
@@ -141,7 +137,14 @@ function Hero({
   }
 
   const video = videos[index];
+  // Real (Postgres) videos carry their channel's display name directly
+  // (VideoSummary.channelName) rather than a mock-shaped channelId that channelById()
+  // can resolve — same fix as VideoCard's, and for the same reason: without it, every
+  // hero title (now always real, since getFeaturedContent() no longer returns mock
+  // videos) would silently drop its channel line.
+  const realChannelName = (video as { channelName?: string }).channelName;
   const channel = channelById(video.channelId);
+  const channelName = channel?.name ?? realChannelName;
   const price =
     video.pricing.rentPrice ?? video.pricing.buyPrice ?? video.pricing.ppvPrice;
   const inWatchlist = watchlist.includes(video.id);
@@ -193,12 +196,12 @@ function Hero({
             </h1>
 
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-muted">
-              {channel ? (
+              {channelName ? (
                 <Link
-                  href={`/channel/${channel.id}`}
+                  href={`/channel/${video.channelId}`}
                   className="font-medium text-fg transition-colors hover:text-accent"
                 >
-                  {channel.name}
+                  {channelName}
                 </Link>
               ) : null}
               <span className="inline-flex items-center gap-1 nx-tnum">
@@ -281,52 +284,6 @@ function Hero({
 }
 
 /* --------------------------------- Rails --------------------------------- */
-
-function HydratedRail({
-  rail,
-  lookup,
-  progressFor,
-}: {
-  rail: { id: string; title: string; subtitle?: string; href: string; kind: string; videoIds: string[] };
-  lookup: Map<string, Video>;
-  progressFor?: (videoId: string) => number | undefined;
-}) {
-  const resolved = useRailVideos(rail.videoIds, lookup);
-  if (resolved.length === 0) return null;
-  return (
-    <Rail
-      title={rail.title}
-      subtitle={rail.subtitle}
-      href={rail.href}
-      videos={resolved}
-      layout={rail.kind === "poster" ? "poster" : "wide"}
-      progressFor={progressFor}
-    />
-  );
-}
-
-/**
- * The featured payload returns ids; each is fetched through the same
- * getVideo() the rest of the app uses so nothing reads the store directly.
- */
-function useRailVideos(ids: string[], seeded: Map<string, Video>) {
-  const [videos, setVideos] = React.useState<Video[]>(() =>
-    ids.map((id) => seeded.get(id)).filter(Boolean) as Video[],
-  );
-
-  React.useEffect(() => {
-    let cancelled = false;
-    import("@/lib/mock-api").then(async ({ getVideo }) => {
-      const results = await Promise.all(ids.map((id) => getVideo(id)));
-      if (!cancelled) setVideos(results.filter(Boolean) as Video[]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [ids]);
-
-  return videos;
-}
 
 function LiveRail({
   events,

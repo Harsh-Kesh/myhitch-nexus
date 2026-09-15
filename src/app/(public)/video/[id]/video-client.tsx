@@ -71,7 +71,7 @@ export function VideoDetailClient() {
   const { toast } = useToast();
 
   const { data: video, isLoading } = useVideo(id);
-  const { data: currentUser } = useCurrentUser();
+  const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
   const { data: entitlement } = useEntitlement(id);
   const { data: channel } = useChannel(video?.channelId ?? "");
   const { data: related = [] } = useRelatedVideos(id);
@@ -91,12 +91,17 @@ export function VideoDetailClient() {
   const startSubscription = useStartSubscription();
   const router = useRouter();
 
-  // Redirect guests to the login page — video content requires sign-in.
+  // Redirect guests to the login page — video content requires sign-in. Gated on the
+  // *current user* query's own loading state, not the video's (a bug: on a fresh
+  // client-side navigation the video can finish loading before GET /api/auth/me
+  // resolves, and currentUser is still its initial `undefined` at that instant — not
+  // `null` — so this wouldn't misfire either way; found via a genuinely flaky e2e
+  // failure that never reproduced outside Playwright's exact timing, not a report).
   React.useEffect(() => {
-    if (!isLoading && currentUser === null) {
+    if (!isCurrentUserLoading && currentUser === null) {
       router.replace("/auth/login");
     }
-  }, [isLoading, currentUser, router]);
+  }, [isCurrentUserLoading, currentUser, router]);
 
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);

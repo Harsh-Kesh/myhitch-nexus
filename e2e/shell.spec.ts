@@ -50,10 +50,12 @@ test.describe("Navigation", () => {
 
     await (await siteNav(page)).getByRole("link", { name: "Home" }).click();
 
-    // Asserted by content rather than URL: under GitHub Pages the site is
-    // served from a repository subpath, so "home" is not "/".
+    // Asserted by content rather than URL, and by a rail that's always there
+    // rather than "Continue watching" — that one's real now (docs/
+    // DEVELOPMENT-PLAN.md's homepage-migration entry) and correctly absent
+    // for this test's signed-out guest, who has no watch history to show.
     await expect(
-      page.getByRole("heading", { name: "Continue watching" }),
+      page.getByRole("heading", { name: "Films & cinema" }),
     ).toBeVisible();
   });
 
@@ -126,9 +128,11 @@ test.describe("Failure states", () => {
 
     await context.setOffline(false);
 
-    // Recovers in place — no reload, and the page comes back.
+    // Recovers in place — no reload, and the page comes back. Same rail
+    // choice as the navigation test above, for the same reason: this guest
+    // session has no "Continue watching" rail to recover.
     await expect(
-      page.getByRole("heading", { name: "Continue watching" }),
+      page.getByRole("heading", { name: "Films & cinema" }),
     ).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Back online — content refreshed")).toBeVisible();
   });

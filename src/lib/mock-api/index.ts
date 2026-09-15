@@ -31,7 +31,6 @@ import type {
   CreatorAnalytics,
   Entitlement,
   FeaturedContent,
-  HomeRail,
   Lead,
   LiveEvent,
   ModerationAction,
@@ -67,142 +66,19 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 /* ============================ Discovery ================================= */
 
+// Live 2026-09-15 — real Postgres via GET /api/home/, fully replacing the mock version
+// (no id to branch on, unlike getVideo/getChannel — this is a wholesale swap, same as
+// getChannels()/searchVideos() before it). Personalizes "Continue watching" and "From
+// channels you follow" for a signed-in real account server-side; a guest gets every
+// other rail with those two simply omitted. See catalogue.ts's getFeaturedRails() for
+// the query-by-query breakdown, including why "hero" is most-viewed rather than an
+// editorial pick (no curated-featured flag exists in the real schema).
 export async function getFeaturedContent(): Promise<FeaturedContent> {
-  await latency();
-  const published = store.videos.filter((video) => video.status === "published");
-  const byId = (id: string) => published.find((video) => video.id === id);
-
-  const continueIds = store.watchProgress
-    .filter((entry) => !entry.completed && byId(entry.videoId))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map((entry) => entry.videoId);
-
-  const followedIds = published
-    .filter((video) => store.following.includes(video.channelId))
-    .sort((a, b) => (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""))
-    .map((video) => video.id)
-    .slice(0, 12);
-
-  const byType = (type: ContentType, limit = 12) =>
-    published
-      .filter((video) => video.contentType === type)
-      .sort((a, b) => b.views - a.views)
-      .map((video) => video.id)
-      .slice(0, limit);
-
-  const rails: HomeRail[] = [
-    ...(continueIds.length
-      ? [
-          {
-            id: "rail_continue",
-            title: "Continue watching",
-            subtitle: "Picks up where you stopped, on any device",
-            href: "/account/history",
-            kind: "continue" as const,
-            videoIds: continueIds.slice(0, 10),
-          },
-        ]
-      : []),
-    {
-      id: "rail_live",
-      title: "Live and upcoming",
-      subtitle: "Streaming now, plus what is scheduled",
-      href: "/live",
-      kind: "live",
-      videoIds: [],
-    },
-    {
-      id: "rail_films",
-      title: "Films & cinema",
-      subtitle: "Rent, buy or watch with Premium",
-      href: "/films",
-      kind: "poster",
-      videoIds: byType("film"),
-    },
-    ...(followedIds.length
-      ? [
-          {
-            id: "rail_following",
-            title: "From channels you follow",
-            href: "/explore",
-            kind: "wide" as const,
-            videoIds: followedIds,
-          },
-        ]
-      : []),
-    {
-      id: "rail_commercial",
-      title: "Commercial & brand",
-      subtitle: "Launch films, brand documentaries and product work",
-      href: "/commercial",
-      kind: "wide",
-      videoIds: byType("commercial"),
-    },
-    {
-      id: "rail_recommended",
-      title: "Recommended for you",
-      subtitle: "Based on what you have watched",
-      href: "/explore",
-      kind: "wide",
-      videoIds: published
-        .filter((video) => !continueIds.includes(video.id))
-        .sort((a, b) => b.ratingAverage - a.ratingAverage)
-        .map((video) => video.id)
-        .slice(0, 12),
-    },
-    {
-      id: "rail_education",
-      title: "Education",
-      subtitle: "Accredited courses, lectures and workplace training",
-      href: "/education",
-      kind: "wide",
-      videoIds: byType("education"),
-    },
-    {
-      id: "rail_news",
-      title: "News & documentary",
-      subtitle: "Bulletins and long-form investigations",
-      href: "/news",
-      kind: "wide",
-      videoIds: [...byType("news", 6), ...byType("documentary", 6)],
-    },
-    {
-      id: "rail_entertainment",
-      title: "Entertainment",
-      href: "/entertainment",
-      kind: "wide",
-      videoIds: byType("entertainment"),
-    },
-    {
-      id: "rail_creators",
-      title: "Creator uploads",
-      href: "/explore?type=user-generated",
-      kind: "wide",
-      videoIds: byType("user-generated"),
-    },
-    {
-      id: "rail_public",
-      title: "Public, community & impact",
-      subtitle: "Government, non-profit and tourism channels",
-      href: "/explore?type=government",
-      kind: "wide",
-      videoIds: [
-        ...byType("government", 4),
-        ...byType("nonprofit", 4),
-        ...byType("tourism", 4),
-      ],
-    },
-  ];
-
-  return {
-    hero: [
-      byId("vid_saltmarsh"),
-      byId("vid_ledger_water"),
-      byId("vid_helio_aurora"),
-      byId("vid_orbit_session_14"),
-    ].filter(Boolean) as Video[],
-    rails: rails.filter((rail) => rail.kind === "live" || rail.videoIds.length > 0),
-  };
+  const res = await fetch("/api/home/");
+  if (!res.ok) {
+    throw new Error(`GET /api/home failed with ${res.status}`);
+  }
+  return (await res.json()) as FeaturedContent;
 }
 
 // Real Postgres rows use fresh uuids; every id/slug this mock module generates itself
