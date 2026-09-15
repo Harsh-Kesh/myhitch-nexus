@@ -15,6 +15,7 @@ import "server-only";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { query, queryOne } from "./db";
+import { getRedis } from "./redis";
 
 const scrypt = promisify(scryptCallback) as (
   password: string,
@@ -39,31 +40,72 @@ async function matchesHash(password: string, stored: string): Promise<boolean> {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-// In-memory only — acceptable for a single-instance deployment (matches this app's
-// current reality) and for a feature with a planned removal date, but won't survive a
-// restart or scale past one instance. Move to Redis alongside the rest of the queues/
-// rate-limits work (docs/DEVELOPMENT-PLAN.md's Redis line item) if this is still in use
-// when that's provisioned.
+// Redis-backed when REDIS_URL is configured (Railway, in every deployed environment) so
+// the lockout survives a restart and would hold correctly across multiple instances if
+// this ever scales past one — falls back to the original in-memory Map for local dev
+// without Redis, which is still exactly correct for a single local process. A Redis
+// error mid-request (not just "no REDIS_URL") fails *open* — rate limiting is
+// defense-in-depth on top of the real check (the password itself), not the auth
+// boundary itself, so an infrastructure hiccup should not lock every user out of login.
 const attemptsByEmail = new Map<string, { count: number; blockedUntil: number }>();
 const MAX_ATTEMPTS = 8;
-const BLOCK_MS = 5 * 60 * 1000;
+const BLOCK_SECONDS = 5 * 60;
 
-function isRateLimited(email: string): boolean {
+function attemptsKey(email: string): string {
+  return `login-attempts:${email}`;
+}
+function blockKey(email: string): string {
+  return `login-block:${email}`;
+}
+
+async function isRateLimited(email: string): Promise<boolean> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      return (await redis.exists(blockKey(email))) === 1;
+    } catch (err) {
+      console.error("[localPassword] Redis isRateLimited failed, failing open", err);
+      return false;
+    }
+  }
   const entry = attemptsByEmail.get(email);
   return Boolean(entry && entry.blockedUntil > Date.now());
 }
 
-function recordFailure(email: string): void {
+async function recordFailure(email: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      const count = await redis.incr(attemptsKey(email));
+      if (count === 1) await redis.expire(attemptsKey(email), BLOCK_SECONDS);
+      if (count >= MAX_ATTEMPTS) {
+        await redis.set(blockKey(email), "1", "EX", BLOCK_SECONDS);
+        await redis.del(attemptsKey(email));
+      }
+    } catch (err) {
+      console.error("[localPassword] Redis recordFailure failed, attempt not counted", err);
+    }
+    return;
+  }
   const entry = attemptsByEmail.get(email) ?? { count: 0, blockedUntil: 0 };
   entry.count += 1;
   if (entry.count >= MAX_ATTEMPTS) {
-    entry.blockedUntil = Date.now() + BLOCK_MS;
+    entry.blockedUntil = Date.now() + BLOCK_SECONDS * 1000;
     entry.count = 0;
   }
   attemptsByEmail.set(email, entry);
 }
 
-function clearFailures(email: string): void {
+async function clearFailures(email: string): Promise<void> {
+  const redis = getRedis();
+  if (redis) {
+    try {
+      await redis.del(attemptsKey(email), blockKey(email));
+    } catch (err) {
+      console.error("[localPassword] Redis clearFailures failed", err);
+    }
+    return;
+  }
   attemptsByEmail.delete(email);
 }
 
@@ -80,7 +122,7 @@ export async function verifyLocalPassword(
   password: string,
 ): Promise<VerifyLocalPasswordResult> {
   const normalizedEmail = email.trim().toLowerCase();
-  if (isRateLimited(normalizedEmail)) {
+  if (await isRateLimited(normalizedEmail)) {
     return { outcome: "rate_limited" };
   }
 
@@ -93,17 +135,17 @@ export async function verifyLocalPassword(
   // exists) — same "invalid_credentials" outcome either way, so a login attempt can't
   // be used to enumerate which emails have registered.
   if (!account || !account.password_hash) {
-    recordFailure(normalizedEmail);
+    await recordFailure(normalizedEmail);
     return { outcome: "invalid_credentials" };
   }
 
   const ok = await matchesHash(password, account.password_hash);
   if (!ok) {
-    recordFailure(normalizedEmail);
+    await recordFailure(normalizedEmail);
     return { outcome: "invalid_credentials" };
   }
 
-  clearFailures(normalizedEmail);
+  await clearFailures(normalizedEmail);
   return { outcome: "success", accountId: account.id };
 }
 
