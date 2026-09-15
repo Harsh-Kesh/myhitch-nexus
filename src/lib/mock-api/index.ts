@@ -455,8 +455,17 @@ export async function getEntitlement(
   userId: string,
   videoId: string,
 ): Promise<Entitlement> {
+  // Resolved via getVideo() — which already knows how to fetch a real (Postgres) video
+  // — rather than store.videos.find() directly, which only ever sees mock ones. Found
+  // by the geo-restriction e2e test: before this, every real video (reachable via
+  // search/explore/the vertical category pages, all real since the searchVideos swap)
+  // fell straight into the "video not found" branch below and showed the generic
+  // "unavailable" screen no matter its actual rights or pricing. Real commerce
+  // (purchases/subscriptions/rentals) is still P3 scope and doesn't exist yet, so a
+  // real paid video correctly falls through to the paywall/preview state further down
+  // rather than ever resolving "owned" — an honest gap, not a bug, until P3 lands.
   await latency("fast");
-  const video = store.videos.find((item) => item.id === videoId);
+  const video = await getVideo(videoId);
   const country = store.requestCountry;
 
   if (!video) {
