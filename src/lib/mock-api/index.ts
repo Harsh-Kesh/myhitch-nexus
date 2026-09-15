@@ -2010,9 +2010,38 @@ export async function getCurrentUser(): Promise<User | null> {
   return clone(store.user);
 }
 
+const REAL_ACCOUNT_FIELDS = ["name", "email", "handle", "country", "language"] as const;
+
+// Live 2026-09-15 for the five real profile fields, for a real (Postgres-backed) account
+// only — PATCH /api/auth/me/. Everything else on User (privacy, notificationPreferences,
+// parentalControls, profiles, activeProfileId, avatarUrl, ...) has nowhere real to live yet
+// (see applyRealAccount's header) and always stays local-only, for mock and real accounts
+// alike — same split as updateChannel()'s avatarUrl/bannerUrl exclusion, and for the same
+// reason where it's avatarUrl here too.
 export async function updateUser(patch: Partial<User>): Promise<User> {
   await latency("fast");
   Object.assign(store.user, patch);
+
+  if (looksLikeRealId(store.user.id)) {
+    const realPatch: Partial<Record<(typeof REAL_ACCOUNT_FIELDS)[number], unknown>> = {};
+    for (const key of REAL_ACCOUNT_FIELDS) {
+      if (key in patch) realPatch[key] = patch[key];
+    }
+    if (Object.keys(realPatch).length > 0) {
+      const res = await fetch("/api/auth/me/", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(realPatch),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `PATCH /api/auth/me failed with ${res.status}`);
+      }
+      const data = (await res.json()) as { account: RealAccount | null };
+      if (data.account) applyRealAccount(data.account);
+    }
+  }
+
   return clone(store.user);
 }
 

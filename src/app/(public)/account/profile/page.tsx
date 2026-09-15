@@ -15,6 +15,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useCurrentUser,
   useSwitchProfile,
@@ -62,6 +63,23 @@ export default function ProfilePage() {
   }, [user]);
 
   if (!user) return null;
+
+  const isRealAccount = looksLikeRealId(user.id);
+
+  const saveProfile = () => {
+    updateUser.mutate(
+      { name, email, handle, country, language },
+      {
+        onSuccess: () => toast({ title: "Account updated" }),
+        onError: (error) =>
+          toast({
+            title: "Couldn't update account",
+            description: error instanceof Error ? error.message : undefined,
+            tone: "error",
+          }),
+      },
+    );
+  };
 
   const addProfile = () => {
     const profile: ViewerProfile = {
@@ -184,19 +202,28 @@ export default function ProfilePage() {
             />
             <div>
               <p className="text-sm font-medium text-fg">Account avatar</p>
-              <p className="mt-0.5 text-xs text-fg-muted">
-                Shown on your comments and channel.
-              </p>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-2"
-                loading={updateUser.isPending}
-                onClick={() => avatarInputRef.current?.click()}
-              >
-                <IconPencil />
-                Change
-              </Button>
+              {isRealAccount ? (
+                <p className="mt-0.5 text-xs text-fg-muted">
+                  Avatar uploads arrive with the media pipeline — your colours are
+                  generated for now.
+                </p>
+              ) : (
+                <>
+                  <p className="mt-0.5 text-xs text-fg-muted">
+                    Shown on your comments and channel.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-2"
+                    loading={updateUser.isPending}
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    <IconPencil />
+                    Change
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -239,31 +266,46 @@ export default function ProfilePage() {
               />
             </Field>
             <Field label="Country" htmlFor="acct-country">
+              {/* Matches auth/register's own COUNTRIES list — a real account can be
+                  registered with any of these. */}
               <Select
                 id="acct-country"
                 value={country}
                 onChange={(event) => setCountry(event.target.value)}
               >
-                {["GB", "IE", "DE", "FR", "PT", "ES", "US", "CA", "AU", "LK"].map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
+                {["GB", "IE", "DE", "FR", "PT", "ES", "US", "CA", "AU", "LK", "IN", "NL"].map(
+                  (code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ),
+                )}
               </Select>
             </Field>
             <Field label="Language" htmlFor="acct-language">
+              {/* Matches auth/register's own LANGUAGES list, for the same reason. */}
               <Select
                 id="acct-language"
                 value={language}
                 onChange={(event) => setLanguage(event.target.value)}
               >
-                {["English", "German", "French", "Spanish", "Portuguese", "Sinhala"].map(
-                  (item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ),
-                )}
+                {[
+                  "English",
+                  "German",
+                  "French",
+                  "Spanish",
+                  "Portuguese",
+                  "Welsh",
+                  "Polish",
+                  "Urdu",
+                  "Sinhala",
+                  "Tamil",
+                  "Arabic",
+                ].map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
@@ -278,14 +320,7 @@ export default function ProfilePage() {
             }}>
               Reset
             </Button>
-            <Button
-              variant="primary"
-              loading={updateUser.isPending}
-              onClick={() => {
-                updateUser.mutate({ name, email, handle, country, language });
-                toast({ title: "Account updated" });
-              }}
-            >
+            <Button variant="primary" loading={updateUser.isPending} onClick={saveProfile}>
               Save changes
             </Button>
           </div>
