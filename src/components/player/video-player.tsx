@@ -2,6 +2,7 @@
 
 import {
   IconAlertTriangle,
+  IconClock,
   IconLock,
   IconPlayerPlayFilled,
   IconRotateClockwise,
@@ -165,6 +166,22 @@ export function VideoPlayer({
   }, [bumpControls]);
 
   /* ------------------------------- Blocked ------------------------------- */
+
+  // A real upload with no playable stream yet — real video transcoding is still
+  // blocked on a Mux account (docs/DEVELOPMENT-PLAN.md's P2 entry). Checked before
+  // entitlement/paywall states since there is genuinely nothing to play regardless of
+  // what the viewer is entitled to.
+  if (video.processingStatus === "awaiting_transcode") {
+    return (
+      <BlockedSurface
+        video={video}
+        className={className}
+        icon={<IconClock />}
+        title="Still processing"
+        description="This video was uploaded successfully, but playback isn't available yet. Check back once it's finished processing."
+      />
+    );
+  }
 
   if (entitlement.blockReason === "geo-restricted") {
     return (

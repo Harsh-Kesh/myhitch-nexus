@@ -55,6 +55,10 @@ export interface VideoSummary {
   channelHandle: string | null;
   contentType: string;
   status: string;
+  /** "awaiting_transcode" for a real upload with no playable stream yet (Mux isn't
+   * wired up) — separate from `status`, which is editorial/publication state, not
+   * playback readiness. "none" for every seeded video (nothing to process). */
+  processingStatus: "none" | "awaiting_transcode";
   thumbnailUrl: string | null;
   // Found by actually clicking through the app, not by static review: VideoCard passes
   // this straight into <Poster gradient={...}>, which indexes it unconditionally with
@@ -95,6 +99,7 @@ interface VideoSummaryRow {
   channel_handle: string | null;
   content_type: string;
   status: string;
+  processing_status: "none" | "awaiting_transcode";
   thumbnail_url: string | null;
   poster_gradient: [string, string];
   duration_seconds: number;
@@ -140,7 +145,7 @@ interface VideoSummaryRow {
 const VIDEO_SUMMARY_COLUMNS = `
   v.id, v.slug, v.title, v.synopsis, v.channel_id,
   o.name as channel_name, o.handle as channel_handle,
-  v.content_type, v.status, v.thumbnail_url, v.poster_gradient, v.duration_seconds,
+  v.content_type, v.status, v.processing_status, v.thumbnail_url, v.poster_gradient, v.duration_seconds,
   v.release_date, v.published_at, v.language, v.country,
   v.views, v.unique_viewers, v.likes, v.rating_average, v.rating_count,
   v.comment_count, v.watch_time_seconds, v.completion_rate,
@@ -168,6 +173,7 @@ function mapVideoSummary(row: VideoSummaryRow): VideoSummary {
     channelHandle: row.channel_handle,
     contentType: row.content_type,
     status: row.status,
+    processingStatus: row.processing_status,
     thumbnailUrl: row.thumbnail_url,
     posterGradient: row.poster_gradient,
     durationSeconds: row.duration_seconds,
@@ -715,13 +721,19 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
   );
   if (!row) return null;
 
+  // row.id, not the raw `id` param — the param can be a slug (this query's own where
+  // clause deliberately accepts either), but every one of these child tables' video_id
+  // columns is a real uuid FK, so a slug string here throws "invalid input syntax for
+  // type uuid" rather than silently matching nothing. Never actually hit before this
+  // was first tested by looking a real video up by slug rather than by id.
+  const videoId = row.id;
   const [credits, tagRows, categoryRows, subtitleRows, audioRows, qualityRows] = await Promise.all([
     query<{ role: string; name: string; character_name: string | null }>(
       "select role, name, character_name from video_credits where video_id = $1 order by ordering",
-      [id],
+      [videoId],
     ),
-    query<{ tag: string }>("select tag from video_tags where video_id = $1", [id]),
-    query<{ category_id: string }>("select category_id from video_categories where video_id = $1", [id]),
+    query<{ tag: string }>("select tag from video_tags where video_id = $1", [videoId]),
+    query<{ category_id: string }>("select category_id from video_categories where video_id = $1", [videoId]),
     query<{
       id: string;
       language: string;
@@ -729,14 +741,14 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
       kind: string;
       auto_generated: boolean;
       status: string;
-    }>("select id, language, language_code, kind, auto_generated, status from video_subtitle_tracks where video_id = $1", [id]),
+    }>("select id, language, language_code, kind, auto_generated, status from video_subtitle_tracks where video_id = $1", [videoId]),
     query<{ id: string; language: string; language_code: string; kind: string }>(
       "select id, language, language_code, kind from video_audio_tracks where video_id = $1",
-      [id],
+      [videoId],
     ),
     query<{ id: string; label: string; height: number; bitrate_kbps: number }>(
       "select id, label, height, bitrate_kbps from video_quality_levels where video_id = $1 order by height desc",
-      [id],
+      [videoId],
     ),
   ]);
 

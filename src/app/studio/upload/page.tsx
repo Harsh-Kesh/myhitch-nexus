@@ -37,11 +37,13 @@ import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import {
   useBulkImport,
   useCategories,
+  useCreateStudioUpload,
   useCurrentUser,
   usePlaylists,
   usePublishDraft,
   useSeries,
   useThumbnailSuggestions,
+  useUploadThumbnailFile,
 } from "@/lib/mock-api/hooks";
 import type {
   AccessModel,
@@ -54,6 +56,11 @@ import type {
   VideoDraft,
 } from "@/lib/mock-api/types";
 import { cn, formatBytes } from "@/lib/utils";
+
+// Display-only mirror of storage.ts's MAX_MASTER_UPLOAD_BYTES (a server-only module,
+// can't be imported into a client component) — the server is what actually enforces
+// this; keep these two numbers in sync by hand if the server-side default ever changes.
+const MAX_MASTER_UPLOAD_BYTES = 250 * 1024 * 1024;
 
 const STEPS = [
   { id: "upload", title: "Upload", description: "Transfer the master file" },
@@ -92,10 +99,17 @@ export default function UploadPage() {
   const { toast } = useToast();
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
+  // Real channels get a real upload/publish path (this section); the mock ch_mara-style
+  // fallback keeps the fully-simulated wizard exactly as it always was — see
+  // docs/DEVELOPMENT-PLAN.md's P2 entry for why this is a first *slice* of P2, not all
+  // of it (transcoding/suggested-frame thumbnails/captions all still need Mux).
+  const isRealChannel = api.looksLikeRealId(channelId);
 
   const { data: playlists = [] } = usePlaylists(channelId);
   const { data: series = [] } = useSeries(channelId);
   const publishDraft = usePublishDraft();
+  const createStudioUpload = useCreateStudioUpload();
+  const uploadThumbnailFile = useUploadThumbnailFile();
 
   const [mode, setMode] = React.useState<"single" | "bulk">("single");
   const [step, setStep] = React.useState(0);
@@ -104,11 +118,12 @@ export default function UploadPage() {
   /* ----------------------------- Step 1: upload ---------------------------- */
   const [session, setSession] = React.useState<UploadSession | null>(null);
   const [dragging, setDragging] = React.useState(false);
+  const [masterAssetPath, setMasterAssetPath] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Drives the mock chunked transfer.
+  // Drives the mock chunked transfer — real channels never reach this (see startUpload).
   React.useEffect(() => {
-    if (!session || session.phase !== "uploading") return;
+    if (isRealChannel || !session || session.phase !== "uploading") return;
     let cancelled = false;
     const tick = async () => {
       const next = await api.advanceUpload(session.id);
@@ -119,23 +134,63 @@ export default function UploadPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [session]);
+  }, [isRealChannel, session]);
 
   // Poll while the mock "processing" stage finishes.
   React.useEffect(() => {
-    if (session?.phase !== "processing") return;
+    if (isRealChannel || session?.phase !== "processing") return;
     const timer = window.setInterval(async () => {
       const next = await api.getUploadSession(session.id);
       if (next) setSession(next);
     }, 400);
     return () => window.clearInterval(timer);
-  }, [session?.phase, session?.id]);
+  }, [isRealChannel, session?.phase, session?.id]);
 
-  const startUpload = async (picked: { name: string; size: number }) => {
+  /** Real accounts: a genuine PUT to a signed Supabase Storage URL, with real
+   * `XMLHttpRequest` upload-progress events driving the exact same progress UI the mock
+   * path already used — see uploadMasterFile()'s header for why XHR, not fetch. */
+  const startRealUpload = async (file: File) => {
+    setMasterAssetPath(null);
+    setSession({
+      id: "real",
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      uploadedBytes: 0,
+      phase: "uploading",
+      chunkIndex: 0,
+      totalChunks: 1,
+      createdAt: new Date().toISOString(),
+    });
+    try {
+      const { path, signedUrl } = await createStudioUpload.mutateAsync({
+        channelId,
+        fileName: file.name,
+        fileSizeBytes: file.size,
+      });
+      await api.uploadMasterFile(signedUrl, file, (loaded, total) => {
+        setSession((current) => (current ? { ...current, uploadedBytes: loaded, fileSizeBytes: total } : current));
+      });
+      setMasterAssetPath(path);
+      setSession((current) =>
+        current ? { ...current, phase: "complete", uploadedBytes: current.fileSizeBytes, chunkIndex: 1 } : current,
+      );
+    } catch (error) {
+      setSession((current) =>
+        current
+          ? { ...current, phase: "failed", error: error instanceof Error ? error.message : "Upload failed." }
+          : current,
+      );
+    }
+  };
+
+  const startUpload = (picked: { name: string; size: number; file?: File }) => {
+    if (isRealChannel) {
+      if (picked.file) void startRealUpload(picked.file);
+      return;
+    }
     // The session carries the file name and size, so nothing else needs to
     // hold the File object — and it never leaves the page.
-    const created = await api.createUploadSession(picked.name, picked.size);
-    setSession(created);
+    void api.createUploadSession(picked.name, picked.size).then(setSession);
   };
 
   /* --------------------------- Step 2: metadata ---------------------------- */
@@ -159,6 +214,11 @@ export default function UploadPage() {
   const [thumbnailId, setThumbnailId] = React.useState<string | null>(null);
   const [customThumb, setCustomThumb] = React.useState<string | null>(null);
   const [customThumbUrl, setCustomThumbUrl] = React.useState<string | null>(null);
+  // Real, publicly-servable URL once a real channel's thumbnail has actually finished
+  // uploading — customThumbUrl above stays a local blob preview regardless of channel
+  // type; this is what's sent to publishVideo. Always null for a mock channel.
+  const [customThumbnailUrl, setCustomThumbnailUrl] = React.useState<string | null>(null);
+  const [thumbnailUploading, setThumbnailUploading] = React.useState(false);
 
   /* --------------------------- Step 4: captions ---------------------------- */
   const [subtitles, setSubtitles] = React.useState<SubtitleTrack[]>([]);
@@ -204,7 +264,9 @@ export default function UploadPage() {
       case "metadata":
         return title.trim().length > 2 && categoryIds.length > 0;
       case "thumbnails":
-        return Boolean(thumbnailId || customThumb);
+        return isRealChannel
+          ? Boolean(customThumbnailUrl) && !thumbnailUploading
+          : Boolean(thumbnailId || customThumb);
       case "captions":
         return true;
       case "rights":
@@ -222,7 +284,10 @@ export default function UploadPage() {
 
   const submit = async () => {
     const draft: VideoDraft = {
-      uploadSessionId: session?.id ?? "",
+      // Real channels: the real master asset's storage path, set once the real upload
+      // finishes (see startRealUpload) — not session?.id, which is just the fixed
+      // string "real" for a real session and carries no useful information itself.
+      uploadSessionId: isRealChannel ? (masterAssetPath ?? "") : (session?.id ?? ""),
       title: title.trim(),
       description,
       contentType,
@@ -235,6 +300,7 @@ export default function UploadPage() {
       country,
       thumbnailId,
       customThumbnailName: customThumb,
+      customThumbnailUrl,
       subtitles,
       autoTranscribe,
       audioDescription,
@@ -304,7 +370,11 @@ export default function UploadPage() {
     <>
       <PageHeader
         title="Upload"
-        description="Six steps from master file to published title. Everything is mocked — no file leaves your browser and nothing is transcoded."
+        description={
+          isRealChannel
+            ? "Six steps from master file to published title. Upload, metadata, rights and publishing are real — suggested thumbnails, captions and transcoding are still simulated, so playback will show as “processing” until that's wired up."
+            : "Six steps from master file to published title. Everything is mocked — no file leaves your browser and nothing is transcoded."
+        }
         actions={
           <div className="flex gap-2">
             <Button
@@ -359,9 +429,13 @@ export default function UploadPage() {
                     session ? (
                       <UploadProgress
                         session={session}
+                        resumable={!isRealChannel}
                         onPause={async () => setSession(await api.pauseUpload(session.id))}
                         onResume={async () => setSession(await api.resumeUpload(session.id))}
-                        onCancel={() => setSession(null)}
+                        onCancel={() => {
+                          setSession(null);
+                          setMasterAssetPath(null);
+                        }}
                       />
                     ) : (
                       <div
@@ -374,7 +448,7 @@ export default function UploadPage() {
                           event.preventDefault();
                           setDragging(false);
                           const dropped = event.dataTransfer.files?.[0];
-                          if (dropped) void startUpload({ name: dropped.name, size: dropped.size });
+                          if (dropped) startUpload({ name: dropped.name, size: dropped.size, file: dropped });
                         }}
                         className={cn(
                           "rounded-lg border-2 border-dashed px-6 py-14 text-center transition-colors",
@@ -386,24 +460,27 @@ export default function UploadPage() {
                           Drop your master file here
                         </p>
                         <p className="mt-1 text-sm text-fg-muted">
-                          ProRes, DNxHD, MP4 or MOV. Resumable — if the connection
-                          drops it picks up from the last completed chunk.
+                          {isRealChannel
+                            ? `Uploaded for real, up to ${Math.round(MAX_MASTER_UPLOAD_BYTES / (1024 * 1024))}MB for this preview build.`
+                            : "ProRes, DNxHD, MP4 or MOV. Resumable — if the connection drops it picks up from the last completed chunk."}
                         </p>
                         <div className="mt-5 flex flex-wrap justify-center gap-2">
                           <Button variant="primary" onClick={() => fileInputRef.current?.click()}>
                             Select a file
                           </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={() =>
-                              startUpload({
-                                name: "NX_MASTER_0042_PRORES.mov",
-                                size: 8_640_000_000,
-                              })
-                            }
-                          >
-                            Use a sample file
-                          </Button>
+                          {!isRealChannel ? (
+                            <Button
+                              variant="secondary"
+                              onClick={() =>
+                                startUpload({
+                                  name: "NX_MASTER_0042_PRORES.mov",
+                                  size: 8_640_000_000,
+                                })
+                              }
+                            >
+                              Use a sample file
+                            </Button>
+                          ) : null}
                         </div>
                         <input
                           ref={fileInputRef}
@@ -412,7 +489,7 @@ export default function UploadPage() {
                           className="sr-only"
                           onChange={(event) => {
                             const picked = event.target.files?.[0];
-                            if (picked) void startUpload({ name: picked.name, size: picked.size });
+                            if (picked) startUpload({ name: picked.name, size: picked.size, file: picked });
                           }}
                         />
                       </div>
@@ -597,70 +674,95 @@ export default function UploadPage() {
                   {/* ----------------------- Thumbnails ---------------------- */}
                   {STEPS[step].id === "thumbnails" ? (
                     <>
-                      <div>
-                        <p className="flex items-center gap-2 text-sm font-medium text-fg">
-                          <IconSparkles className="size-4 text-accent" />
-                          Suggested frames
-                        </p>
-                        <p className="mt-1 text-xs text-fg-muted">
-                          Generated from the upload. Scores reflect sharpness,
-                          faces and motion — mocked here.
-                        </p>
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                          {suggestions.map((suggestion) => (
-                            <button
-                              key={suggestion.id}
-                              type="button"
-                              onClick={() => {
-                                setThumbnailId(suggestion.id);
-                                setCustomThumb(null);
-                              }}
-                              className={cn(
-                                "overflow-hidden rounded-lg border-2 text-left transition-colors",
-                                thumbnailId === suggestion.id
-                                  ? "border-accent"
-                                  : "border-transparent hover:border-border-strong",
-                              )}
-                            >
-                              <span
-                                aria-hidden
-                                className="block aspect-video w-full"
-                                style={{
-                                  backgroundImage: `linear-gradient(140deg, ${suggestion.gradient[0]}, ${suggestion.gradient[1]})`,
+                      {!isRealChannel ? (
+                        <div>
+                          <p className="flex items-center gap-2 text-sm font-medium text-fg">
+                            <IconSparkles className="size-4 text-accent" />
+                            Suggested frames
+                          </p>
+                          <p className="mt-1 text-xs text-fg-muted">
+                            Generated from the upload. Scores reflect sharpness,
+                            faces and motion — mocked here.
+                          </p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            {suggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.id}
+                                type="button"
+                                onClick={() => {
+                                  setThumbnailId(suggestion.id);
+                                  setCustomThumb(null);
                                 }}
-                              />
-                              <span className="flex items-center justify-between px-2 py-1.5">
-                                <span className="text-2xs text-fg-muted">
-                                  {suggestion.label}
+                                className={cn(
+                                  "overflow-hidden rounded-lg border-2 text-left transition-colors",
+                                  thumbnailId === suggestion.id
+                                    ? "border-accent"
+                                    : "border-transparent hover:border-border-strong",
+                                )}
+                              >
+                                <span
+                                  aria-hidden
+                                  className="block aspect-video w-full"
+                                  style={{
+                                    backgroundImage: `linear-gradient(140deg, ${suggestion.gradient[0]}, ${suggestion.gradient[1]})`,
+                                  }}
+                                />
+                                <span className="flex items-center justify-between px-2 py-1.5">
+                                  <span className="text-2xs text-fg-muted">
+                                    {suggestion.label}
+                                  </span>
+                                  <span className="text-2xs text-fg-subtle nx-tnum">
+                                    {(suggestion.score * 100).toFixed(0)}%
+                                  </span>
                                 </span>
-                                <span className="text-2xs text-fg-subtle nx-tnum">
-                                  {(suggestion.score * 100).toFixed(0)}%
-                                </span>
-                              </span>
-                            </button>
-                          ))}
-                          {suggestions.length === 0 ? (
-                            <p className="col-span-full text-sm text-fg-subtle">
-                              Generating suggestions…
-                            </p>
-                          ) : null}
+                              </button>
+                            ))}
+                            {suggestions.length === 0 ? (
+                              <p className="col-span-full text-sm text-fg-subtle">
+                                Generating suggestions…
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <p className="rounded border border-dashed border-border px-3 py-4 text-center text-sm text-fg-subtle">
+                          Suggested frames need real frame extraction, which isn&rsquo;t built yet
+                          — upload your own thumbnail below.
+                        </p>
+                      )}
 
-                      <div className="border-t border-border pt-5">
+                      <div className={cn(!isRealChannel && "border-t border-border pt-5")}>
                         <Field
-                          label="Or upload your own"
-                          hint="1920×1080 recommended, under 2 MB."
+                          label="Upload a thumbnail"
+                          hint="1920×1080 recommended, under 5 MB."
+                          required={isRealChannel}
                         >
                           <input
                             type="file"
                             accept="image/*"
-                            onChange={(event) => {
+                            disabled={thumbnailUploading}
+                            onChange={async (event) => {
                               const picked = event.target.files?.[0];
-                              if (picked) {
-                                setCustomThumb(picked.name);
-                                setCustomThumbUrl(URL.createObjectURL(picked));
-                                setThumbnailId(null);
+                              if (!picked) return;
+                              setCustomThumb(picked.name);
+                              setCustomThumbUrl(URL.createObjectURL(picked));
+                              setCustomThumbnailUrl(null);
+                              setThumbnailId(null);
+                              if (!isRealChannel) return;
+                              setThumbnailUploading(true);
+                              try {
+                                const url = await uploadThumbnailFile.mutateAsync({ channelId, file: picked });
+                                setCustomThumbnailUrl(url);
+                              } catch (error) {
+                                toast({
+                                  title: "Couldn't upload thumbnail",
+                                  description: error instanceof Error ? error.message : undefined,
+                                  tone: "error",
+                                });
+                                setCustomThumb(null);
+                                setCustomThumbUrl(null);
+                              } finally {
+                                setThumbnailUploading(false);
                               }
                             }}
                             className="block w-full text-sm text-fg-muted file:mr-3 file:rounded file:border-0 file:bg-surface-3 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-fg hover:file:bg-surface-3/70"
@@ -678,9 +780,9 @@ export default function UploadPage() {
                               </div>
                             ) : null}
                             <div>
-                              <Badge tone="published" size="sm">
-                                <IconCheck />
-                                {customThumb}
+                              <Badge tone={thumbnailUploading ? "pending" : "published"} size="sm">
+                                {thumbnailUploading ? null : <IconCheck />}
+                                {thumbnailUploading ? "Uploading…" : customThumb}
                               </Badge>
                               <p className="mt-1 text-xs text-fg-subtle">
                                 Selected as active video thumbnail
@@ -1218,11 +1320,16 @@ function UploadProgress({
   onPause,
   onResume,
   onCancel,
+  resumable = true,
 }: {
   session: UploadSession;
   onPause: () => void;
   onResume: () => void;
   onCancel: () => void;
+  /** False for a real upload (a single real PUT, no chunk-level resume tracking exists
+   * yet — see docs/DEVELOPMENT-PLAN.md's P2 entry) — hides pause/resume/retry controls
+   * that would otherwise imply a capability that isn't real yet. */
+  resumable?: boolean;
 }) {
   const percent = (session.uploadedBytes / session.fileSizeBytes) * 100;
 
@@ -1251,25 +1358,25 @@ function UploadProgress({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-fg">{session.fileName}</p>
           <p className="mt-0.5 text-xs text-fg-muted nx-tnum">
-            {formatBytes(session.uploadedBytes)} of {formatBytes(session.fileSizeBytes)} ·
-            chunk {session.chunkIndex}/{session.totalChunks}
+            {formatBytes(session.uploadedBytes)} of {formatBytes(session.fileSizeBytes)}
+            {resumable ? ` · chunk ${session.chunkIndex}/${session.totalChunks}` : ""}
           </p>
         </div>
 
         <div className="flex gap-2">
-          {session.phase === "uploading" ? (
+          {resumable && session.phase === "uploading" ? (
             <Button variant="secondary" size="sm" onClick={onPause}>
               <IconPlayerPause />
               Pause
             </Button>
           ) : null}
-          {session.phase === "paused" ? (
+          {resumable && session.phase === "paused" ? (
             <Button variant="primary" size="sm" onClick={onResume}>
               <IconPlayerPlay />
               Resume
             </Button>
           ) : null}
-          {session.phase === "failed" ? (
+          {resumable && session.phase === "failed" ? (
             <Button variant="primary" size="sm" onClick={onResume}>
               <IconRefresh />
               Retry from chunk {session.chunkIndex}

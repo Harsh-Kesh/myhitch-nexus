@@ -473,6 +473,19 @@ export const useThumbnailSuggestions = (sessionId: string) =>
 export const useBulkImport = (enabled: boolean) =>
   useQuery({ queryKey: qk.bulkImport, queryFn: () => api.validateBulkImport(), enabled });
 
+export function useCreateStudioUpload() {
+  return useMutation({
+    mutationFn: ({ channelId, fileName, fileSizeBytes }: { channelId: string; fileName: string; fileSizeBytes: number }) =>
+      api.createStudioUploadUrl(channelId, fileName, fileSizeBytes),
+  });
+}
+
+export function useUploadThumbnailFile() {
+  return useMutation({
+    mutationFn: ({ channelId, file }: { channelId: string; file: File }) => api.uploadThumbnailFile(channelId, file),
+  });
+}
+
 export function usePublishDraft() {
   const client = useQueryClient();
   return useMutation({

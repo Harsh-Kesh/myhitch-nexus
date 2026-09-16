@@ -337,6 +337,10 @@ export async function toggleFollow(channelId: string): Promise<boolean> {
   }
 
   await latency("fast");
+  // Guests have no per-viewer follow state in the mock layer (store.following is a
+  // single shared seed, not per-session) — treat every guest toggle as a no-op "not
+  // following" rather than silently mutating the signed-in demo user's seeded list.
+  if (!store.loggedIn) return false;
   const index = store.following.indexOf(channelId);
   if (index >= 0) {
     store.following.splice(index, 1);
@@ -354,6 +358,10 @@ export async function isFollowing(channelId: string): Promise<boolean> {
     return data.following;
   }
 
+  // store.following is seeded as the signed-in demo user's follows (see
+  // data/users.ts) — a guest (store.loggedIn === false) never follows anything by
+  // default, so don't fall through to that shared seed for them.
+  if (!store.loggedIn) return false;
   return store.following.includes(channelId);
 }
 
@@ -1169,7 +1177,118 @@ export async function getThumbnailSuggestions(
   }));
 }
 
-export async function publishDraft(draft: VideoDraft): Promise<Video> {
+/* ------------------------- Real upload (2026-09-16) ------------------------ */
+// Real for a real channel only — see docs/DEVELOPMENT-PLAN.md's P2 entry. No mock
+// counterpart branch here (unlike most of this file): these functions are only ever
+// called from the wizard's real-channel path, which is gated by looksLikeRealId at the
+// call site, not internally.
+
+export async function createStudioUploadUrl(
+  channelId: string,
+  fileName: string,
+  fileSizeBytes: number,
+): Promise<{ path: string; signedUrl: string; maxBytes: number }> {
+  const res = await fetch("/api/studio/uploads/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channelId, fileName, fileSizeBytes }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to create an upload URL (${res.status}).`);
+  }
+  return res.json();
+}
+
+/** Raw XHR (not fetch) specifically for `upload.onprogress` — this is the one place in
+ * the app that needs real byte-level upload progress. Replicates
+ * @supabase/storage-js's own `uploadToSignedUrl` request shape exactly (PUT, an
+ * `x-upsert` header, the file under an empty-string FormData key) so the browser talks
+ * to the signed URL directly without needing the SDK (or its API key) client-side. */
+export function uploadMasterFile(
+  signedUrl: string,
+  file: File,
+  onProgress?: (loadedBytes: number, totalBytes: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", signedUrl);
+    xhr.setRequestHeader("x-upsert", "false");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(event.loaded, event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed with status ${xhr.status}.`));
+    };
+    xhr.onerror = () => reject(new Error("Upload failed — check your connection and try again."));
+    const formData = new FormData();
+    formData.append("cacheControl", "3600");
+    formData.append("", file);
+    xhr.send(formData);
+  });
+}
+
+export async function uploadThumbnailFile(channelId: string, file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append("channelId", channelId);
+  formData.append("file", file);
+  const res = await fetch("/api/studio/thumbnails/", { method: "POST", body: formData });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to upload the thumbnail (${res.status}).`);
+  }
+  const data = (await res.json()) as { url: string };
+  return data.url;
+}
+
+/** Real for a real channel (2026-09-16, docs/DEVELOPMENT-PLAN.md's P2 entry) — the
+ * write path that was 100% mock since this project began. `draft.uploadSessionId`
+ * doubles as the real master-asset storage path in the real branch (set by the wizard's
+ * real upload step, see createStudioUploadUrl/uploadMasterFile below) rather than a mock
+ * session id — same field, different meaning per branch, avoiding a parallel type.
+ * Return type is deliberately narrower than `Video`: getVideoById() only resolves
+ * *published* videos, so a draft/pending video has nothing to re-fetch, and the wizard's
+ * only actual use of the result is `.status` for its toast copy. */
+export async function publishDraft(
+  draft: VideoDraft,
+): Promise<{ id: string; slug: string; status: string }> {
+  if (looksLikeRealId(store.user.channelId ?? "")) {
+    const res = await fetch("/api/studio/videos/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channelId: store.user.channelId,
+        masterAssetPath: draft.uploadSessionId,
+        title: draft.title,
+        description: draft.description,
+        contentType: draft.contentType,
+        categoryIds: draft.categoryIds,
+        tags: draft.tags,
+        participants: draft.participants,
+        productionCompany: draft.productionCompany || null,
+        releaseDate: draft.releaseDate || null,
+        language: draft.language,
+        country: draft.country,
+        customThumbnailUrl: draft.customThumbnailUrl ?? null,
+        subtitles: draft.subtitles.map((track) => ({
+          language: track.language,
+          languageCode: track.languageCode,
+          kind: track.kind,
+        })),
+        rights: draft.rights,
+        pricing: draft.pricing,
+        status: draft.status,
+        scheduledFor: draft.scheduledFor,
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Failed to publish (${res.status}).`);
+    }
+    return res.json();
+  }
+
   await latency("slow");
   const session = store.uploadSessions[draft.uploadSessionId];
   const now = new Date().toISOString();

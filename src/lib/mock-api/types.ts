@@ -199,6 +199,9 @@ export interface Video {
   categoryIds: string[];
   tags: string[];
   status: ContentStatus;
+  /** "awaiting_transcode" for a real upload with no playable stream yet (real video
+   * transcoding is still blocked on a Mux account) — "none" for every seeded/mock video. */
+  processingStatus?: "none" | "awaiting_transcode";
   posterGradient: [string, string];
   thumbnailUrl?: string;
   heroUrl?: string;
@@ -509,6 +512,10 @@ export interface VideoDraft {
   country: string;
   thumbnailId: string | null;
   customThumbnailName: string | null;
+  /** Real, publicly-servable URL once a custom thumbnail has actually been uploaded to
+   * storage (real channels only) — `customThumbnailName` stays display-only (the file's
+   * original name), this is what the publish gate writes to `videos.thumbnail_url`. */
+  customThumbnailUrl?: string | null;
   subtitles: SubtitleTrack[];
   autoTranscribe: boolean;
   audioDescription: boolean;
