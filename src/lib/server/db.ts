@@ -3,7 +3,7 @@
 // than earlier because this is the first server code that needs it at request time
 // instead of as a one-off script.
 import "server-only";
-import { Pool, type QueryResultRow } from "pg";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 declare global {
   // Reused across hot-reloads in dev so we don't open a new pool per edit.
@@ -54,4 +54,51 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(
     throw new Error(`Expected at most one row, got ${rows.length}. Query: ${text}`);
   }
   return rows[0] ?? null;
+}
+
+/** A single client, checked out for the lifetime of the callback, with its own
+ * query/queryOne bound to that same connection — so writes inside `fn` share one
+ * transaction instead of racing across separate pool connections. */
+export interface TransactionClient {
+  query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
+  queryOne<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T | null>;
+}
+
+function bindClient(client: PoolClient): TransactionClient {
+  return {
+    async query<T extends QueryResultRow = QueryResultRow>(text: string, params: unknown[] = []): Promise<T[]> {
+      const result = await client.query<T>(text, params);
+      return result.rows;
+    },
+    async queryOne<T extends QueryResultRow = QueryResultRow>(
+      text: string,
+      params: unknown[] = [],
+    ): Promise<T | null> {
+      const result = await client.query<T>(text, params);
+      if (result.rows.length > 1) {
+        throw new Error(`Expected at most one row, got ${result.rows.length}. Query: ${text}`);
+      }
+      return result.rows[0] ?? null;
+    },
+  };
+}
+
+/** Runs `fn` inside a BEGIN/COMMIT, rolling back on any thrown error — for a multi-insert
+ * write where a partial failure must not leave an orphaned row visible to other queries
+ * (e.g. a video row with no rights/categories, found via a real partial-failure case in
+ * videoPublishing.ts's publishVideo()). */
+export async function withTransaction<T>(fn: (tx: TransactionClient) => Promise<T>): Promise<T> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await fn(bindClient(client));
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

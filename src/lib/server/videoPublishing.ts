@@ -11,7 +11,7 @@
 // stream exists; the player (video-player.tsx) shows an honest "still processing" state
 // for exactly that combination rather than attempting fake playback.
 import "server-only";
-import { query, queryOne } from "./db";
+import { queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
 import { pickGradient } from "../utils";
 
@@ -141,69 +141,72 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
   const slug = slugify(input.title);
   const now = new Date();
 
-  const rows = await query<{ id: string }>(
-    `insert into videos (
-       slug, channel_id, title, synopsis, content_type, status, thumbnail_url,
-       poster_gradient, release_date, published_at, scheduled_for, language, country,
-       production_company, master_asset_path, master_uploaded_at, master_bytes,
-       processing_status
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, 'awaiting_transcode')
-     returning id`,
-    [
-      slug,
-      input.channelId,
-      input.title.trim().slice(0, 200),
-      input.description.trim().slice(0, 5000) || null,
-      input.contentType,
-      status,
-      input.customThumbnailUrl,
-      // Same deterministic-palette approach already used for channel avatars/banners
-      // (channelProvisioning.ts) — real posters need a real transcode pipeline (Mux),
-      // not built yet, so a video card falls back to this exactly like a channel does.
-      pickGradient(slug),
-      input.releaseDate,
-      status === "published" ? now.toISOString() : null,
-      status === "scheduled" ? input.scheduledFor : null,
-      input.language,
-      input.country,
-      input.productionCompany?.trim() || null,
-      input.masterAssetPath,
-      asset.bytes,
-    ],
-  );
-  const videoId = rows[0].id;
+  // Everything below lands in one transaction — a partial failure (e.g. a bad category
+  // id) must not leave an orphaned video row with no rights/categories visible to other
+  // queries, the way an earlier Promise.all-of-separate-connections version briefly did.
+  const videoId = await withTransaction(async (tx) => {
+    const rows = await tx.query<{ id: string }>(
+      `insert into videos (
+         slug, channel_id, title, synopsis, content_type, status, thumbnail_url,
+         poster_gradient, release_date, published_at, scheduled_for, language, country,
+         production_company, master_asset_path, master_uploaded_at, master_bytes,
+         processing_status
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, 'awaiting_transcode')
+       returning id`,
+      [
+        slug,
+        input.channelId,
+        input.title.trim().slice(0, 200),
+        input.description.trim().slice(0, 5000) || null,
+        input.contentType,
+        status,
+        input.customThumbnailUrl,
+        // Same deterministic-palette approach already used for channel avatars/banners
+        // (channelProvisioning.ts) — real posters need a real transcode pipeline (Mux),
+        // not built yet, so a video card falls back to this exactly like a channel does.
+        pickGradient(slug),
+        input.releaseDate,
+        status === "published" ? now.toISOString() : null,
+        status === "scheduled" ? input.scheduledFor : null,
+        input.language,
+        input.country,
+        input.productionCompany?.trim() || null,
+        input.masterAssetPath,
+        asset.bytes,
+      ],
+    );
+    const id = rows[0].id;
 
-  await Promise.all([
-    ...input.categoryIds.map((categoryId) =>
-      query(`insert into video_categories (video_id, category_id) values ($1, $2) on conflict do nothing`, [
-        videoId,
+    for (const categoryId of input.categoryIds) {
+      await tx.query(`insert into video_categories (video_id, category_id) values ($1, $2) on conflict do nothing`, [
+        id,
         categoryId,
-      ]),
-    ),
-    ...input.tags.map((tag) =>
-      query(`insert into video_tags (video_id, tag) values ($1, $2) on conflict do nothing`, [videoId, tag]),
-    ),
-    ...input.participants.map((name, index) =>
-      query(`insert into video_credits (video_id, role, name, ordering) values ($1, 'Participant', $2, $3)`, [
-        videoId,
+      ]);
+    }
+    for (const tag of input.tags) {
+      await tx.query(`insert into video_tags (video_id, tag) values ($1, $2) on conflict do nothing`, [id, tag]);
+    }
+    for (const [index, name] of input.participants.entries()) {
+      await tx.query(`insert into video_credits (video_id, role, name, ordering) values ($1, 'Participant', $2, $3)`, [
+        id,
         name,
         index,
-      ]),
-    ),
-    ...input.subtitles.map((track) =>
-      query(
+      ]);
+    }
+    for (const track of input.subtitles) {
+      await tx.query(
         `insert into video_subtitle_tracks (video_id, language, language_code, kind, auto_generated, status)
          values ($1, $2, $3, $4, false, 'ready')`,
-        [videoId, track.language, track.languageCode, track.kind],
-      ),
-    ),
-    query(
+        [id, track.language, track.languageCode, track.kind],
+      );
+    }
+    await tx.query(
       `insert into video_rights (
          video_id, declared_owner, ownership_confirmed, licence_start, licence_end,
          permitted_countries, blocked_countries, age_rating, content_labels
        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
-        videoId,
+        id,
         input.rights.declaredOwner.trim(),
         input.rights.ownershipConfirmed,
         input.rights.licenceStart,
@@ -213,15 +216,15 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
         input.rights.ageRating,
         input.rights.contentLabels,
       ],
-    ),
-    query(
+    );
+    await tx.query(
       `insert into video_pricing (
          video_id, access_models, rent_price_minor, rent_price_currency,
          buy_price_minor, buy_price_currency, ppv_price_minor, ppv_price_currency,
          rental_window_hours, sponsored, sponsor_name
        ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        videoId,
+        id,
         input.pricing.accessModels,
         input.pricing.rentPrice?.amount ?? null,
         input.pricing.rentPrice?.currency ?? null,
@@ -233,8 +236,10 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
         input.pricing.sponsored,
         input.pricing.sponsorName?.trim() || null,
       ],
-    ),
-  ]);
+    );
+
+    return id;
+  });
 
   return { outcome: "success", id: videoId, slug, status };
 }
