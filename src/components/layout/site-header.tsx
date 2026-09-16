@@ -72,6 +72,11 @@ export function SiteHeader() {
 
   const isGuest = !user;
   const unread = notifications.filter((item) => !item.read).length;
+  // The Creators directory has its own local search that actually filters channels;
+  // this header search only ever searches videos (BrowseView/Typesense), so showing
+  // both boxes here — one that works for this page's content and one that doesn't —
+  // was genuinely misleading, not just redundant.
+  const hideGlobalSearch = pathname === "/creators" || pathname.startsWith("/creators/");
   const activeProfile = user?.profiles.find(
     (profile) => profile.id === user.activeProfileId,
   );
@@ -132,37 +137,43 @@ export function SiteHeader() {
           })}
         </nav>
 
-        {/* Search */}
-        <form
-          onSubmit={submitSearch}
-          role="search"
-          className={cn(
-            "ml-auto flex-1 justify-end gap-2 xl:flex xl:max-w-md",
-            searchOpen ? "flex" : "hidden xl:flex",
-          )}
-        >
-          <div className="relative w-full">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search titles, creators, businesses…"
-              aria-label="Search"
-              className="h-9 w-full rounded-full border border-border bg-surface-2 pl-9 pr-3 text-sm text-fg placeholder:text-fg-subtle transition-colors focus:border-accent focus:outline-none"
-            />
-          </div>
-        </form>
+        {/* Search — hidden on /creators, which has its own local search below */}
+        {hideGlobalSearch ? (
+          <div className="ml-auto" />
+        ) : (
+          <form
+            onSubmit={submitSearch}
+            role="search"
+            className={cn(
+              "ml-auto flex-1 justify-end gap-2 xl:flex xl:max-w-md",
+              searchOpen ? "flex" : "hidden xl:flex",
+            )}
+          >
+            <div className="relative w-full">
+              <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search titles, creators, businesses…"
+                aria-label="Search"
+                className="h-9 w-full rounded-full border border-border bg-surface-2 pl-9 pr-3 text-sm text-fg placeholder:text-fg-subtle transition-colors focus:border-accent focus:outline-none"
+              />
+            </div>
+          </form>
+        )}
 
         <div className={cn("flex items-center gap-1", searchOpen && "hidden xl:flex")}>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="xl:hidden"
-            aria-label="Search"
-            onClick={() => setSearchOpen(true)}
-          >
-            <IconSearch />
-          </Button>
+          {hideGlobalSearch ? null : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="xl:hidden"
+              aria-label="Search"
+              onClick={() => setSearchOpen(true)}
+            >
+              <IconSearch />
+            </Button>
+          )}
 
           <Button
             variant="ghost"

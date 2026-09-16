@@ -79,7 +79,7 @@ export function RichTextEditor({
     content: value,
     editorProps: {
       attributes: {
-        class: "nx-article-body min-h-[280px] focus:outline-none",
+        class: "nx-article-body min-h-[420px] sm:min-h-[560px] focus:outline-none",
       },
     },
     onUpdate: ({ editor: instance }) => onChange(instance.getHTML()),

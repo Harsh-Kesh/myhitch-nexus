@@ -19,6 +19,7 @@ import type {
   PlatformConfigTables,
   SearchFilters,
   User,
+  Video,
   VideoDraft,
 } from "./types";
 
@@ -142,9 +143,34 @@ export function useToggleFollow() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.toggleFollow,
-    onSuccess: () => {
+    // Optimistic so the follow button and the channel's own follower count
+    // (a separate query, qk.channel — not covered by invalidating qk.following)
+    // update instantly instead of waiting on a round trip + refetch.
+    onMutate: async (channelId: string) => {
+      const followingKey = [...qk.following, channelId];
+      await client.cancelQueries({ queryKey: followingKey });
+      await client.cancelQueries({ queryKey: qk.channel(channelId) });
+      const previousFollowing = client.getQueryData<boolean>(followingKey);
+      const previousChannel = client.getQueryData<Channel>(qk.channel(channelId));
+      const nextFollowing = !previousFollowing;
+      client.setQueryData(followingKey, nextFollowing);
+      if (previousChannel) {
+        client.setQueryData(qk.channel(channelId), {
+          ...previousChannel,
+          followers: previousChannel.followers + (nextFollowing ? 1 : -1),
+        });
+      }
+      return { previousFollowing, previousChannel };
+    },
+    onError: (_err, channelId, context) => {
+      if (!context) return;
+      client.setQueryData([...qk.following, channelId], context.previousFollowing);
+      if (context.previousChannel) client.setQueryData(qk.channel(channelId), context.previousChannel);
+    },
+    onSettled: (_data, _err, channelId) => {
       client.invalidateQueries({ queryKey: qk.following });
       client.invalidateQueries({ queryKey: qk.featured });
+      client.invalidateQueries({ queryKey: qk.channel(channelId) });
     },
   });
 }
@@ -313,7 +339,26 @@ export function useToggleWatchlist() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.toggleWatchlist,
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.watchlist }),
+    // Optimistic — the quick-add button on a card and the main button on the video
+    // page both derive "in watchlist" purely from membership in this cached list, so
+    // flipping membership here updates them instantly instead of waiting on the
+    // server round trip + refetch. The added placeholder only needs `id` to satisfy
+    // that membership check; onSettled's invalidate replaces it with the real row
+    // (with poster/title/etc.) as soon as the request completes.
+    onMutate: async (videoId: string) => {
+      await client.cancelQueries({ queryKey: qk.watchlist });
+      const previous = client.getQueryData<Video[]>(qk.watchlist);
+      client.setQueryData<Video[]>(qk.watchlist, (current = []) => {
+        const exists = current.some((item) => item.id === videoId);
+        if (exists) return current.filter((item) => item.id !== videoId);
+        return [...current, { id: videoId } as unknown as Video];
+      });
+      return { previous };
+    },
+    onError: (_err, _videoId, context) => {
+      if (context?.previous) client.setQueryData(qk.watchlist, context.previous);
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: qk.watchlist }),
   });
 }
 
@@ -795,7 +840,18 @@ export function useLogout() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.logout,
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.user }),
+    // Personalized queries (home rails' Continue watching / From channels you
+    // follow, and the dedicated continue-watching list) were server-rendered from
+    // the now-dead session — invalidating only qk.user left their stale cached
+    // payload on screen until an unrelated refetch or a manual reload happened to
+    // clear it.
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.user });
+      client.invalidateQueries({ queryKey: qk.featured });
+      client.invalidateQueries({ queryKey: qk.continueWatching });
+      client.invalidateQueries({ queryKey: qk.watchlist });
+      client.invalidateQueries({ queryKey: qk.following });
+    },
   });
 }
 

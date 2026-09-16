@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { Tabs } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { VideoGrid } from "@/components/video/rail";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
@@ -45,8 +46,26 @@ export function ChannelClient() {
   const { data: liveEvents = [] } = useChannelLiveEvents(channel?.id ?? "");
   const { data: following } = useIsFollowing(channel?.id ?? "");
   const toggleFollow = useToggleFollow();
+  const { toast } = useToast();
 
   const [tab, setTab] = React.useState("videos");
+
+  const handleToggleFollow = () => {
+    if (!channel) return;
+    const wasFollowing = following;
+    toggleFollow.mutate(channel.id, {
+      onSuccess: () => {
+        toast({ title: wasFollowing ? `Unfollowed ${channel.name}` : `Following ${channel.name}` });
+      },
+      onError: (error) => {
+        toast({
+          title: "Couldn't update follow status",
+          description: error instanceof Error ? error.message : undefined,
+          tone: "error",
+        });
+      },
+    });
+  };
 
   if (isLoading) {
     return (
@@ -123,10 +142,7 @@ export function ChannelClient() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 pb-1">
-            <Button
-              variant={following ? "secondary" : "primary"}
-              onClick={() => toggleFollow.mutate(channel.id)}
-            >
+            <Button variant={following ? "secondary" : "primary"} onClick={handleToggleFollow}>
               {following ? "Following" : "Follow"}
             </Button>
             {liveNow ? (

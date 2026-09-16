@@ -104,6 +104,20 @@ export default function ChannelSettingsPage() {
       />
 
       <PageBody className="space-y-6">
+        {!isRealChannel ? (
+          <Card className="border-warning/30 bg-warning/5">
+            <CardBody>
+              <p className="text-sm font-medium text-fg">This account has no real channel</p>
+              <p className="mt-1 text-sm text-fg-muted">
+                You&rsquo;re signed in to the shared demo account, which has no channel of its
+                own — edits below will show a success toast but reset the next time this
+                page loads, since there&rsquo;s nowhere real to save them. Register a
+                creator/business account to get a real channel that saves for good.
+              </p>
+            </CardBody>
+          </Card>
+        ) : null}
+
         {/* Branding */}
         <Card>
           <CardHeader

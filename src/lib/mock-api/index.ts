@@ -208,8 +208,18 @@ export async function getCategories(): Promise<Category[]> {
 }
 
 export async function getCategory(slug: string): Promise<Category | null> {
-  await latency("fast");
-  return clone(store.categories.find((category) => category.slug === slug) ?? null);
+  // Was never swapped when getCategories() went live above — silently left reading the
+  // stale mock store, whose fixed fake ids (`cat_brand_film`) can never match a real
+  // video's indexed category uuid. That mismatch is why a category could show a real,
+  // nonzero title count on /explore yet render nothing on its own detail page — a
+  // id-format mismatch, not a caching or join-direction bug. Same real endpoint as
+  // getCategories(), now with a single-item counterpart at GET /api/categories/{slug}/.
+  const res = await fetch(`/api/categories/${encodeURIComponent(slug)}/`);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GET /api/categories/${slug} failed with ${res.status}`);
+  }
+  return (await res.json()) as Category;
 }
 
 /* ============================= Channels ================================= */

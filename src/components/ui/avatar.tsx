@@ -39,7 +39,14 @@ export function Avatar({
   const hasValidImage = Boolean(src) && !imageError;
 
   return (
-    <span className={cn("relative inline-flex shrink-0", className)}>
+    // The wrapper itself needs the same border-radius as the avatar it holds —
+    // callers pass ring/margin utilities (e.g. `ring-4 ring-surface`) via
+    // `className` onto this span, and without a matching radius here that ring
+    // painted as a square halo behind the circular avatar (looked like a shield
+    // plate behind the profile icon).
+    <span
+      className={cn("relative inline-flex shrink-0", square ? "rounded" : "rounded-full", className)}
+    >
       {hasValidImage ? (
         <img
           src={assetPath(src!)}

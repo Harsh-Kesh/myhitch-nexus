@@ -134,7 +134,6 @@ export default function ProfilePage() {
                     gradient={profile.avatarGradient}
                     src={profile.avatarUrl}
                     size="xl"
-                    square
                   />
                   <span className="text-sm font-medium text-fg">{profile.name}</span>
                   <span className="flex items-center gap-1.5">

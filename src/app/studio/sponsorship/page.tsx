@@ -7,7 +7,6 @@ import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Input, Select } from "@/components/ui/field";
 import { SponsorshipListingStatusBadge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
@@ -18,6 +17,7 @@ import {
   useCurrentUser,
   useMySponsorshipListings,
 } from "@/lib/mock-api/hooks";
+import { ProjectPicker } from "@/components/studio/project-picker";
 import { relativeTime } from "@/lib/utils";
 
 export default function StudioSponsorshipPage() {
@@ -135,30 +135,17 @@ export default function StudioSponsorshipPage() {
         }
       >
         <div className="space-y-4">
-          <Field label="Project name" htmlFor="spo-name" required>
-            <Input
-              id="spo-name"
-              value={projectName}
-              onChange={(event) => setProjectName(event.target.value)}
-              placeholder="The Saltmarsh"
-            />
-          </Field>
-          {eligibleVideos.length > 0 ? (
-            <Field
-              label="Link one of your uploads (optional)"
-              htmlFor="spo-video"
-              hint="Sponsors can watch the trailer straight from the listing."
-            >
-              <Select id="spo-video" value={videoId} onChange={(event) => setVideoId(event.target.value)}>
-                <option value="">Don&rsquo;t link an upload</option>
-                {eligibleVideos.map((video) => (
-                  <option key={video.id} value={video.id}>
-                    {video.title}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          ) : null}
+          <ProjectPicker
+            label="Which project is this for?"
+            hint="Sponsors can watch the trailer straight from the listing."
+            videos={eligibleVideos}
+            name={projectName}
+            videoId={videoId}
+            onChange={({ name, videoId: nextVideoId }) => {
+              setProjectName(name);
+              setVideoId(nextVideoId);
+            }}
+          />
         </div>
       </Modal>
     </>

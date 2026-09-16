@@ -1,10 +1,11 @@
 "use client";
 
-import { IconChevronLeft, IconMenu2, IconX } from "@tabler/icons-react";
+import { IconChevronLeft, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import { useLogout } from "@/lib/mock-api/hooks";
 import { cn } from "@/lib/utils";
 import { NexusMark } from "./logo";
 
@@ -36,9 +37,15 @@ export function WorkspaceShell({
   accentLabel?: string;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = React.useState(false);
+  const logout = useLogout();
 
   React.useEffect(() => setOpen(false), [pathname]);
+
+  const handleSignOut = () => {
+    logout.mutate(undefined, { onSuccess: () => router.push("/") });
+  };
 
   const rail = (
     <div className="flex h-full flex-col">
@@ -97,10 +104,21 @@ export function WorkspaceShell({
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-border p-3">
+      <div className="shrink-0 space-y-1 border-t border-border p-3">
         <Button variant="ghost" size="sm" href="/" block className="justify-start">
           <IconChevronLeft />
           Back to Nexus
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          block
+          className="justify-start text-fg-muted hover:text-danger"
+          loading={logout.isPending}
+          onClick={handleSignOut}
+        >
+          <IconLogout />
+          Sign out
         </Button>
       </div>
     </div>
@@ -139,10 +157,20 @@ export function WorkspaceShell({
             {workspace.title}
           </span>
           {accentLabel ? (
-            <span className="ml-auto rounded-full bg-accent-soft px-2 py-0.5 text-2xs font-medium text-accent">
+            <span className="ml-2 rounded-full bg-accent-soft px-2 py-0.5 text-2xs font-medium text-accent">
               {accentLabel}
             </span>
           ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label="Sign out"
+            loading={logout.isPending}
+            onClick={handleSignOut}
+          >
+            <IconLogout />
+          </Button>
         </div>
         <main id="main" className="min-w-0 flex-1">
           {children}

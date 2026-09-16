@@ -285,7 +285,12 @@ function makeAvatarSvg({ id, name, gradient, size = 200 }) {
 /*                            Banner Generator                                */
 /* -------------------------------------------------------------------------- */
 
-function makeBannerSvg({ id, name, tagline, gradient }) {
+// Deliberately no name/tagline baked into the banner pixels — the channel page (both
+// mock and real channels) already renders the real name/tagline as a DOM heading over
+// this banner, and the negative margin that lets the avatar overlap the banner also
+// pulled that heading up into the same region a baked-in caption occupied, so the two
+// visibly collided (looked like duplicated, garbled text over the profile).
+function makeBannerSvg({ id, gradient }) {
   const [c1, c2] = gradient;
 
   return `
@@ -306,17 +311,6 @@ function makeBannerSvg({ id, name, tagline, gradient }) {
   <!-- Abstract light streaks -->
   <path d="M 0 400 Q 400 100 800 250 T 1600 50" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.12" />
   <path d="M 0 350 Q 500 200 1000 300 T 1600 100" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.2" />
-
-  <g transform="translate(120, 240)">
-    <text x="0" y="0" fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="44" font-weight="800" letter-spacing="-1">${escapeXml(name)}</text>
-    ${
-      tagline
-        ? `
-    <text x="0" y="44" fill="#cbd5e1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="400">${escapeXml(tagline)}</text>
-    `
-        : ""
-    }
-  </g>
 </svg>
 `.trim();
 }

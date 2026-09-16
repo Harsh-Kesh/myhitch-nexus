@@ -780,28 +780,20 @@ export interface CategorySummary {
   videoCount: number;
 }
 
-export async function listCategories(): Promise<CategorySummary[]> {
-  const rows = await query<{
-    id: string;
-    slug: string;
-    name: string;
-    description: string | null;
-    content_type: string;
-    featured: boolean;
-    accent_token: number;
-    image_url: string | null;
-    video_count: string;
-  }>(
-    `select
-       c.id, c.slug, c.name, c.description, c.content_type, c.featured, c.accent_token, c.image_url,
-       count(vc.video_id) as video_count
-     from categories c
-     left join video_categories vc on vc.category_id = c.id
-     left join videos v on v.id = vc.video_id and v.status = 'published'
-     group by c.id
-     order by c.featured desc, c.name`,
-  );
-  return rows.map((r) => ({
+interface CategoryRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  content_type: string;
+  featured: boolean;
+  accent_token: number;
+  image_url: string | null;
+  video_count: string;
+}
+
+function mapCategoryRow(r: CategoryRow): CategorySummary {
+  return {
     id: r.id,
     slug: r.slug,
     name: r.name,
@@ -811,7 +803,38 @@ export async function listCategories(): Promise<CategorySummary[]> {
     accentToken: r.accent_token,
     imageUrl: r.image_url,
     videoCount: Number(r.video_count),
-  }));
+  };
+}
+
+// count(v.id), not count(vc.video_id) — the latter counts every video_categories row
+// regardless of whether the published-video join actually matched, silently including
+// draft/private/unpublished videos in the displayed count.
+const CATEGORY_COLUMNS = `
+  c.id, c.slug, c.name, c.description, c.content_type, c.featured, c.accent_token, c.image_url,
+  count(v.id) as video_count
+`;
+const CATEGORY_JOINS = `
+  left join video_categories vc on vc.category_id = c.id
+  left join videos v on v.id = vc.video_id and v.status = 'published'
+`;
+
+export async function listCategories(): Promise<CategorySummary[]> {
+  const rows = await query<CategoryRow>(
+    `select ${CATEGORY_COLUMNS} from categories c ${CATEGORY_JOINS} group by c.id order by c.featured desc, c.name`,
+  );
+  return rows.map(mapCategoryRow);
+}
+
+/** Single-category lookup by slug — the counterpart `listCategories()` has had since
+ * categories first went real. Without this, category detail pages had nothing but the
+ * stale mock store to resolve against, which uses fixed fake ids (`cat_brand_film`) that
+ * can never match a real video's indexed category uuid — see docs/DEVELOPMENT-PLAN.md. */
+export async function getCategoryBySlug(slug: string): Promise<CategorySummary | null> {
+  const row = await queryOne<CategoryRow>(
+    `select ${CATEGORY_COLUMNS} from categories c ${CATEGORY_JOINS} where c.slug = $1 group by c.id`,
+    [slug],
+  );
+  return row ? mapCategoryRow(row) : null;
 }
 
 export interface ChannelDetail {

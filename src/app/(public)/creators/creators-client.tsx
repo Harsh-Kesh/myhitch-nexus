@@ -27,8 +27,8 @@ export function CreatorsClient() {
       if (!q) return true;
       return (
         channel.name.toLowerCase().includes(q) ||
-        channel.handle.toLowerCase().includes(q) ||
-        channel.tagline.toLowerCase().includes(q)
+        (channel.handle?.toLowerCase().includes(q) ?? false) ||
+        (channel.tagline?.toLowerCase().includes(q) ?? false)
       );
     });
   }, [channels, query, kind]);
