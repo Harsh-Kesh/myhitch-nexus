@@ -47,7 +47,6 @@ import type {
   SearchFilters,
   SearchResult,
   Series,
-  SponsorshipInquiry,
   SponsorshipListing,
   SponsorshipRewardType,
   Subscription,
@@ -2063,11 +2062,10 @@ export async function logout(): Promise<void> {
 }
 
 /* ------------------------------ Magazine -------------------------------- */
-// Always real — no mock predecessor. Unlike the rest of this file, these functions
-// were never in-memory; the "MYHitch Lens magazine" feature (docs/DEVELOPMENT-PLAN.md,
-// 2026-09-16 research) only ever exists against Postgres, so there's no mock/real
-// branch to preserve here, just the same call-through-hooks.ts convention as everything
-// else in this module.
+// Always real — no mock predecessor. Authoring-only: Nexus composes an article and
+// submits it to MYHitch Lens (a separate platform); there is no Nexus-hosted public
+// magazine or admin review — see docs/DEVELOPMENT-PLAN.md's 2026-09-16 correction entry
+// and src/lib/server/lensIntegration.ts.
 async function magazineFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -2119,36 +2117,11 @@ export async function withdrawMagazineArticle(id: string): Promise<MagazineArtic
   return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/withdraw/`, { method: "POST" });
 }
 
-export async function getMagazineReviewQueue(): Promise<MagazineArticle[]> {
-  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/admin/magazine/");
-  return data.items;
-}
-
-export async function reviewMagazineArticle(
-  id: string,
-  decision: "publish" | "request_changes" | "reject",
-  notes?: string,
-): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>(`/api/admin/magazine/${id}/review/`, {
-    method: "POST",
-    body: JSON.stringify({ decision, notes }),
-  });
-}
-
-export async function getPublishedMagazine(): Promise<MagazineArticle[]> {
-  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/magazine/");
-  return data.items;
-}
-
-export async function getMagazineArticleBySlug(slug: string): Promise<MagazineArticle | null> {
-  const res = await fetch(`/api/magazine/${encodeURIComponent(slug)}/`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`GET /api/magazine/${slug} failed with ${res.status}`);
-  return res.json() as Promise<MagazineArticle>;
-}
-
 /* --------------------------- Sponsorship ("Exchange Hub") ---------------- */
 // Always real, same as Magazine above — no mock predecessor exists for this feature.
+// Authoring-only: Exchange Hub itself lives on MYHitch Connect (a separate platform);
+// there is no Nexus-hosted public listing page, admin review, or sponsor inquiry inbox —
+// see docs/DEVELOPMENT-PLAN.md's 2026-09-16 correction entry.
 async function sponsorshipFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -2196,51 +2169,6 @@ export async function submitSponsorshipListing(id: string): Promise<SponsorshipL
 
 export async function withdrawSponsorshipListing(id: string): Promise<SponsorshipListing> {
   return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/withdraw/`, { method: "POST" });
-}
-
-export async function getSponsorshipReviewQueue(): Promise<SponsorshipListing[]> {
-  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/admin/sponsorship/");
-  return data.items;
-}
-
-export async function reviewSponsorshipListing(
-  id: string,
-  decision: "publish" | "request_changes" | "reject",
-  notes?: string,
-): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>(`/api/admin/sponsorship/${id}/review/`, {
-    method: "POST",
-    body: JSON.stringify({ decision, notes }),
-  });
-}
-
-export async function getPublishedSponsorshipListings(): Promise<SponsorshipListing[]> {
-  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/sponsorship/");
-  return data.items;
-}
-
-export async function getSponsorshipListingBySlug(slug: string): Promise<SponsorshipListing | null> {
-  const res = await fetch(`/api/sponsorship/${encodeURIComponent(slug)}/`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`GET /api/sponsorship/${slug} failed with ${res.status}`);
-  return res.json() as Promise<SponsorshipListing>;
-}
-
-export async function getSponsorshipInquiries(listingId: string): Promise<SponsorshipInquiry[]> {
-  const data = await sponsorshipFetch<{ items: SponsorshipInquiry[] }>(
-    `/api/sponsorship/listings/${listingId}/inquiries/`,
-  );
-  return data.items;
-}
-
-export async function createSponsorshipInquiry(
-  listingId: string,
-  message: string,
-): Promise<SponsorshipInquiry> {
-  return sponsorshipFetch<SponsorshipInquiry>(`/api/sponsorship/listings/${listingId}/inquiries/`, {
-    method: "POST",
-    body: JSON.stringify({ message }),
-  });
 }
 
 export { NOW };

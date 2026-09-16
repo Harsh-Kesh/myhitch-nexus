@@ -68,7 +68,7 @@ export default function StudioMagazinePage() {
     <>
       <PageHeader
         title="Magazine"
-        description="Write a full analysis of your film or project, with a trailer alongside it if you have one — published to the MYHitch magazine after editorial review."
+        description="Write a full analysis of your film or project, with a trailer alongside it if you have one — submitted to MYHitch Lens, who handle their own review and publication."
         actions={
           <Button variant="primary" onClick={() => setOpen(true)}>
             <IconPlus />
@@ -98,7 +98,7 @@ export default function StudioMagazinePage() {
                     </p>
                     {article.status === "changes_requested" && article.reviewerNotes ? (
                       <p className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-xs text-warning">
-                        Editor&rsquo;s note: {article.reviewerNotes}
+                        Note: {article.reviewerNotes}
                       </p>
                     ) : null}
                     {article.status === "rejected" && article.reviewerNotes ? (

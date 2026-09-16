@@ -149,7 +149,9 @@ const SPONSORSHIP_LISTING_STATUS: Record<
   { label: string; tone: NonNullable<BadgeProps["tone"]> }
 > = {
   draft: { label: "Draft", tone: "draft" },
-  submitted: { label: "In review", tone: "pending" },
+  // Not "In review" — there's no reviewer on either side yet (Connect doesn't exist).
+  // "Submitted" is the honest description of this terminal state.
+  submitted: { label: "Submitted", tone: "pending" },
   changes_requested: { label: "Changes requested", tone: "warning" },
   published: { label: "Published", tone: "published" },
   rejected: { label: "Rejected", tone: "rejected" },

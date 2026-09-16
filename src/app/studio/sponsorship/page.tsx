@@ -61,7 +61,7 @@ export default function StudioSponsorshipPage() {
     <>
       <PageHeader
         title="Exchange Hub"
-        description="Pitch your film or project for sponsorship — a trailer, your analysis, and what a sponsor gets in return. Published after editorial review."
+        description="Pitch your film or project for sponsorship — a trailer, your analysis, and what a sponsor gets in return. Submitted to MYHitch Connect once you're ready."
         actions={
           <Button variant="primary" onClick={() => setOpen(true)}>
             <IconPlus />
@@ -90,7 +90,7 @@ export default function StudioSponsorshipPage() {
                     </p>
                     {listing.status === "changes_requested" && listing.reviewerNotes ? (
                       <p className="mt-1.5 rounded bg-warning/10 px-2 py-1 text-xs text-warning">
-                        Editor&rsquo;s note: {listing.reviewerNotes}
+                        Note: {listing.reviewerNotes}
                       </p>
                     ) : null}
                     {listing.status === "rejected" && listing.reviewerNotes ? (

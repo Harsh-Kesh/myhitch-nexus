@@ -932,6 +932,9 @@ export interface MagazineArticle {
   isFilmmakerAnalysis: boolean;
   status: MagazineStatus;
   reviewerNotes: string | null;
+  /** Set once Lens's own review reports a decision back — see
+   * src/lib/server/lensIntegration.ts and the /api/integrations/lens/status webhook. */
+  lensUrl: string | null;
   submittedAt: string | null;
   publishedAt: string | null;
   createdAt: string;
@@ -989,17 +992,4 @@ export interface SponsorshipListing {
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export type SponsorshipInquiryStatus = "new" | "contacted" | "closed";
-
-export interface SponsorshipInquiry {
-  id: string;
-  listingId: string;
-  sponsorAccountId: string;
-  sponsorName: string;
-  sponsorEmail: string;
-  message: string;
-  status: SponsorshipInquiryStatus;
-  createdAt: string;
 }

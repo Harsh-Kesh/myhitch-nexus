@@ -1,11 +1,20 @@
-// Server-only. The "Exchange Hub" sponsorship marketplace — see
-// docs/DEVELOPMENT-PLAN.md's Exchange Hub research entry and this table's own migration
-// header for the reasoning behind every safety constraint here. The short version: a
-// creator publishes a pitch (+ optional trailer) asking for sponsorship; a business/
-// advertiser account can express interest through an on-platform inquiry. No money moves
-// through the platform, and the reward a sponsor gets is always one of a fixed,
-// non-financial list — never free text — because free text is exactly where "sponsor my
-// film for exposure" quietly turns into an unregistered investment offer.
+// Server-only. The Nexus-side authoring half of the "Exchange Hub" sponsorship pitch —
+// see docs/DEVELOPMENT-PLAN.md's 2026-09-16 correction entry. Exchange Hub itself lives
+// on MYHitch Connect, a separate in-house platform — Nexus's job is only to let a
+// creator compose the pitch (project name, trailer link, full pitch, and the reward
+// they're offering) and mark it "submitted". There is deliberately no admin review queue
+// and no public page on Nexus: Connect owns hosting, browsing and sponsor inquiries.
+//
+// Connect isn't running yet and isn't currently being built, so there is no live
+// integration call here (unlike magazine.ts's submitArticleToLens) — "submitted" is
+// simply the honest terminal state a listing reaches today. The moment Connect's
+// submission contract exists, the same fire-and-forget pattern used for Lens can be
+// dropped into submitListing() below.
+//
+// The reward vocabulary is still a closed, check-constrained, non-financial set with no
+// free-text monetary field anywhere in the schema — see the migration's own header for
+// the Australian securities-law reasoning. That constraint is exactly the shape of data
+// Connect will need, regardless of when the handoff itself goes live.
 import "server-only";
 import { query, queryOne } from "./db";
 
@@ -122,8 +131,8 @@ function mapListing(row: ListingRow): SponsorshipListing {
 
 /** Same bar as channelSettings.ts's isChannelMember — every registered creator/business/
  * etc. account gets a real channel at signup (channelProvisioning.ts), so requiring one
- * here, unlike the video link, is safe rather than a repeat of the magazine feature's
- * original mistake. */
+ * here, unlike the video link, is safe rather than a repeat of Magazine's original
+ * video_id mistake. */
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
   const row = await queryOne<{ id: string }>(
     `select id from memberships where account_id = $1 and organization_id = $2`,
@@ -251,8 +260,10 @@ export type TransitionResult =
   | { outcome: "invalid_transition" };
 
 /** Draft/changes-requested -> submitted. Requires a real pitch and at least one
- * (non-financial) reward selected — an empty ask, or one offering nothing back, isn't
- * a real sponsorship pitch and shouldn't reach a reviewer's queue. */
+ * (non-financial) reward selected — an empty ask, or one offering nothing back, isn't a
+ * real sponsorship pitch. No admin gate on Nexus's side — "submitted" is the honest
+ * terminal state until MYHitch Connect's submission contract exists (see this file's
+ * header); nothing calls out anywhere yet. */
 export async function submitListing(id: string, accountId: string): Promise<TransitionResult> {
   const existing = await queryOne<{ status: ListingStatus; pitch_html: string }>(
     `select status, pitch_html from sponsorship_listings where id = $1
@@ -293,155 +304,4 @@ export async function withdrawListing(id: string, accountId: string): Promise<Tr
   await query(`update sponsorship_listings set status = 'withdrawn' where id = $1`, [id]);
   const listing = await getListingById(id);
   return listing ? { outcome: "success", listing } : { outcome: "not_found" };
-}
-
-export async function getPendingReview(): Promise<SponsorshipListing[]> {
-  const rows = await query<ListingRow>(
-    `select ${LISTING_COLUMNS} from sponsorship_listings s ${LISTING_JOINS}
-     where s.status = 'submitted'
-     order by s.submitted_at asc`,
-  );
-  return rows.map(mapListing);
-}
-
-export type ReviewDecision = "publish" | "request_changes" | "reject";
-
-export async function reviewListing(
-  id: string,
-  reviewerAccountId: string,
-  decision: ReviewDecision,
-  notes: string | null,
-): Promise<TransitionResult> {
-  const existing = await queryOne<{ status: ListingStatus }>(
-    `select status from sponsorship_listings where id = $1`,
-    [id],
-  );
-  if (!existing) return { outcome: "not_found" };
-  if (existing.status !== "submitted") return { outcome: "invalid_transition" };
-
-  const nextStatus: ListingStatus =
-    decision === "publish" ? "published" : decision === "reject" ? "rejected" : "changes_requested";
-
-  await query(
-    `update sponsorship_listings
-     set status = $1, reviewer_notes = $2, reviewed_by = $3,
-         published_at = case when $1 = 'published' then now() else published_at end
-     where id = $4`,
-    [nextStatus, notes, reviewerAccountId, id],
-  );
-  const listing = await getListingById(id);
-  return listing ? { outcome: "success", listing } : { outcome: "not_found" };
-}
-
-export async function getPublishedListings(limit = 24): Promise<SponsorshipListing[]> {
-  const rows = await query<ListingRow>(
-    `select ${LISTING_COLUMNS} from sponsorship_listings s ${LISTING_JOINS}
-     where s.status = 'published'
-     order by s.published_at desc
-     limit $1`,
-    [Math.min(Math.max(limit, 1), 100)],
-  );
-  return rows.map(mapListing);
-}
-
-export async function getPublishedListingBySlug(slug: string): Promise<SponsorshipListing | null> {
-  const row = await queryOne<ListingRow>(
-    `select ${LISTING_COLUMNS} from sponsorship_listings s ${LISTING_JOINS}
-     where s.slug = $1 and s.status = 'published'`,
-    [slug],
-  );
-  return row ? mapListing(row) : null;
-}
-
-/* ------------------------------- Inquiries -------------------------------- */
-
-export interface SponsorshipInquiry {
-  id: string;
-  listingId: string;
-  sponsorAccountId: string;
-  sponsorName: string;
-  sponsorEmail: string;
-  message: string;
-  status: "new" | "contacted" | "closed";
-  createdAt: string;
-}
-
-interface InquiryRow {
-  id: string;
-  listing_id: string;
-  sponsor_account_id: string;
-  sponsor_name: string;
-  sponsor_email: string;
-  message: string;
-  status: "new" | "contacted" | "closed";
-  created_at: string;
-}
-
-function mapInquiry(row: InquiryRow): SponsorshipInquiry {
-  return {
-    id: row.id,
-    listingId: row.listing_id,
-    sponsorAccountId: row.sponsor_account_id,
-    sponsorName: row.sponsor_name,
-    sponsorEmail: row.sponsor_email,
-    message: row.message,
-    status: row.status,
-    createdAt: row.created_at,
-  };
-}
-
-export type CreateInquiryResult =
-  | { outcome: "success"; inquiry: SponsorshipInquiry }
-  | { outcome: "not_found" };
-
-/** On-platform contact only — see this file's header. The sponsor's real account
- * identity (name/email) is what the creator sees, not a free-text "who are you" field a
- * sponsor could fake. */
-export async function createInquiry(
-  listingId: string,
-  sponsorAccountId: string,
-  message: string,
-): Promise<CreateInquiryResult> {
-  const listing = await queryOne<{ id: string }>(
-    `select id from sponsorship_listings where id = $1 and status = 'published'`,
-    [listingId],
-  );
-  if (!listing) return { outcome: "not_found" };
-
-  const rows = await query<InquiryRow>(
-    `insert into sponsorship_inquiries (listing_id, sponsor_account_id, message)
-     values ($1, $2, $3)
-     returning id, listing_id, sponsor_account_id,
-       (select email from accounts where id = $2) as sponsor_email,
-       (select full_name from accounts where id = $2) as sponsor_name,
-       message, status, created_at`,
-    [listingId, sponsorAccountId, message.trim().slice(0, 2000)],
-  );
-  return { outcome: "success", inquiry: mapInquiry(rows[0]) };
-}
-
-/** Only visible to a member of the listing's own channel — an inquiry carries the
- * sponsor's real contact details, so this is exactly the kind of thing isChannelMember
- * gates everywhere else in the app. */
-export async function getInquiriesForListing(
-  listingId: string,
-  accountId: string,
-): Promise<SponsorshipInquiry[] | null> {
-  const owned = await queryOne<{ id: string }>(
-    `select id from sponsorship_listings where id = $1
-     and channel_id in (select organization_id from memberships where account_id = $2)`,
-    [listingId, accountId],
-  );
-  if (!owned) return null;
-
-  const rows = await query<InquiryRow>(
-    `select i.id, i.listing_id, i.sponsor_account_id, a.email as sponsor_email,
-            a.full_name as sponsor_name, i.message, i.status, i.created_at
-     from sponsorship_inquiries i
-     join accounts a on a.id = i.sponsor_account_id
-     where i.listing_id = $1
-     order by i.created_at desc`,
-    [listingId],
-  );
-  return rows.map(mapInquiry);
 }

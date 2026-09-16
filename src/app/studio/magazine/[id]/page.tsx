@@ -71,7 +71,7 @@ export default function MagazineArticleEditorPage() {
     try {
       await save();
       await submitArticle.mutateAsync();
-      toast({ title: "Sent for editorial review" });
+      toast({ title: "Submitted — sent to MYHitch Lens" });
     } catch (error) {
       toast({
         title: "Couldn't submit",
@@ -115,7 +115,7 @@ export default function MagazineArticleEditorPage() {
         {article.status === "changes_requested" && article.reviewerNotes ? (
           <Card className="border-warning/30 bg-warning/5">
             <CardBody>
-              <p className="text-sm font-medium text-fg">Editorial notes</p>
+              <p className="text-sm font-medium text-fg">Note from Lens</p>
               <p className="mt-1 text-sm text-fg-muted">{article.reviewerNotes}</p>
             </CardBody>
           </Card>
@@ -131,11 +131,20 @@ export default function MagazineArticleEditorPage() {
         {article.status === "published" ? (
           <Card className="border-live/30 bg-live/5">
             <CardBody className="flex items-center justify-between gap-3">
-              <p className="text-sm text-fg">Live in the MYHitch magazine.</p>
-              <Button variant="secondary" size="sm" href={`/magazine/${article.slug}`}>
-                <IconExternalLink />
-                View published page
-              </Button>
+              <p className="text-sm text-fg">Live on MYHitch Lens.</p>
+              {article.lensUrl ? (
+                <Button variant="secondary" size="sm" href={article.lensUrl}>
+                  <IconExternalLink />
+                  View on Lens
+                </Button>
+              ) : null}
+            </CardBody>
+          </Card>
+        ) : null}
+        {article.status === "submitted" ? (
+          <Card className="border-live/30 bg-live/5">
+            <CardBody>
+              <p className="text-sm text-fg">Submitted — sent to MYHitch Lens, awaiting their review.</p>
             </CardBody>
           </Card>
         ) : null}

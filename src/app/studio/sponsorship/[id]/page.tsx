@@ -1,6 +1,6 @@
 "use client";
 
-import { IconArrowLeft, IconExternalLink, IconMail } from "@tabler/icons-react";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
@@ -14,14 +14,12 @@ import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useChannelVideos,
   useCurrentUser,
-  useSponsorshipInquiries,
   useSponsorshipListing,
   useSubmitSponsorshipListing,
   useUpdateSponsorshipListing,
   useWithdrawSponsorshipListing,
 } from "@/lib/mock-api/hooks";
 import { SPONSORSHIP_REWARD_LABELS, SPONSORSHIP_REWARD_TYPES, type SponsorshipRewardType } from "@/lib/mock-api/types";
-import { relativeTime } from "@/lib/utils";
 
 const EDITABLE_STATUSES = new Set(["draft", "changes_requested"]);
 
@@ -34,7 +32,6 @@ export default function SponsorshipListingEditorPage() {
   const { data: user } = useCurrentUser();
   const { data: listing, isLoading } = useSponsorshipListing(id);
   const { data: videos = [] } = useChannelVideos(user?.channelId ?? "", true);
-  const { data: inquiries = [] } = useSponsorshipInquiries(id);
   const updateListing = useUpdateSponsorshipListing(id);
   const submitListing = useSubmitSponsorshipListing(id);
   const withdrawListing = useWithdrawSponsorshipListing(id);
@@ -93,7 +90,7 @@ export default function SponsorshipListingEditorPage() {
     try {
       await save();
       await submitListing.mutateAsync();
-      toast({ title: "Sent for editorial review" });
+      toast({ title: "Submitted — queued for MYHitch Connect" });
     } catch (error) {
       toast({
         title: "Couldn't submit",
@@ -137,7 +134,7 @@ export default function SponsorshipListingEditorPage() {
         {listing.status === "changes_requested" && listing.reviewerNotes ? (
           <Card className="border-warning/30 bg-warning/5">
             <CardBody>
-              <p className="text-sm font-medium text-fg">Editorial notes</p>
+              <p className="text-sm font-medium text-fg">Note</p>
               <p className="mt-1 text-sm text-fg-muted">{listing.reviewerNotes}</p>
             </CardBody>
           </Card>
@@ -145,19 +142,18 @@ export default function SponsorshipListingEditorPage() {
         {listing.status === "rejected" && listing.reviewerNotes ? (
           <Card className="border-danger/30 bg-danger/5">
             <CardBody>
-              <p className="text-sm font-medium text-fg">Not published</p>
+              <p className="text-sm font-medium text-fg">Not accepted</p>
               <p className="mt-1 text-sm text-fg-muted">{listing.reviewerNotes}</p>
             </CardBody>
           </Card>
         ) : null}
-        {listing.status === "published" ? (
+        {listing.status === "submitted" ? (
           <Card className="border-live/30 bg-live/5">
-            <CardBody className="flex items-center justify-between gap-3">
-              <p className="text-sm text-fg">Live in the Exchange Hub.</p>
-              <Button variant="secondary" size="sm" href={`/exchange/${listing.slug}`}>
-                <IconExternalLink />
-                View published page
-              </Button>
+            <CardBody>
+              <p className="text-sm text-fg">
+                Submitted — queued for MYHitch Connect. This pitch will be forwarded there once that
+                integration is live.
+              </p>
             </CardBody>
           </Card>
         ) : null}
@@ -228,40 +224,12 @@ export default function SponsorshipListingEditorPage() {
                   Save draft
                 </Button>
                 <Button variant="primary" loading={submitListing.isPending} onClick={submit}>
-                  Submit for review
+                  Submit
                 </Button>
               </div>
             ) : null}
           </CardBody>
         </Card>
-
-        {listing.status === "published" || listing.status === "closed" ? (
-          <Card>
-            <CardHeader
-              title="Inquiries"
-              description="Sponsors who've expressed interest through this listing."
-            />
-            <CardBody className="space-y-3">
-              {inquiries.length === 0 ? (
-                <p className="text-sm text-fg-muted">No inquiries yet.</p>
-              ) : (
-                inquiries.map((inquiry) => (
-                  <div key={inquiry.id} className="rounded-lg border border-border p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="flex items-center gap-1.5 text-sm font-medium text-fg">
-                        <IconMail className="size-4 text-fg-muted" />
-                        {inquiry.sponsorName}
-                      </p>
-                      <span className="text-2xs text-fg-subtle">{relativeTime(inquiry.createdAt)}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-fg-muted">{inquiry.sponsorEmail}</p>
-                    <p className="mt-2 text-sm text-fg">{inquiry.message}</p>
-                  </div>
-                ))
-              )}
-            </CardBody>
-          </Card>
-        ) : null}
       </PageBody>
     </>
   );

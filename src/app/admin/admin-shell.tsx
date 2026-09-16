@@ -5,23 +5,19 @@ import {
   IconBuildingCommunity,
   IconCoin,
   IconFileText,
-  IconAward,
   IconGavel,
   IconLayoutDashboard,
   IconListCheck,
-  IconNews,
   IconSettings,
   IconSpeakerphone,
   IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { useAdminSummary, useMagazineReviewQueue, useSponsorshipReviewQueue } from "@/lib/mock-api/hooks";
+import { useAdminSummary } from "@/lib/mock-api/hooks";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { data: summary } = useAdminSummary();
-  const { data: magazineQueue = [] } = useMagazineReviewQueue();
-  const { data: sponsorshipQueue = [] } = useSponsorshipReviewQueue();
 
   const reviewCount =
     (summary?.pendingContent ?? 0) +
@@ -62,22 +58,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             { href: "/admin/content", label: "Content", icon: <IconVideo /> },
             { href: "/admin/live", label: "Live", icon: <IconBroadcast /> },
             {
-              href: "/admin/magazine",
-              label: "Magazine",
-              icon: <IconNews />,
-              badge: magazineQueue.length,
-            },
-            {
               href: "/admin/ads",
               label: "Advertising",
               icon: <IconSpeakerphone />,
               badge: summary?.campaignsAwaitingApproval,
-            },
-            {
-              href: "/admin/sponsorship",
-              label: "Exchange Hub",
-              icon: <IconAward />,
-              badge: sponsorshipQueue.length,
             },
           ],
         },

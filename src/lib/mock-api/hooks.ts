@@ -78,15 +78,8 @@ export const qk = {
   notifications: ["notifications"] as const,
   myMagazineArticles: ["my-magazine-articles"] as const,
   magazineArticle: (id: string) => ["magazine-article", id] as const,
-  magazineReviewQueue: ["magazine-review-queue"] as const,
-  publishedMagazine: ["published-magazine"] as const,
-  magazineArticleBySlug: (slug: string) => ["magazine-article-slug", slug] as const,
   mySponsorshipListings: ["my-sponsorship-listings"] as const,
   sponsorshipListing: (id: string) => ["sponsorship-listing", id] as const,
-  sponsorshipReviewQueue: ["sponsorship-review-queue"] as const,
-  publishedSponsorshipListings: ["published-sponsorship-listings"] as const,
-  sponsorshipListingBySlug: (slug: string) => ["sponsorship-listing-slug", slug] as const,
-  sponsorshipInquiries: (listingId: string) => ["sponsorship-inquiries", listingId] as const,
 };
 
 type Opts<T> = Omit<UseQueryOptions<T, Error, T>, "queryKey" | "queryFn">;
@@ -860,35 +853,6 @@ export function useWithdrawMagazineArticle(id: string) {
   });
 }
 
-export const useMagazineReviewQueue = () =>
-  useQuery({ queryKey: qk.magazineReviewQueue, queryFn: api.getMagazineReviewQueue });
-
-export function useReviewMagazineArticle() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      decision,
-      notes,
-    }: {
-      id: string;
-      decision: "publish" | "request_changes" | "reject";
-      notes?: string;
-    }) => api.reviewMagazineArticle(id, decision, notes),
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.magazineReviewQueue }),
-  });
-}
-
-export const usePublishedMagazine = () =>
-  useQuery({ queryKey: qk.publishedMagazine, queryFn: api.getPublishedMagazine });
-
-export const useMagazineArticleBySlug = (slug: string) =>
-  useQuery({
-    queryKey: qk.magazineArticleBySlug(slug),
-    queryFn: () => api.getMagazineArticleBySlug(slug),
-    enabled: Boolean(slug),
-  });
-
 /* --------------------------- Sponsorship ("Exchange Hub") ---------------- */
 
 export const useMySponsorshipListings = () =>
@@ -940,49 +904,5 @@ export function useWithdrawSponsorshipListing(id: string) {
       client.invalidateQueries({ queryKey: qk.sponsorshipListing(id) });
       client.invalidateQueries({ queryKey: qk.mySponsorshipListings });
     },
-  });
-}
-
-export const useSponsorshipReviewQueue = () =>
-  useQuery({ queryKey: qk.sponsorshipReviewQueue, queryFn: api.getSponsorshipReviewQueue });
-
-export function useReviewSponsorshipListing() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      decision,
-      notes,
-    }: {
-      id: string;
-      decision: "publish" | "request_changes" | "reject";
-      notes?: string;
-    }) => api.reviewSponsorshipListing(id, decision, notes),
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.sponsorshipReviewQueue }),
-  });
-}
-
-export const usePublishedSponsorshipListings = () =>
-  useQuery({ queryKey: qk.publishedSponsorshipListings, queryFn: api.getPublishedSponsorshipListings });
-
-export const useSponsorshipListingBySlug = (slug: string) =>
-  useQuery({
-    queryKey: qk.sponsorshipListingBySlug(slug),
-    queryFn: () => api.getSponsorshipListingBySlug(slug),
-    enabled: Boolean(slug),
-  });
-
-export const useSponsorshipInquiries = (listingId: string) =>
-  useQuery({
-    queryKey: qk.sponsorshipInquiries(listingId),
-    queryFn: () => api.getSponsorshipInquiries(listingId),
-    enabled: Boolean(listingId),
-  });
-
-export function useCreateSponsorshipInquiry(listingId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (message: string) => api.createSponsorshipInquiry(listingId, message),
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.sponsorshipInquiries(listingId) }),
   });
 }
