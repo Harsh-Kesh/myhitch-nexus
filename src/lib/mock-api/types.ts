@@ -904,3 +904,102 @@ export interface FeaturedContent {
   hero: Video[];
   rails: HomeRail[];
 }
+
+/* ============================== Magazine ================================= */
+
+export type MagazineStatus =
+  | "draft"
+  | "submitted"
+  | "changes_requested"
+  | "published"
+  | "rejected"
+  | "withdrawn";
+
+export interface MagazineArticle {
+  id: string;
+  slug: string;
+  aboutTitle: string;
+  videoId: string | null;
+  videoTitle: string | null;
+  videoSlug: string | null;
+  channelId: string | null;
+  channelName: string | null;
+  authorAccountId: string;
+  authorName: string;
+  title: string;
+  dek: string | null;
+  bodyHtml: string;
+  isFilmmakerAnalysis: boolean;
+  status: MagazineStatus;
+  reviewerNotes: string | null;
+  submittedAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/* ============================== Sponsorship ("Exchange Hub") ============= */
+
+export type SponsorshipListingStatus =
+  | "draft"
+  | "submitted"
+  | "changes_requested"
+  | "published"
+  | "rejected"
+  | "withdrawn"
+  | "closed";
+
+// Closed, non-financial reward vocabulary — see the sponsorship_rewards migration's
+// header for why there is deliberately no free-text "what the sponsor gets" field.
+export const SPONSORSHIP_REWARD_TYPES = [
+  "screen_credit",
+  "logo_placement",
+  "product_placement",
+  "premiere_tickets",
+  "social_mention",
+  "official_sponsor_badge",
+] as const;
+export type SponsorshipRewardType = (typeof SPONSORSHIP_REWARD_TYPES)[number];
+
+export const SPONSORSHIP_REWARD_LABELS: Record<SponsorshipRewardType, string> = {
+  screen_credit: "Screen credit",
+  logo_placement: "Logo placement",
+  product_placement: "Product placement",
+  premiere_tickets: "Premiere tickets",
+  social_mention: "Social media mention",
+  official_sponsor_badge: "Official sponsor badge",
+};
+
+export interface SponsorshipListing {
+  id: string;
+  slug: string;
+  channelId: string;
+  channelName: string;
+  channelAvatarGradient: [string, string];
+  createdByAccountId: string;
+  authorName: string;
+  videoId: string | null;
+  videoTitle: string | null;
+  projectName: string;
+  pitchHtml: string;
+  rewardTypes: SponsorshipRewardType[];
+  status: SponsorshipListingStatus;
+  reviewerNotes: string | null;
+  submittedAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type SponsorshipInquiryStatus = "new" | "contacted" | "closed";
+
+export interface SponsorshipInquiry {
+  id: string;
+  listingId: string;
+  sponsorAccountId: string;
+  sponsorName: string;
+  sponsorEmail: string;
+  message: string;
+  status: SponsorshipInquiryStatus;
+  createdAt: string;
+}

@@ -85,6 +85,65 @@
     background-clip: content-box;
   }
 
+  /* Rendered rich-text content — both the TipTap editor surface and the published
+     article page read through this, so authoring and reading always match. No
+     typography plugin in this project; hand-rolled against the existing design tokens
+     like every other component-layer rule here, rather than pulling one in for a single
+     feature. */
+  .nx-article-body {
+    color: rgb(var(--nx-fg));
+    font-size: 1rem;
+    line-height: 1.75;
+  }
+  .nx-article-body > * + * {
+    margin-top: 1em;
+  }
+  .nx-article-body h2 {
+    font-family: var(--font-display, inherit);
+    font-size: 1.375rem;
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.6em;
+  }
+  .nx-article-body h3 {
+    font-family: var(--font-display, inherit);
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.35;
+    margin-top: 1.4em;
+  }
+  .nx-article-body ul,
+  .nx-article-body ol {
+    padding-left: 1.4em;
+  }
+  .nx-article-body ul {
+    list-style: disc;
+  }
+  .nx-article-body ol {
+    list-style: decimal;
+  }
+  .nx-article-body li + li {
+    margin-top: 0.35em;
+  }
+  .nx-article-body blockquote {
+    border-left: 3px solid rgb(var(--nx-border-strong));
+    padding-left: 1em;
+    color: rgb(var(--nx-fg-muted));
+    font-style: italic;
+  }
+  .nx-article-body a {
+    color: rgb(var(--nx-accent));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .nx-article-body p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: rgb(var(--nx-fg-subtle));
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
   .nx-skeleton {
     position: relative;
     overflow: hidden;

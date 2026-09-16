@@ -6,8 +6,10 @@ import {
   IconCoin,
   IconLayoutDashboard,
   IconMessage,
+  IconNews,
   IconPlaylist,
   IconSettings,
+  IconSpeakerphone,
   IconUpload,
   IconVideo,
 } from "@tabler/icons-react";
@@ -49,6 +51,16 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
               label: "Comments",
               icon: <IconMessage />,
               badge: heldCount,
+            },
+            {
+              href: "/studio/magazine",
+              label: "Magazine",
+              icon: <IconNews />,
+            },
+            {
+              href: "/studio/sponsorship",
+              label: "Exchange Hub",
+              icon: <IconSpeakerphone />,
             },
           ],
         },

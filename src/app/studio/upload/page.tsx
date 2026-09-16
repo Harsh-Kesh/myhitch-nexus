@@ -33,9 +33,10 @@ import { ProgressBar } from "@/components/ui/progress";
 import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
 import * as api from "@/lib/mock-api";
-import { CONTENT_TYPE_LABELS, categories } from "@/lib/mock-api/data/categories";
+import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import {
   useBulkImport,
+  useCategories,
   useCurrentUser,
   usePlaylists,
   usePublishDraft,
@@ -142,6 +143,7 @@ export default function UploadPage() {
   const [description, setDescription] = React.useState("");
   const [contentType, setContentType] = React.useState<ContentType>("user-generated");
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
+  const { data: categories = [] } = useCategories();
   const [tags, setTags] = React.useState<string[]>([]);
   const [tagDraft, setTagDraft] = React.useState("");
   const [participants, setParticipants] = React.useState("");
@@ -466,14 +468,30 @@ export default function UploadPage() {
                             ))}
                           </Select>
                         </Field>
-                        <Field label="Categories" htmlFor="up-categories" required>
+                        <Field
+                          label="Categories"
+                          htmlFor="up-categories"
+                          required
+                          hint={`Showing ${CONTENT_TYPE_LABELS[contentType]} categories first.`}
+                        >
                           <MultiSelect
                             id="up-categories"
-                            options={categories.map((category) => ({
-                              value: category.id,
-                              label: category.name,
-                              group: CONTENT_TYPE_LABELS[category.contentType],
-                            }))}
+                            options={[...categories]
+                              .sort((a, b) =>
+                                a.contentType === contentType && b.contentType !== contentType
+                                  ? -1
+                                  : b.contentType === contentType && a.contentType !== contentType
+                                    ? 1
+                                    : 0,
+                              )
+                              .map((category) => ({
+                                value: category.id,
+                                label: category.name,
+                                group:
+                                  category.contentType === contentType
+                                    ? `${CONTENT_TYPE_LABELS[category.contentType]} (this content type)`
+                                    : CONTENT_TYPE_LABELS[category.contentType],
+                              }))}
                             value={categoryIds}
                             onChange={setCategoryIds}
                             placeholder="Choose at least one"

@@ -51,6 +51,8 @@ const PRIMARY_NAV: Array<{
   { href: "/news", label: "News" },
   { href: "/entertainment", label: "Entertainment" },
   { href: "/creators", label: "Creators" },
+  { href: "/magazine", label: "Magazine" },
+  { href: "/exchange", label: "Exchange Hub" },
   { href: "/explore", label: "Categories" },
 ];
 

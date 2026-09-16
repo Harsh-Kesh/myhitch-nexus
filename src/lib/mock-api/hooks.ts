@@ -76,6 +76,17 @@ export const qk = {
   purchases: ["purchases"] as const,
   subscriptions: ["subscriptions"] as const,
   notifications: ["notifications"] as const,
+  myMagazineArticles: ["my-magazine-articles"] as const,
+  magazineArticle: (id: string) => ["magazine-article", id] as const,
+  magazineReviewQueue: ["magazine-review-queue"] as const,
+  publishedMagazine: ["published-magazine"] as const,
+  magazineArticleBySlug: (slug: string) => ["magazine-article-slug", slug] as const,
+  mySponsorshipListings: ["my-sponsorship-listings"] as const,
+  sponsorshipListing: (id: string) => ["sponsorship-listing", id] as const,
+  sponsorshipReviewQueue: ["sponsorship-review-queue"] as const,
+  publishedSponsorshipListings: ["published-sponsorship-listings"] as const,
+  sponsorshipListingBySlug: (slug: string) => ["sponsorship-listing-slug", slug] as const,
+  sponsorshipInquiries: (listingId: string) => ["sponsorship-inquiries", listingId] as const,
 };
 
 type Opts<T> = Omit<UseQueryOptions<T, Error, T>, "queryKey" | "queryFn">;
@@ -792,5 +803,186 @@ export function useLogout() {
   return useMutation({
     mutationFn: api.logout,
     onSuccess: () => client.invalidateQueries({ queryKey: qk.user }),
+  });
+}
+
+/* ------------------------------ Magazine -------------------------------- */
+
+export const useMyMagazineArticles = () =>
+  useQuery({ queryKey: qk.myMagazineArticles, queryFn: api.getMyMagazineArticles });
+
+export const useMagazineArticle = (id: string) =>
+  useQuery({
+    queryKey: qk.magazineArticle(id),
+    queryFn: () => api.getMagazineArticle(id),
+    enabled: Boolean(id),
+  });
+
+export function useCreateMagazineArticle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createMagazineArticle,
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.myMagazineArticles }),
+  });
+}
+
+export function useUpdateMagazineArticle(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Parameters<typeof api.updateMagazineArticle>[1]) =>
+      api.updateMagazineArticle(id, patch),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.magazineArticle(id) });
+      client.invalidateQueries({ queryKey: qk.myMagazineArticles });
+    },
+  });
+}
+
+export function useSubmitMagazineArticle(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.submitMagazineArticle(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.magazineArticle(id) });
+      client.invalidateQueries({ queryKey: qk.myMagazineArticles });
+    },
+  });
+}
+
+export function useWithdrawMagazineArticle(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.withdrawMagazineArticle(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.magazineArticle(id) });
+      client.invalidateQueries({ queryKey: qk.myMagazineArticles });
+    },
+  });
+}
+
+export const useMagazineReviewQueue = () =>
+  useQuery({ queryKey: qk.magazineReviewQueue, queryFn: api.getMagazineReviewQueue });
+
+export function useReviewMagazineArticle() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      decision,
+      notes,
+    }: {
+      id: string;
+      decision: "publish" | "request_changes" | "reject";
+      notes?: string;
+    }) => api.reviewMagazineArticle(id, decision, notes),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.magazineReviewQueue }),
+  });
+}
+
+export const usePublishedMagazine = () =>
+  useQuery({ queryKey: qk.publishedMagazine, queryFn: api.getPublishedMagazine });
+
+export const useMagazineArticleBySlug = (slug: string) =>
+  useQuery({
+    queryKey: qk.magazineArticleBySlug(slug),
+    queryFn: () => api.getMagazineArticleBySlug(slug),
+    enabled: Boolean(slug),
+  });
+
+/* --------------------------- Sponsorship ("Exchange Hub") ---------------- */
+
+export const useMySponsorshipListings = () =>
+  useQuery({ queryKey: qk.mySponsorshipListings, queryFn: api.getMySponsorshipListings });
+
+export const useSponsorshipListing = (id: string) =>
+  useQuery({
+    queryKey: qk.sponsorshipListing(id),
+    queryFn: () => api.getSponsorshipListing(id),
+    enabled: Boolean(id),
+  });
+
+export function useCreateSponsorshipListing() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createSponsorshipListing,
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.mySponsorshipListings }),
+  });
+}
+
+export function useUpdateSponsorshipListing(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Parameters<typeof api.updateSponsorshipListing>[1]) =>
+      api.updateSponsorshipListing(id, patch),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.sponsorshipListing(id) });
+      client.invalidateQueries({ queryKey: qk.mySponsorshipListings });
+    },
+  });
+}
+
+export function useSubmitSponsorshipListing(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.submitSponsorshipListing(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.sponsorshipListing(id) });
+      client.invalidateQueries({ queryKey: qk.mySponsorshipListings });
+    },
+  });
+}
+
+export function useWithdrawSponsorshipListing(id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.withdrawSponsorshipListing(id),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.sponsorshipListing(id) });
+      client.invalidateQueries({ queryKey: qk.mySponsorshipListings });
+    },
+  });
+}
+
+export const useSponsorshipReviewQueue = () =>
+  useQuery({ queryKey: qk.sponsorshipReviewQueue, queryFn: api.getSponsorshipReviewQueue });
+
+export function useReviewSponsorshipListing() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      decision,
+      notes,
+    }: {
+      id: string;
+      decision: "publish" | "request_changes" | "reject";
+      notes?: string;
+    }) => api.reviewSponsorshipListing(id, decision, notes),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.sponsorshipReviewQueue }),
+  });
+}
+
+export const usePublishedSponsorshipListings = () =>
+  useQuery({ queryKey: qk.publishedSponsorshipListings, queryFn: api.getPublishedSponsorshipListings });
+
+export const useSponsorshipListingBySlug = (slug: string) =>
+  useQuery({
+    queryKey: qk.sponsorshipListingBySlug(slug),
+    queryFn: () => api.getSponsorshipListingBySlug(slug),
+    enabled: Boolean(slug),
+  });
+
+export const useSponsorshipInquiries = (listingId: string) =>
+  useQuery({
+    queryKey: qk.sponsorshipInquiries(listingId),
+    queryFn: () => api.getSponsorshipInquiries(listingId),
+    enabled: Boolean(listingId),
+  });
+
+export function useCreateSponsorshipInquiry(listingId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (message: string) => api.createSponsorshipInquiry(listingId, message),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.sponsorshipInquiries(listingId) }),
   });
 }

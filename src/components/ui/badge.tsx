@@ -2,7 +2,12 @@
 
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
-import type { CampaignStatus, ContentStatus } from "@/lib/mock-api/types";
+import type {
+  CampaignStatus,
+  ContentStatus,
+  MagazineStatus,
+  SponsorshipListingStatus,
+} from "@/lib/mock-api/types";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
@@ -103,6 +108,63 @@ export function CampaignStatusBadge({
   size?: BadgeProps["size"];
 }) {
   const config = CAMPAIGN_STATUS[status];
+  return (
+    <Badge tone={config.tone} size={size}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current" />
+      {config.label}
+    </Badge>
+  );
+}
+
+const MAGAZINE_STATUS: Record<
+  MagazineStatus,
+  { label: string; tone: NonNullable<BadgeProps["tone"]> }
+> = {
+  draft: { label: "Draft", tone: "draft" },
+  submitted: { label: "In review", tone: "pending" },
+  changes_requested: { label: "Changes requested", tone: "warning" },
+  published: { label: "Published", tone: "published" },
+  rejected: { label: "Rejected", tone: "rejected" },
+  withdrawn: { label: "Withdrawn", tone: "archived" },
+};
+
+export function MagazineStatusBadge({
+  status,
+  size,
+}: {
+  status: MagazineStatus;
+  size?: BadgeProps["size"];
+}) {
+  const config = MAGAZINE_STATUS[status];
+  return (
+    <Badge tone={config.tone} size={size}>
+      <span aria-hidden className="size-1.5 rounded-full bg-current" />
+      {config.label}
+    </Badge>
+  );
+}
+
+const SPONSORSHIP_LISTING_STATUS: Record<
+  SponsorshipListingStatus,
+  { label: string; tone: NonNullable<BadgeProps["tone"]> }
+> = {
+  draft: { label: "Draft", tone: "draft" },
+  submitted: { label: "In review", tone: "pending" },
+  changes_requested: { label: "Changes requested", tone: "warning" },
+  published: { label: "Published", tone: "published" },
+  rejected: { label: "Rejected", tone: "rejected" },
+  withdrawn: { label: "Withdrawn", tone: "archived" },
+  closed: { label: "Closed", tone: "archived" },
+};
+
+export function SponsorshipListingStatusBadge({
+  status,
+  size,
+}: {
+  status: SponsorshipListingStatus;
+  size?: BadgeProps["size"];
+}) {
+  const config = SPONSORSHIP_LISTING_STATUS[status];
   return (
     <Badge tone={config.tone} size={size}>
       <span aria-hidden className="size-1.5 rounded-full bg-current" />

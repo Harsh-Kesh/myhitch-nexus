@@ -33,6 +33,7 @@ import type {
   FeaturedContent,
   Lead,
   LiveEvent,
+  MagazineArticle,
   ModerationAction,
   ModerationItem,
   Organisation,
@@ -46,6 +47,9 @@ import type {
   SearchFilters,
   SearchResult,
   Series,
+  SponsorshipInquiry,
+  SponsorshipListing,
+  SponsorshipRewardType,
   Subscription,
   ThumbnailSuggestion,
   UploadSession,
@@ -2056,6 +2060,187 @@ export async function logout(): Promise<void> {
   });
   store.loggedIn = false;
   persistLogin(false);
+}
+
+/* ------------------------------ Magazine -------------------------------- */
+// Always real — no mock predecessor. Unlike the rest of this file, these functions
+// were never in-memory; the "MYHitch Lens magazine" feature (docs/DEVELOPMENT-PLAN.md,
+// 2026-09-16 research) only ever exists against Postgres, so there's no mock/real
+// branch to preserve here, just the same call-through-hooks.ts convention as everything
+// else in this module.
+async function magazineFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${path} failed with ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function getMyMagazineArticles(): Promise<MagazineArticle[]> {
+  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/magazine/articles/");
+  return data.items;
+}
+
+export async function createMagazineArticle(payload: {
+  aboutTitle: string;
+  videoId?: string | null;
+  title: string;
+  dek?: string;
+}): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>("/api/magazine/articles/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getMagazineArticle(id: string): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/`);
+}
+
+export async function updateMagazineArticle(
+  id: string,
+  patch: { title?: string; dek?: string | null; bodyHtml?: string; aboutTitle?: string },
+): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function submitMagazineArticle(id: string): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/submit/`, { method: "POST" });
+}
+
+export async function withdrawMagazineArticle(id: string): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/withdraw/`, { method: "POST" });
+}
+
+export async function getMagazineReviewQueue(): Promise<MagazineArticle[]> {
+  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/admin/magazine/");
+  return data.items;
+}
+
+export async function reviewMagazineArticle(
+  id: string,
+  decision: "publish" | "request_changes" | "reject",
+  notes?: string,
+): Promise<MagazineArticle> {
+  return magazineFetch<MagazineArticle>(`/api/admin/magazine/${id}/review/`, {
+    method: "POST",
+    body: JSON.stringify({ decision, notes }),
+  });
+}
+
+export async function getPublishedMagazine(): Promise<MagazineArticle[]> {
+  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/magazine/");
+  return data.items;
+}
+
+export async function getMagazineArticleBySlug(slug: string): Promise<MagazineArticle | null> {
+  const res = await fetch(`/api/magazine/${encodeURIComponent(slug)}/`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /api/magazine/${slug} failed with ${res.status}`);
+  return res.json() as Promise<MagazineArticle>;
+}
+
+/* --------------------------- Sponsorship ("Exchange Hub") ---------------- */
+// Always real, same as Magazine above — no mock predecessor exists for this feature.
+async function sponsorshipFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${path} failed with ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function getMySponsorshipListings(): Promise<SponsorshipListing[]> {
+  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/sponsorship/listings/");
+  return data.items;
+}
+
+export async function createSponsorshipListing(payload: {
+  videoId?: string | null;
+  projectName: string;
+}): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>("/api/sponsorship/listings/", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSponsorshipListing(id: string): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/`);
+}
+
+export async function updateSponsorshipListing(
+  id: string,
+  patch: { projectName?: string; pitchHtml?: string; videoId?: string | null; rewardTypes?: SponsorshipRewardType[] },
+): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function submitSponsorshipListing(id: string): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/submit/`, { method: "POST" });
+}
+
+export async function withdrawSponsorshipListing(id: string): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/withdraw/`, { method: "POST" });
+}
+
+export async function getSponsorshipReviewQueue(): Promise<SponsorshipListing[]> {
+  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/admin/sponsorship/");
+  return data.items;
+}
+
+export async function reviewSponsorshipListing(
+  id: string,
+  decision: "publish" | "request_changes" | "reject",
+  notes?: string,
+): Promise<SponsorshipListing> {
+  return sponsorshipFetch<SponsorshipListing>(`/api/admin/sponsorship/${id}/review/`, {
+    method: "POST",
+    body: JSON.stringify({ decision, notes }),
+  });
+}
+
+export async function getPublishedSponsorshipListings(): Promise<SponsorshipListing[]> {
+  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/sponsorship/");
+  return data.items;
+}
+
+export async function getSponsorshipListingBySlug(slug: string): Promise<SponsorshipListing | null> {
+  const res = await fetch(`/api/sponsorship/${encodeURIComponent(slug)}/`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET /api/sponsorship/${slug} failed with ${res.status}`);
+  return res.json() as Promise<SponsorshipListing>;
+}
+
+export async function getSponsorshipInquiries(listingId: string): Promise<SponsorshipInquiry[]> {
+  const data = await sponsorshipFetch<{ items: SponsorshipInquiry[] }>(
+    `/api/sponsorship/listings/${listingId}/inquiries/`,
+  );
+  return data.items;
+}
+
+export async function createSponsorshipInquiry(
+  listingId: string,
+  message: string,
+): Promise<SponsorshipInquiry> {
+  return sponsorshipFetch<SponsorshipInquiry>(`/api/sponsorship/listings/${listingId}/inquiries/`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
 }
 
 export { NOW };
