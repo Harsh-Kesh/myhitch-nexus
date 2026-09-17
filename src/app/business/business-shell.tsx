@@ -11,13 +11,23 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { useCampaigns, useLeads } from "@/lib/mock-api/hooks";
+import { looksLikeRealId } from "@/lib/mock-api";
+import { useCampaigns, useChannel, useCurrentUser, useLeads } from "@/lib/mock-api/hooks";
 
-const BUSINESS_CHANNEL = "ch_helio";
+// Fallback for the shared demo account. Not a plain `?? "ch_helio"`: the demo account's
+// own `channelId` is never actually null by the time it reaches here — the backend
+// leaves it at the mock-seeded default "ch_mara" (Mara Solace, a creator) when the real
+// account has no channel of its own — so a bare `??` would show her creator profile
+// under Business Studio instead of the business-appropriate mock demo. Only a genuine
+// real id should override this fallback.
+const MOCK_BUSINESS_CHANNEL = "ch_helio";
 
 export function BusinessShell({ children }: { children: React.ReactNode }) {
-  const { data: leads = [] } = useLeads(BUSINESS_CHANNEL);
-  const { data: campaigns = [] } = useCampaigns(BUSINESS_CHANNEL);
+  const { data: user } = useCurrentUser();
+  const channelId = user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const { data: channel } = useChannel(channelId);
+  const { data: leads = [] } = useLeads(channelId);
+  const { data: campaigns = [] } = useCampaigns(channelId);
 
   const newLeads = leads.filter((lead) => lead.status === "new").length;
   const pendingCampaigns = campaigns.filter((c) => c.status === "pending").length;
@@ -26,7 +36,7 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
     <WorkspaceShell
       workspace={{
         title: "Business Studio",
-        subtitle: "Helio Motors",
+        subtitle: channel?.name ?? "Your business",
         href: "/business/channel",
       }}
       accentLabel="Business"
