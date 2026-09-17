@@ -675,6 +675,8 @@ export interface VideoDetail extends VideoSummary {
   scheduledFor: string | null;
   sampleSrc: string | null;
   watermarkEnabled: boolean;
+  seriesId: string | null;
+  seriesTitle: string | null;
   seasonNumber: number | null;
   episodeNumber: number | null;
   credits: Array<{ role: string; name: string; character: string | null }>;
@@ -706,6 +708,8 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
       scheduled_for: string | null;
       sample_src: string | null;
       watermark_enabled: boolean;
+      series_id: string | null;
+      series_title: string | null;
       season_number: number | null;
       episode_number: number | null;
     }
@@ -713,9 +717,10 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
     `select ${VIDEO_SUMMARY_COLUMNS},
        v.hero_url, v.production_company, v.has_audio_description, v.trailer_available,
        v.language_code, v.scheduled_for, v.sample_src, v.watermark_enabled,
-       v.season_number, v.episode_number
+       v.series_id, s.title as series_title, v.season_number, v.episode_number
      from videos v
      ${VIDEO_SUMMARY_JOINS}
+     left join series s on s.id = v.series_id
      where (v.id::text = $1 or v.slug = $1) and v.status = 'published'`,
     [id],
   );
@@ -762,6 +767,8 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
     scheduledFor: row.scheduled_for,
     sampleSrc: row.sample_src,
     watermarkEnabled: row.watermark_enabled,
+    seriesId: row.series_id,
+    seriesTitle: row.series_title,
     seasonNumber: row.season_number,
     episodeNumber: row.episode_number,
     credits: credits.map((c) => ({ role: c.role, name: c.name, character: c.character_name })),

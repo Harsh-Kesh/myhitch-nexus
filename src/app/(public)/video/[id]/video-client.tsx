@@ -213,7 +213,25 @@ export function VideoDetailClient() {
                 ) : null}
               </div>
 
-              <h1 className="mt-2.5 font-display text-2xl font-semibold leading-tight text-fg sm:text-3xl">
+              {video.seriesTitle ? (
+                <p className="mt-2.5 text-sm font-medium text-accent">
+                  {video.seriesTitle}
+                  {video.seasonNumber || video.episodeNumber ? (
+                    <span className="text-fg-muted">
+                      {" · "}
+                      {video.seasonNumber ? `Season ${video.seasonNumber}` : null}
+                      {video.seasonNumber && video.episodeNumber ? ", " : null}
+                      {video.episodeNumber ? `Episode ${video.episodeNumber}` : null}
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+              <h1
+                className={cn(
+                  "font-display text-2xl font-semibold leading-tight text-fg sm:text-3xl",
+                  video.seriesTitle ? "mt-1.5" : "mt-2.5",
+                )}
+              >
                 {video.title}
               </h1>
 

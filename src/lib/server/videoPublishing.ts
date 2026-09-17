@@ -17,6 +17,7 @@ import { queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
 import { probeMasterAsset } from "./videoValidation";
 import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
+import { seriesBelongsToChannel } from "./series";
 import { pickGradient } from "../utils";
 
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
@@ -119,6 +120,9 @@ export interface PublishVideoInput {
   };
   status: string;
   scheduledFor: string | null;
+  seriesId: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
 }
 
 export type PublishVideoResult =
@@ -154,6 +158,9 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
   if (!VALID_STATUSES.includes(input.status)) {
     return { outcome: "invalid", reason: "Unrecognized publishing status." };
   }
+  if (input.seriesId && !(await seriesBelongsToChannel(input.seriesId, input.channelId))) {
+    return { outcome: "invalid", reason: "That series doesn't belong to this channel." };
+  }
 
   const asset = await masterAssetExists(input.masterAssetPath);
   if (!asset.exists) {
@@ -181,8 +188,8 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
          slug, channel_id, title, synopsis, content_type, status, thumbnail_url,
          poster_gradient, release_date, published_at, scheduled_for, language, country,
          production_company, master_asset_path, master_uploaded_at, master_bytes,
-         duration_seconds, processing_status
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, $17, 'awaiting_transcode')
+         duration_seconds, series_id, season_number, episode_number, processing_status
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, $17, $18, $19, $20, 'awaiting_transcode')
        returning id`,
       [
         slug,
@@ -205,6 +212,9 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
         input.masterAssetPath,
         asset.bytes,
         probe.durationSeconds,
+        input.seriesId,
+        input.seriesId ? input.seasonNumber : null,
+        input.seriesId ? input.episodeNumber : null,
       ],
     );
     const id = rows[0].id;

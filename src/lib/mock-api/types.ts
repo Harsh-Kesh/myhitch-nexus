@@ -230,6 +230,7 @@ export interface Video {
   completionRate: number;
   /** Series/season/episode assignment from the publishing step. */
   seriesId?: string;
+  seriesTitle?: string;
   seasonNumber?: number;
   episodeNumber?: number;
   trailerAvailable: boolean;

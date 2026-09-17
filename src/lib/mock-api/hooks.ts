@@ -58,6 +58,7 @@ export const qk = {
   playlists: (channelId: string) => ["playlists", channelId] as const,
   playlist: (id: string) => ["playlist", id] as const,
   series: (channelId?: string) => ["series", channelId] as const,
+  seriesDetail: (seriesId: string) => ["series-detail", seriesId] as const,
   analytics: (channelId: string, range: AnalyticsRange) =>
     ["analytics", channelId, range] as const,
   revenue: (channelId: string) => ["revenue", channelId] as const,
@@ -553,6 +554,22 @@ export function useUpdatePlaylist(channelId: string) {
 
 export const useSeries = (channelId?: string) =>
   useQuery({ queryKey: qk.series(channelId), queryFn: () => api.getSeries(channelId) });
+
+export function useCreateSeries(channelId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ title, description }: { title: string; description: string }) =>
+      api.createSeries(channelId, title, description),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.series(channelId) }),
+  });
+}
+
+export const useSeriesDetail = (seriesId: string) =>
+  useQuery({
+    queryKey: qk.seriesDetail(seriesId),
+    queryFn: () => api.getSeriesDetail(seriesId),
+    enabled: Boolean(seriesId),
+  });
 
 /* ----------------------------- Analytics -------------------------------- */
 

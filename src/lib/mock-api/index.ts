@@ -153,10 +153,10 @@ export async function getVideo(id: string): Promise<Video | null> {
   // this function is still two-branch. Real Postgres via GET /api/videos/{id}/,
   // matching by id or slug exactly like the mock branch below does. Video's full field
   // set (subtitles, audio tracks, qualities, complete pricing, rights, engagement
-  // counters) is now at parity with the real schema — the counters are a seeded
-  // snapshot from this same mock dataset, not yet live-computed by a real analytics
-  // pipeline (SRS §6.9), and affiliateLinks/seriesId are the two still-unmodelled
-  // fields (see docs/DEVELOPMENT-PLAN.md P1 entry for why).
+  // counters, series/season/episode as of 2026-09-17) is now at parity with the real
+  // schema — the counters are a seeded snapshot from this same mock dataset, not yet
+  // live-computed by a real analytics pipeline (SRS §6.9), and affiliateLinks is the
+  // one still-unmodelled field (see docs/DEVELOPMENT-PLAN.md P1 entry for why).
   if (looksLikeRealId(id)) {
     const res = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
     if (res.status === 404) return null;
@@ -1304,6 +1304,9 @@ export async function publishDraft(
         pricing: draft.pricing,
         status: draft.status,
         scheduledFor: draft.scheduledFor,
+        seriesId: draft.seriesId || null,
+        seasonNumber: draft.seasonNumber ?? null,
+        episodeNumber: draft.episodeNumber ?? null,
       }),
     });
     if (!res.ok) {
@@ -1531,12 +1534,72 @@ export async function updatePlaylist(
 }
 
 export async function getSeries(channelId?: string): Promise<Series[]> {
+  if (channelId && looksLikeRealId(channelId)) {
+    const data = await verificationFetch<{ items: RealSeriesSummary[] }>(
+      `/api/studio/series/?channelId=${encodeURIComponent(channelId)}`,
+    );
+    // Real series aren't backed by the mock Series shape (no seasons/episodeIds array —
+    // real episodes are read from `videos.series_id` directly, see series.ts) — the
+    // studio Series tab and upload wizard picker only ever need id/title from this list.
+    return data.items.map((item) => ({
+      id: item.id,
+      channelId: item.channelId,
+      title: item.title,
+      description: item.description ?? "",
+      seasons: [],
+      posterGradient: item.posterGradient,
+      thumbnailUrl: undefined,
+    }));
+  }
   await latency("fast");
   return clone(
     channelId
       ? store.series.filter((item) => item.channelId === channelId)
       : store.series,
   );
+}
+
+export interface RealSeriesSummary {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string | null;
+  posterGradient: [string, string];
+  episodeCount: number;
+  createdAt: string;
+}
+
+/** Real for a real channel (2026-09-17) — the Studio "Playlists & series" page's actual
+ * create-series action; no mock counterpart (mock series are fixed seed data). */
+export async function createSeries(
+  channelId: string,
+  title: string,
+  description: string,
+): Promise<RealSeriesSummary> {
+  return verificationFetch<RealSeriesSummary>("/api/studio/series/", {
+    method: "POST",
+    body: JSON.stringify({ channelId, title, description }),
+  });
+}
+
+export interface RealSeriesEpisode {
+  id: string;
+  slug: string;
+  title: string;
+  thumbnailUrl: string | null;
+  seasonNumber: number | null;
+  episodeNumber: number | null;
+}
+
+export interface RealSeriesDetail extends RealSeriesSummary {
+  episodes: RealSeriesEpisode[];
+}
+
+/** Real, public (2026-09-17) — episodes come from `videos.series_id` directly, not a
+ * mock-style `seasons[].episodeIds` array, so this is a distinct shape/call from
+ * getSeries() above rather than reusing it. */
+export async function getSeriesDetail(seriesId: string): Promise<RealSeriesDetail> {
+  return verificationFetch<RealSeriesDetail>(`/api/series/${encodeURIComponent(seriesId)}/`);
 }
 
 /* ============================== Analytics ================================ */

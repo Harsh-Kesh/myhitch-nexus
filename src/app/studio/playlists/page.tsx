@@ -12,32 +12,64 @@ import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { videoById } from "@/lib/mock-api/data/videos";
 import {
   useChannelVideos,
   useCreatePlaylist,
+  useCreateSeries,
   useCurrentUser,
   usePlaylists,
   useSeries,
+  useSeriesDetail,
   useUpdatePlaylist,
 } from "@/lib/mock-api/hooks";
 import type { Playlist } from "@/lib/mock-api/types";
 import { formatDate, formatDuration } from "@/lib/utils";
 
+/** Real series' episodes live on `videos.series_id` directly (with their own
+ * season/episode numbers), not a mock-style `seasons[].episodeIds` array — this renders
+ * that flat, real list, fetched only when its card is actually a real series. */
+function RealSeriesEpisodes({ seriesId }: { seriesId: string }) {
+  const { data } = useSeriesDetail(seriesId);
+  const episodes = data?.episodes ?? [];
+  if (episodes.length === 0) {
+    return <p className="text-sm text-fg-subtle">No published episodes yet.</p>;
+  }
+  return (
+    <ol className="divide-y divide-border rounded-lg border border-border">
+      {episodes.map((episode) => (
+        <li key={episode.id} className="flex items-center gap-3 px-3 py-2.5">
+          <span className="w-14 shrink-0 text-center text-xs text-fg-subtle nx-tnum">
+            {episode.seasonNumber ? `S${episode.seasonNumber}` : ""}
+            {episode.episodeNumber ? `E${episode.episodeNumber}` : ""}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm text-fg">{episode.title}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function StudioPlaylistsPage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
+  const isRealChannel = looksLikeRealId(channelId);
 
   const { data: playlists = [] } = usePlaylists(channelId);
   const { data: series = [] } = useSeries(channelId);
   const { data: videos = [] } = useChannelVideos(channelId, true);
   const createPlaylist = useCreatePlaylist(channelId);
   const updatePlaylist = useUpdatePlaylist(channelId);
+  const createSeries = useCreateSeries(channelId);
   const { toast } = useToast();
 
   const [tab, setTab] = React.useState("playlists");
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Playlist | null>(null);
+  const [createSeriesOpen, setCreateSeriesOpen] = React.useState(false);
+  const [seriesTitle, setSeriesTitle] = React.useState("");
+  const [seriesDescription, setSeriesDescription] = React.useState("");
 
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -49,10 +81,19 @@ export default function StudioPlaylistsPage() {
         title="Playlists & series"
         description="Group content into ordered playlists, or structure it as a series with seasons and episodes."
         actions={
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
-            <IconPlus />
-            New playlist
-          </Button>
+          tab === "series" ? (
+            isRealChannel ? (
+              <Button variant="primary" onClick={() => setCreateSeriesOpen(true)}>
+                <IconPlus />
+                New series
+              </Button>
+            ) : null
+          ) : (
+            <Button variant="primary" onClick={() => setCreateOpen(true)}>
+              <IconPlus />
+              New playlist
+            </Button>
+          )
         }
       />
 
@@ -164,53 +205,63 @@ export default function StudioPlaylistsPage() {
               icon={<IconStack2 />}
               title="No series"
               description="Series group episodes into seasons and unlock next-episode autoplay."
+              action={isRealChannel ? { label: "Create a series", onClick: () => setCreateSeriesOpen(true) } : undefined}
             />
           ) : (
             <div className="space-y-4">
-              {series.map((item) => (
-                <Card key={item.id}>
-                  <CardHeader
-                    title={item.title}
-                    description={item.description}
-                    action={
-                      <Badge tone="neutral" size="sm">
-                        {item.seasons.length} season
-                        {item.seasons.length === 1 ? "" : "s"}
-                      </Badge>
-                    }
-                  />
-                  <CardBody className="space-y-4">
-                    {item.seasons.map((season) => (
-                      <div key={season.number}>
-                        <p className="text-sm font-medium text-fg">
-                          Season {season.number} · {season.title}
-                        </p>
-                        <ol className="mt-2 divide-y divide-border rounded-lg border border-border">
-                          {season.episodeIds.map((episodeId, index) => {
-                            const video = videoById(episodeId);
-                            return (
-                              <li
-                                key={episodeId}
-                                className="flex items-center gap-3 px-3 py-2.5"
-                              >
-                                <span className="w-8 shrink-0 text-center text-xs text-fg-subtle nx-tnum">
-                                  E{index + 1}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate text-sm text-fg">
-                                  {video?.title ?? episodeId}
-                                </span>
-                                <span className="shrink-0 text-xs text-fg-subtle nx-tnum">
-                                  {video ? formatDuration(video.durationSeconds) : "—"}
-                                </span>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      </div>
-                    ))}
-                  </CardBody>
-                </Card>
-              ))}
+              {series.map((item) =>
+                isRealChannel ? (
+                  <Card key={item.id}>
+                    <CardHeader title={item.title} description={item.description || undefined} />
+                    <CardBody>
+                      <RealSeriesEpisodes seriesId={item.id} />
+                    </CardBody>
+                  </Card>
+                ) : (
+                  <Card key={item.id}>
+                    <CardHeader
+                      title={item.title}
+                      description={item.description}
+                      action={
+                        <Badge tone="neutral" size="sm">
+                          {item.seasons.length} season
+                          {item.seasons.length === 1 ? "" : "s"}
+                        </Badge>
+                      }
+                    />
+                    <CardBody className="space-y-4">
+                      {item.seasons.map((season) => (
+                        <div key={season.number}>
+                          <p className="text-sm font-medium text-fg">
+                            Season {season.number} · {season.title}
+                          </p>
+                          <ol className="mt-2 divide-y divide-border rounded-lg border border-border">
+                            {season.episodeIds.map((episodeId, index) => {
+                              const video = videoById(episodeId);
+                              return (
+                                <li
+                                  key={episodeId}
+                                  className="flex items-center gap-3 px-3 py-2.5"
+                                >
+                                  <span className="w-8 shrink-0 text-center text-xs text-fg-subtle nx-tnum">
+                                    E{index + 1}
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-sm text-fg">
+                                    {video?.title ?? episodeId}
+                                  </span>
+                                  <span className="shrink-0 text-xs text-fg-subtle nx-tnum">
+                                    {video ? formatDuration(video.durationSeconds) : "—"}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
+                      ))}
+                    </CardBody>
+                  </Card>
+                ),
+              )}
             </div>
           )
         ) : null}
@@ -379,6 +430,58 @@ export default function StudioPlaylistsPage() {
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      {/* Create series (real channels only) */}
+      <Modal
+        open={createSeriesOpen}
+        onClose={() => setCreateSeriesOpen(false)}
+        title="New series"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setCreateSeriesOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={createSeries.isPending}
+              disabled={seriesTitle.trim().length < 2}
+              onClick={async () => {
+                await createSeries.mutateAsync({ title: seriesTitle.trim(), description: seriesDescription });
+                setCreateSeriesOpen(false);
+                setSeriesTitle("");
+                setSeriesDescription("");
+                toast({ title: "Series created" });
+              }}
+            >
+              Create
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Title" htmlFor="ser-title" required>
+            <Input
+              id="ser-title"
+              value={seriesTitle}
+              onChange={(event) => setSeriesTitle(event.target.value)}
+              placeholder="Statistics for decisions"
+            />
+          </Field>
+          <Field label="Description" htmlFor="ser-desc">
+            <Textarea
+              id="ser-desc"
+              value={seriesDescription}
+              onChange={(event) => setSeriesDescription(event.target.value)}
+              rows={3}
+            />
+          </Field>
+          <p className="text-xs text-fg-subtle">
+            Assign episodes to this series — and their season/episode numbers — from the upload
+            wizard&rsquo;s Metadata step.
+          </p>
+        </div>
       </Modal>
     </>
   );
