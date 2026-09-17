@@ -16,6 +16,7 @@ const client = createClient(url, key, { auth: { persistSession: false } });
 const BUCKETS = [
   { id: "video-masters", public: false },
   { id: "thumbnails", public: true },
+  { id: "business-documents", public: false },
 ];
 
 const { data: existing, error: listError } = await client.storage.listBuckets();

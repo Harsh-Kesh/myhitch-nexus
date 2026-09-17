@@ -5,6 +5,7 @@ import {
   IconChartHistogram,
   IconCreditCard,
   IconLink,
+  IconShieldCheck,
   IconSpeakerphone,
   IconUsers,
   IconVideo,
@@ -79,6 +80,16 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
               href: "/business/billing",
               label: "Billing",
               icon: <IconCreditCard />,
+            },
+          ],
+        },
+        {
+          title: "Configure",
+          items: [
+            {
+              href: "/business/verification",
+              label: "Verification",
+              icon: <IconShieldCheck />,
             },
           ],
         },

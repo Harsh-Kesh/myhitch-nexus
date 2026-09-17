@@ -2300,4 +2300,155 @@ export async function withdrawSponsorshipListing(id: string): Promise<Sponsorshi
   return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/withdraw/`, { method: "POST" });
 }
 
+/* ---------------- Organisation verification (2026-09-17) ------------------ */
+// Real for a real organisation only — no mock counterpart. The free half of
+// docs/DEVELOPMENT-PLAN.md's 2026-09-17 entry: ABN Lookup, documents and the
+// declaration/submission gate. ID verification, bank validation and risk screening are
+// deliberately not built here (paid vendors, not yet approved).
+
+export interface OrganizationVerification {
+  organizationId: string;
+  legalEntityName: string | null;
+  tradingName: string | null;
+  abn: string | null;
+  acn: string | null;
+  entityType: string | null;
+  gstRegistered: boolean | null;
+  businessRegistrationDate: string | null;
+  countryOfRegistration: string;
+  registeredAddress: string | null;
+  principalAddress: string | null;
+  operatingLocations: string | null;
+  addressSameAsRegistered: boolean;
+  contactFullName: string | null;
+  contactPosition: string | null;
+  contactEmail: string | null;
+  contactMobile: string | null;
+  authorisedPersonName: string | null;
+  authorisedPersonPosition: string | null;
+  industry: string | null;
+  businessDescription: string | null;
+  website: string | null;
+  platforms: string[];
+  productsServices: string | null;
+  informationAccurate: boolean;
+  authorityConfirmed: boolean;
+  termsAccepted: boolean;
+  privacyAccepted: boolean;
+  abnLookupCheckedAt: string | null;
+  abnLookupStatus: string | null;
+  abnLookupEntityName: string | null;
+  abnLookupEntityType: string | null;
+  abnLookupGstEffectiveFrom: string | null;
+  abnLookupState: string | null;
+  abnLookupPostcode: string | null;
+  submittedAt: string | null;
+  status: string;
+}
+
+export type OrganizationVerificationDraft = Partial<
+  Omit<
+    OrganizationVerification,
+    | "organizationId"
+    | "abnLookupCheckedAt"
+    | "abnLookupStatus"
+    | "abnLookupEntityName"
+    | "abnLookupEntityType"
+    | "abnLookupGstEffectiveFrom"
+    | "abnLookupState"
+    | "abnLookupPostcode"
+    | "submittedAt"
+    | "status"
+  >
+>;
+
+export interface AbnLookupResult {
+  found: boolean;
+  message: string;
+  abn: string;
+  abnStatus: string;
+  abnStatusEffectiveFrom: string | null;
+  acn: string;
+  entityName: string;
+  entityTypeCode: string;
+  entityTypeName: string;
+  gstEffectiveFrom: string | null;
+  addressState: string;
+  addressPostcode: string;
+}
+
+export interface VerificationDocument {
+  id: string;
+  documentType: string;
+  fileName: string;
+  uploadedAt: string;
+  url: string;
+}
+
+async function verificationFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${path} failed with ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function getOrganizationVerification(organizationId: string): Promise<OrganizationVerification> {
+  return verificationFetch<OrganizationVerification>(
+    `/api/studio/organization/verification/?organizationId=${encodeURIComponent(organizationId)}`,
+  );
+}
+
+export async function saveOrganizationVerificationDraft(
+  organizationId: string,
+  draft: OrganizationVerificationDraft,
+): Promise<void> {
+  await verificationFetch("/api/studio/organization/verification/", {
+    method: "PATCH",
+    body: JSON.stringify({ organizationId, ...draft }),
+  });
+}
+
+export async function runOrganizationAbnLookup(organizationId: string, abn: string): Promise<AbnLookupResult> {
+  return verificationFetch<AbnLookupResult>("/api/studio/organization/verification/abn-lookup/", {
+    method: "POST",
+    body: JSON.stringify({ organizationId, abn }),
+  });
+}
+
+export async function getVerificationDocuments(organizationId: string): Promise<VerificationDocument[]> {
+  const data = await verificationFetch<{ items: VerificationDocument[] }>(
+    `/api/studio/organization/verification/documents/?organizationId=${encodeURIComponent(organizationId)}`,
+  );
+  return data.items;
+}
+
+export async function uploadVerificationDocument(
+  organizationId: string,
+  documentType: "business_registration" | "licence" | "insurance" | "other",
+  file: File,
+): Promise<{ id: string; fileName: string }> {
+  const formData = new FormData();
+  formData.append("organizationId", organizationId);
+  formData.append("documentType", documentType);
+  formData.append("file", file);
+  const res = await fetch("/api/studio/organization/verification/documents/", { method: "POST", body: formData });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to upload the document (${res.status}).`);
+  }
+  return res.json();
+}
+
+export async function submitOrganizationVerification(organizationId: string): Promise<void> {
+  await verificationFetch("/api/studio/organization/verification/submit/", {
+    method: "POST",
+    body: JSON.stringify({ organizationId }),
+  });
+}
+
 export { NOW };

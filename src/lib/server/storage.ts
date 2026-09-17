@@ -15,6 +15,11 @@ import { createClient } from "@supabase/supabase-js";
 
 const VIDEO_MASTERS_BUCKET = "video-masters";
 const THUMBNAILS_BUCKET = "thumbnails";
+const BUSINESS_DOCUMENTS_BUCKET = "business-documents";
+
+// Business registration certificates/licences/insurance are a handful of pages, not
+// camera masters — capped small mainly to stop someone uploading something unrelated.
+const MAX_DOCUMENT_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 // A raw camera master can be huge (the upload wizard's own sample file is 8.64GB) —
 // capped well below that to stay safely inside the Pro plan's included storage while
@@ -82,6 +87,40 @@ export async function createMasterDownloadUrl(path: string, expiresInSeconds = 3
   const { data, error } = await client.storage.from(VIDEO_MASTERS_BUCKET).createSignedUrl(path, expiresInSeconds);
   if (error || !data) {
     throw new Error(`Failed to create a download URL: ${error?.message ?? "unknown error"}`);
+  }
+  return data.signedUrl;
+}
+
+/** Business verification documents (registration certificates, licences, insurance) —
+ * private, small, uploaded server-side same as thumbnails, but never made public: a
+ * signed URL (createDocumentUrl) is required to read one back. */
+export async function uploadBusinessDocument(
+  organizationId: string,
+  fileName: string,
+  file: Buffer,
+  contentType: string,
+): Promise<{ path: string; bytes: number }> {
+  if (file.byteLength > MAX_DOCUMENT_UPLOAD_BYTES) {
+    throw new Error(`File is too large (max ${Math.round(MAX_DOCUMENT_UPLOAD_BYTES / (1024 * 1024))}MB).`);
+  }
+  const path = `${organizationId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionOf(fileName)}`;
+  const client = getClient();
+  const { error } = await client.storage
+    .from(BUSINESS_DOCUMENTS_BUCKET)
+    .upload(path, file, { contentType, upsert: false });
+  if (error) {
+    throw new Error(`Failed to upload document: ${error.message}`);
+  }
+  return { path, bytes: file.byteLength };
+}
+
+/** Short-lived signed URL to read a business document back — private bucket, so unlike
+ * thumbnails there's no public URL to hand out. */
+export async function createDocumentUrl(path: string, expiresInSeconds = 300): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.storage.from(BUSINESS_DOCUMENTS_BUCKET).createSignedUrl(path, expiresInSeconds);
+  if (error || !data) {
+    throw new Error(`Failed to create a document URL: ${error?.message ?? "unknown error"}`);
   }
   return data.signedUrl;
 }

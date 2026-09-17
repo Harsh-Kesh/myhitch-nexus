@@ -81,6 +81,8 @@ export const qk = {
   magazineArticle: (id: string) => ["magazine-article", id] as const,
   mySponsorshipListings: ["my-sponsorship-listings"] as const,
   sponsorshipListing: (id: string) => ["sponsorship-listing", id] as const,
+  organizationVerification: (organizationId: string) => ["organization-verification", organizationId] as const,
+  verificationDocuments: (organizationId: string) => ["verification-documents", organizationId] as const,
 };
 
 type Opts<T> = Omit<UseQueryOptions<T, Error, T>, "queryKey" | "queryFn">;
@@ -973,5 +975,55 @@ export function useWithdrawSponsorshipListing(id: string) {
       client.invalidateQueries({ queryKey: qk.sponsorshipListing(id) });
       client.invalidateQueries({ queryKey: qk.mySponsorshipListings });
     },
+  });
+}
+
+/* -------------- Organisation verification (2026-09-17) -------------- */
+
+export const useOrganizationVerification = (organizationId: string) =>
+  useQuery({
+    queryKey: qk.organizationVerification(organizationId),
+    queryFn: () => api.getOrganizationVerification(organizationId),
+    enabled: Boolean(organizationId),
+  });
+
+export function useSaveVerificationDraft(organizationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (draft: api.OrganizationVerificationDraft) =>
+      api.saveOrganizationVerificationDraft(organizationId, draft),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.organizationVerification(organizationId) }),
+  });
+}
+
+export function useRunAbnLookup(organizationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (abn: string) => api.runOrganizationAbnLookup(organizationId, abn),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.organizationVerification(organizationId) }),
+  });
+}
+
+export const useVerificationDocuments = (organizationId: string) =>
+  useQuery({
+    queryKey: qk.verificationDocuments(organizationId),
+    queryFn: () => api.getVerificationDocuments(organizationId),
+    enabled: Boolean(organizationId),
+  });
+
+export function useUploadVerificationDocument(organizationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ documentType, file }: { documentType: "business_registration" | "licence" | "insurance" | "other"; file: File }) =>
+      api.uploadVerificationDocument(organizationId, documentType, file),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.verificationDocuments(organizationId) }),
+  });
+}
+
+export function useSubmitOrganizationVerification(organizationId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.submitOrganizationVerification(organizationId),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.organizationVerification(organizationId) }),
   });
 }
