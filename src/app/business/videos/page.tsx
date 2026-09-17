@@ -9,14 +9,23 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/field";
-import { useChannelVideos } from "@/lib/mock-api/hooks";
+import { looksLikeRealId } from "@/lib/mock-api";
+import { useChannelVideos, useCurrentUser } from "@/lib/mock-api/hooks";
 import type { Video } from "@/lib/mock-api/types";
 import { compactNumber, formatDate, formatDuration, formatPercent } from "@/lib/utils";
 
-const CHANNEL_ID = "ch_helio";
+// Not a plain `?? "ch_helio"` — see business-shell.tsx's header comment: the demo
+// account's own channelId is never actually null by the time it reaches here.
+const MOCK_BUSINESS_CHANNEL = "ch_helio";
 
 export default function BusinessVideosPage() {
-  const { data: videos = [], isLoading } = useChannelVideos(CHANNEL_ID, true);
+  const { data: user } = useCurrentUser();
+  const channelId =
+    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const isRealChannel = looksLikeRealId(channelId);
+  // getChannelVideos(id, true) is unconditionally mock — a real channel asks for
+  // published-only instead, which does hit the real API (see business/channel/page.tsx).
+  const { data: videos = [], isLoading } = useChannelVideos(channelId, !isRealChannel);
   const [query, setQuery] = React.useState("");
 
   const filtered = videos.filter((video) =>
