@@ -1242,6 +1242,30 @@ export async function uploadThumbnailFile(channelId: string, file: File): Promis
   return data.url;
 }
 
+export interface SuggestedThumbnail {
+  url: string;
+  timestampSeconds: number;
+}
+
+/** Real for a real channel (2026-09-17) — extracts actual frames from the uploaded
+ * master via ffmpeg, replacing the wizard's previously mocked "suggested frames". */
+export async function getSuggestedThumbnails(
+  channelId: string,
+  masterAssetPath: string,
+): Promise<SuggestedThumbnail[]> {
+  const res = await fetch("/api/studio/uploads/suggested-thumbnails/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channelId, masterAssetPath }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to generate suggested thumbnails (${res.status}).`);
+  }
+  const data = (await res.json()) as { items: SuggestedThumbnail[] };
+  return data.items;
+}
+
 /** Real for a real channel (2026-09-16, docs/DEVELOPMENT-PLAN.md's P2 entry) — the
  * write path that was 100% mock since this project began. `draft.uploadSessionId`
  * doubles as the real master-asset storage path in the real branch (set by the wizard's

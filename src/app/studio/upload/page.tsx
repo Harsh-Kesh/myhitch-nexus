@@ -42,6 +42,7 @@ import {
   usePlaylists,
   usePublishDraft,
   useSeries,
+  useSuggestedThumbnails,
   useThumbnailSuggestions,
   useUploadThumbnailFile,
 } from "@/lib/mock-api/hooks";
@@ -220,6 +221,34 @@ export default function UploadPage() {
   const [customThumbnailUrl, setCustomThumbnailUrl] = React.useState<string | null>(null);
   const [thumbnailUploading, setThumbnailUploading] = React.useState(false);
 
+  // Real suggested frames (2026-09-17) — ffmpeg-extracted from the uploaded master,
+  // fetched once when a real channel reaches this step. Selecting one sets
+  // customThumbnailUrl directly, same as a completed upload — it's already a real,
+  // publicly-servable thumbnails-bucket image.
+  const suggestedThumbnails = useSuggestedThumbnails();
+  const [realSuggestions, setRealSuggestions] = React.useState<api.SuggestedThumbnail[]>([]);
+  const [selectedSuggestionUrl, setSelectedSuggestionUrl] = React.useState<string | null>(null);
+  const suggestionsRequestedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isRealChannel || !masterAssetPath || STEPS[step].id !== "thumbnails") return;
+    if (suggestionsRequestedRef.current) return;
+    suggestionsRequestedRef.current = true;
+    suggestedThumbnails.mutate(
+      { channelId, masterAssetPath },
+      {
+        onSuccess: (items) => setRealSuggestions(items),
+        onError: (error) =>
+          toast({
+            tone: "error",
+            title: "Couldn't generate suggested thumbnails",
+            description: error instanceof Error ? error.message : "Upload your own instead.",
+          }),
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRealChannel, masterAssetPath, step, channelId]);
+
   /* --------------------------- Step 4: captions ---------------------------- */
   const [subtitles, setSubtitles] = React.useState<SubtitleTrack[]>([]);
   const [autoTranscribe, setAutoTranscribe] = React.useState(true);
@@ -382,7 +411,7 @@ export default function UploadPage() {
         title="Upload"
         description={
           isRealChannel
-            ? "Six steps from master file to published title. Upload, metadata, rights and publishing are real — suggested thumbnails, captions and transcoding are still simulated, so playback will show as “processing” until that's wired up."
+            ? "Six steps from master file to published title. Upload, metadata, suggested thumbnails, rights and publishing are real — captions and transcoding are still simulated, so playback will show as “processing” until that's wired up."
             : "Six steps from master file to published title. Everything is mocked — no file leaves your browser and nothing is transcoded."
         }
         actions={
@@ -735,13 +764,56 @@ export default function UploadPage() {
                           </div>
                         </div>
                       ) : (
-                        <p className="rounded border border-dashed border-border px-3 py-4 text-center text-sm text-fg-subtle">
-                          Suggested frames need real frame extraction, which isn&rsquo;t built yet
-                          — upload your own thumbnail below.
-                        </p>
+                        <div>
+                          <p className="flex items-center gap-2 text-sm font-medium text-fg">
+                            <IconSparkles className="size-4 text-accent" />
+                            Suggested frames
+                          </p>
+                          <p className="mt-1 text-xs text-fg-muted">
+                            Real frames extracted from your upload — pick one, or upload your own below.
+                          </p>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            {realSuggestions.map((suggestion) => (
+                              <button
+                                key={suggestion.url}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSuggestionUrl(suggestion.url);
+                                  setCustomThumbnailUrl(suggestion.url);
+                                  setCustomThumb(null);
+                                  setCustomThumbUrl(null);
+                                }}
+                                className={cn(
+                                  "overflow-hidden rounded-lg border-2 text-left transition-colors",
+                                  selectedSuggestionUrl === suggestion.url
+                                    ? "border-accent"
+                                    : "border-transparent hover:border-border-strong",
+                                )}
+                              >
+                                <img
+                                  src={suggestion.url}
+                                  alt={`Frame at ${Math.round(suggestion.timestampSeconds)}s`}
+                                  className="block aspect-video w-full object-cover"
+                                />
+                                <span className="flex items-center px-2 py-1.5">
+                                  <span className="text-2xs text-fg-muted nx-tnum">
+                                    {Math.round(suggestion.timestampSeconds)}s
+                                  </span>
+                                </span>
+                              </button>
+                            ))}
+                            {suggestedThumbnails.isPending ? (
+                              <p className="col-span-full text-sm text-fg-subtle">Generating suggestions…</p>
+                            ) : realSuggestions.length === 0 ? (
+                              <p className="col-span-full text-sm text-fg-subtle">
+                                No suggestions available — upload your own below.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
                       )}
 
-                      <div className={cn(!isRealChannel && "border-t border-border pt-5")}>
+                      <div className={cn("border-t border-border pt-5")}>
                         <Field
                           label="Upload a thumbnail"
                           hint="1920×1080 recommended, under 5 MB."
@@ -758,6 +830,7 @@ export default function UploadPage() {
                               setCustomThumbUrl(URL.createObjectURL(picked));
                               setCustomThumbnailUrl(null);
                               setThumbnailId(null);
+                              setSelectedSuggestionUrl(null);
                               if (!isRealChannel) return;
                               setThumbnailUploading(true);
                               try {

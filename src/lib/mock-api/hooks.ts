@@ -488,6 +488,13 @@ export function useUploadThumbnailFile() {
   });
 }
 
+export function useSuggestedThumbnails() {
+  return useMutation({
+    mutationFn: ({ channelId, masterAssetPath }: { channelId: string; masterAssetPath: string }) =>
+      api.getSuggestedThumbnails(channelId, masterAssetPath),
+  });
+}
+
 export function usePublishDraft() {
   const client = useQueryClient();
   return useMutation({

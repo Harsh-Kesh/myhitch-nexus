@@ -4,16 +4,19 @@
 // needed a real video (Magazine's/Exchange Hub's "link one of your uploads" pickers)
 // has had nothing to link to until now.
 //
-// Deliberately still mock: transcoding, real "suggested frame" thumbnails, and
-// auto-captioning all need Mux (blocked on the client creating an account) or a real ASR
-// vendor — none of that exists here. A published video gets a real row with real
-// metadata/rights/pricing, but `processing_status = 'awaiting_transcode'` until a real
-// stream exists; the player (video-player.tsx) shows an honest "still processing" state
-// for exactly that combination rather than attempting fake playback.
+// Deliberately still mock: transcoding and auto-captioning need Mux (blocked on the
+// client creating an account) or a real ASR vendor — neither exists here. A published
+// video gets a real row with real metadata/rights/pricing, but
+// `processing_status = 'awaiting_transcode'` until a real stream exists; the player
+// (video-player.tsx) shows an honest "still processing" state for exactly that
+// combination rather than attempting fake playback. Suggested-frame thumbnails
+// (generateSuggestedThumbnails below) became real on 2026-09-17, once ffprobe/ffmpeg
+// were already wired up for upload validation.
 import "server-only";
 import { queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
 import { probeMasterAsset } from "./videoValidation";
+import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
 import { pickGradient } from "../utils";
 
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
@@ -57,6 +60,27 @@ export async function uploadCustomThumbnail(
   }
   const url = await uploadThumbnail(channelId, fileName, file, contentType);
   return { outcome: "success", url };
+}
+
+export type GenerateSuggestedThumbnailsResult =
+  | { outcome: "success"; suggestions: ThumbnailSuggestion[] }
+  | { outcome: "not_channel_member" }
+  | { outcome: "asset_missing" };
+
+export async function generateSuggestedThumbnails(
+  accountId: string,
+  channelId: string,
+  masterAssetPath: string,
+): Promise<GenerateSuggestedThumbnailsResult> {
+  if (!(await isChannelMember(accountId, channelId))) {
+    return { outcome: "not_channel_member" };
+  }
+  const asset = await masterAssetExists(masterAssetPath);
+  if (!asset.exists) {
+    return { outcome: "asset_missing" };
+  }
+  const suggestions = await generateFrames(channelId, masterAssetPath);
+  return { outcome: "success", suggestions };
 }
 
 export interface PublishVideoInput {
