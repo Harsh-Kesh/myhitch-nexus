@@ -33,6 +33,12 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("POST /api/studio/organization/verification/abn-lookup failed", err);
-    return NextResponse.json({ error: "ABN Lookup failed. Try again." }, { status: 500 });
+    // Unlike most routes' generic 500 message, this surfaces the real cause (e.g. "ABN
+    // Lookup isn't configured on this server") — every message abnLookup.ts/this path
+    // can throw is developer-authored and safe to show, and a misconfigured env var vs.
+    // a genuine ABR outage are two very different things to act on, worth telling apart
+    // without needing server log access.
+    const message = err instanceof Error ? err.message : "ABN Lookup failed. Try again.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
