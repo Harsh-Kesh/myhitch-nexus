@@ -349,18 +349,28 @@ export default function UploadPage() {
       episodeNumber: seriesId ? Number(episodeNumber) : null,
     };
 
-    const created = await publishDraft.mutateAsync(draft);
+    let created: { id: string; slug: string; status: string };
+    try {
+      created = await publishDraft.mutateAsync(draft);
+    } catch (error) {
+      toast({
+        tone: "error",
+        title: "Couldn't publish",
+        description: error instanceof Error ? error.message : "Something went wrong. Try again.",
+      });
+      return;
+    }
 
     toast({
       title:
         created.status === "pending"
-          ? "Submitted for review"
+          ? "Held for review"
           : created.status === "published"
             ? "Published"
             : `Saved as ${created.status}`,
       description:
         created.status === "pending"
-          ? "Sponsored or age-rated content goes to human review before it goes live."
+          ? "Sponsored or age-rated content is held back from public view before it goes live."
           : "Your video is in Content.",
     });
     router.push("/studio/content");
@@ -1000,7 +1010,7 @@ export default function UploadPage() {
                           label="Age classification"
                           htmlFor="up-rating"
                           required
-                          hint="18 sends the video to human review before publishing."
+                          hint="18 holds the video back from public view before publishing."
                         >
                           <Select
                             id="up-rating"

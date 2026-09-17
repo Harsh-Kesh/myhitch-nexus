@@ -34,6 +34,8 @@ export async function POST(request: NextRequest) {
           { error: "The uploaded file couldn't be found — try uploading it again." },
           { status: 409 },
         );
+      case "invalid_file":
+        return NextResponse.json({ error: result.reason }, { status: 422 });
       case "success":
         return NextResponse.json({ id: result.id, slug: result.slug, status: result.status }, { status: 201 });
     }

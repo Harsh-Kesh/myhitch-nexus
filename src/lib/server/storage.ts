@@ -74,6 +74,18 @@ export async function uploadThumbnail(channelId: string, fileName: string, file:
   return data.publicUrl;
 }
 
+/** A short-lived signed URL for *reading* the master file back — used by
+ * videoValidation.ts to run ffprobe against it without pulling the bytes onto this
+ * process ourselves (ffprobe reads HTTP(S) input natively). */
+export async function createMasterDownloadUrl(path: string, expiresInSeconds = 300): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.storage.from(VIDEO_MASTERS_BUCKET).createSignedUrl(path, expiresInSeconds);
+  if (error || !data) {
+    throw new Error(`Failed to create a download URL: ${error?.message ?? "unknown error"}`);
+  }
+  return data.signedUrl;
+}
+
 /** Confirms a signed-upload path actually has a real object behind it before a publish
  * is allowed to reference it — part of the server-enforced publish gate, not just a
  * courtesy: a client could otherwise claim any path without ever uploading to it. */

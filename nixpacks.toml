@@ -6,3 +6,9 @@
 # lockfile-match check. `npm install` reconciles it instead of failing the build.
 [phases.install]
 cmds = ["npm install"]
+
+# ffprobe verifies an uploaded master is actually a decodable video before publish (see
+# videoValidation.ts) — free, open-source, no vendor/cost, and the same binary the
+# (currently cost-deferred) moderation frame-extraction step will need later.
+[phases.setup]
+nixPkgs = ["ffmpeg"]

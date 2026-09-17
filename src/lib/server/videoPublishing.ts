@@ -13,6 +13,7 @@
 import "server-only";
 import { queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
+import { probeMasterAsset } from "./videoValidation";
 import { pickGradient } from "../utils";
 
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
@@ -100,7 +101,8 @@ export type PublishVideoResult =
   | { outcome: "success"; id: string; slug: string; status: string }
   | { outcome: "not_channel_member" }
   | { outcome: "invalid"; reason: string }
-  | { outcome: "asset_missing" };
+  | { outcome: "asset_missing" }
+  | { outcome: "invalid_file"; reason: string };
 
 const VALID_STATUSES = ["draft", "private", "unlisted", "scheduled", "published", "archived"];
 
@@ -134,6 +136,11 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return { outcome: "asset_missing" };
   }
 
+  const probe = await probeMasterAsset(input.masterAssetPath);
+  if (!probe.ok) {
+    return { outcome: "invalid_file", reason: probe.reason };
+  }
+
   // Same review-routing rule the mock wizard already documents client-side — sponsored
   // or heavily-rated content doesn't go straight to `published` even when requested.
   const needsReview = input.pricing.sponsored || input.rights.ageRating === "18" || input.rights.contentLabels.length > 0;
@@ -150,8 +157,8 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
          slug, channel_id, title, synopsis, content_type, status, thumbnail_url,
          poster_gradient, release_date, published_at, scheduled_for, language, country,
          production_company, master_asset_path, master_uploaded_at, master_bytes,
-         processing_status
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, 'awaiting_transcode')
+         duration_seconds, processing_status
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, $17, 'awaiting_transcode')
        returning id`,
       [
         slug,
@@ -173,6 +180,7 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
         input.productionCompany?.trim() || null,
         input.masterAssetPath,
         asset.bytes,
+        probe.durationSeconds,
       ],
     );
     const id = rows[0].id;
