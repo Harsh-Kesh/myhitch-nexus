@@ -10,5 +10,11 @@ cmds = ["npm install"]
 # ffprobe verifies an uploaded master is actually a decodable video before publish (see
 # videoValidation.ts) — free, open-source, no vendor/cost, and the same binary the
 # (currently cost-deferred) moderation frame-extraction step will need later.
+#
+# The "..." is load-bearing, not decorative: without it this block REPLACES nixpacks'
+# auto-detected Node.js/npm setup phase instead of extending it — which is exactly what
+# broke every deploy since this was first added ("npm: command not found" during
+# `RUN npm install`, since npm was never in the image at all). "..." tells nixpacks to
+# splice the extra package into its own detected list, not overwrite it.
 [phases.setup]
-nixPkgs = ["ffmpeg"]
+nixPkgs = ["...", "ffmpeg"]
