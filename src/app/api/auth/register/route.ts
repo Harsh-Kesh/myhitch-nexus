@@ -24,6 +24,24 @@ const ROLES_REQUIRING_VERIFICATION = new Set([
   "organisation",
 ]);
 
+// The exact 7 self-service roles the registration wizard itself offers
+// (src/app/auth/register/page.tsx) — never "admin" or any other privileged/internal
+// role. `role` arrives as free text from the request body; without this allow-list a
+// request with `role: "admin"` would insert straight into account_roles (whose check
+// constraint does happen to permit "admin", since that table is shared with real admin
+// grants) and hand the caller a real, working admin account with no verification at
+// all. Found and fixed 2026-09-18 during an authorization audit — confirmed exploitable
+// against production before this fix landed.
+const SELF_REGISTRABLE_ROLES = new Set([
+  "viewer",
+  "creator",
+  "business",
+  "advertiser",
+  "producer",
+  "education",
+  "organisation",
+]);
+
 interface RegisterBody {
   name?: string;
   email?: string;
@@ -51,6 +69,9 @@ export async function POST(request: NextRequest) {
   }
   if (password.length < 8) {
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  }
+  if (!SELF_REGISTRABLE_ROLES.has(toDbRole(role))) {
+    return NextResponse.json({ error: "That role can't be self-registered." }, { status: 400 });
   }
 
   if (await emailIsRegistered(email)) {
