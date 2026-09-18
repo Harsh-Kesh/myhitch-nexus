@@ -11,6 +11,7 @@
 import "server-only";
 import Stripe from "stripe";
 import { query, queryOne } from "./db";
+import { SITE_URL } from "@/lib/utils";
 
 export class StripeNotConfiguredError extends Error {
   constructor() {
@@ -86,7 +87,6 @@ export async function createCheckoutSession(
   accountId: string,
   videoId: string,
   kind: CheckoutKind,
-  origin: string,
 ): Promise<CreateCheckoutSessionResult> {
   const row = await getVideoPriceRow(videoId);
   if (!row) return { outcome: "video_not_found" };
@@ -122,8 +122,11 @@ export async function createCheckoutSession(
         quantity: 1,
       },
     ],
-    success_url: `${origin}/video/${videoId}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/video/${videoId}/?checkout=cancelled`,
+    // SITE_URL, never request.nextUrl.origin — behind Railway's proxy that resolved to
+    // an internal container address (localhost:8080) rather than the public domain,
+    // found by actually completing a real test-mode payment and landing on a dead link.
+    success_url: `${SITE_URL}/video/${videoId}/?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${SITE_URL}/video/${videoId}/?checkout=cancelled`,
     metadata: { accountId, videoId, kind },
   });
   if (!session.url) throw new Error("Stripe did not return a Checkout URL.");

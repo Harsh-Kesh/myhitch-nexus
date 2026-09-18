@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const result = await createCheckoutSession(account.id, id, kind as CheckoutKind, request.nextUrl.origin);
+    const result = await createCheckoutSession(account.id, id, kind as CheckoutKind);
     switch (result.outcome) {
       case "video_not_found":
         return NextResponse.json({ error: "Video not found." }, { status: 404 });
