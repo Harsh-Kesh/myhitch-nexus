@@ -277,4 +277,79 @@ export async function listRealPurchases(accountId: string): Promise<PurchaseRow[
   }));
 }
 
+export interface RealRevenueTransaction {
+  id: string;
+  date: string;
+  description: string;
+  kind: "rental" | "purchase" | "ppv";
+  grossMinor: number;
+}
+
+export interface RealRevenueSummary {
+  currency: string;
+  lifetimeMinor: number;
+  byStream: Array<{ label: string; valueMinor: number; share: number }>;
+  transactions: RealRevenueTransaction[];
+}
+
+const REVENUE_KIND_LABEL: Record<CheckoutKind, RealRevenueTransaction["kind"]> = {
+  buy: "purchase",
+  rent: "rental",
+  ppv: "ppv",
+};
+const REVENUE_STREAM_LABEL: Record<CheckoutKind, string> = {
+  buy: "Purchases",
+  rent: "Rentals",
+  ppv: "Pay-per-view",
+};
+
+/** Real gross revenue for a channel, from the entitlements table — the buildable-now
+ * part of P3's "revenue ledger with configurable commission" bullet. Deliberately not
+ * the whole bullet: commission itself is still mock-only config (no real consumer reads
+ * it yet — same reasoning as the rest of Settings' non-Categories tabs), so there is no
+ * real "net after commission" to compute, and payouts are P4 (need Stripe Connect,
+ * bank-account KYC — a separate vendor decision, not built here). This intentionally
+ * sums raw minor units across currencies without conversion — a known simplification
+ * that's harmless while every real transaction so far has been the same currency, and a
+ * real fix (live FX rates) is its own scoped piece of work, not incidental to this one. */
+export async function getRealRevenueSummary(channelId: string): Promise<RealRevenueSummary> {
+  const rows = await query<{
+    kind: CheckoutKind;
+    amount_minor: number;
+    currency: string;
+    created_at: string;
+    title: string;
+  }>(
+    `select e.kind, e.amount_minor, e.currency, e.created_at, v.title
+     from entitlements e
+     join videos v on v.id = e.video_id
+     where v.channel_id = $1
+     order by e.created_at desc`,
+    [channelId],
+  );
+
+  const lifetimeMinor = rows.reduce((total, row) => total + row.amount_minor, 0);
+  const currency = rows[0]?.currency ?? "GBP";
+
+  const byKind = new Map<CheckoutKind, number>();
+  for (const row of rows) {
+    byKind.set(row.kind, (byKind.get(row.kind) ?? 0) + row.amount_minor);
+  }
+  const byStream = Array.from(byKind.entries()).map(([kind, valueMinor]) => ({
+    label: REVENUE_STREAM_LABEL[kind],
+    valueMinor,
+    share: lifetimeMinor > 0 ? Math.round((valueMinor / lifetimeMinor) * 100) : 0,
+  }));
+
+  const transactions: RealRevenueTransaction[] = rows.map((row, index) => ({
+    id: `${row.created_at}-${index}`,
+    date: row.created_at,
+    description: `${row.title} — ${REVENUE_KIND_LABEL[row.kind]}`,
+    kind: REVENUE_KIND_LABEL[row.kind],
+    grossMinor: row.amount_minor,
+  }));
+
+  return { currency, lifetimeMinor, byStream, transactions };
+}
+
 export { getStripe };

@@ -1684,6 +1684,49 @@ export async function getCreatorAnalytics(
 }
 
 export async function getRevenueSummary(channelId: string): Promise<RevenueSummary> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/studio/revenue/?channelId=${encodeURIComponent(channelId)}`);
+    if (!res.ok) throw new Error(`GET /api/studio/revenue failed with ${res.status}`);
+    const real = (await res.json()) as {
+      currency: string;
+      lifetimeMinor: number;
+      byStream: Array<{ label: string; valueMinor: number; share: number }>;
+      transactions: Array<{
+        id: string;
+        date: string;
+        description: string;
+        kind: "rental" | "purchase" | "ppv";
+        grossMinor: number;
+      }>;
+    };
+    // available/pending/nextPayoutDate are honestly empty — no real payout system
+    // exists yet (P4, needs Stripe Connect + bank-account KYC, a separate vendor
+    // decision). studio/revenue/page.tsx shows this state plainly rather than
+    // fabricating a balance or a payout date.
+    return {
+      channelId,
+      currency: real.currency as Money["currency"],
+      available: 0,
+      pending: 0,
+      lifetime: real.lifetimeMinor,
+      nextPayoutDate: "",
+      byStream: real.byStream.map((slice) => ({
+        label: slice.label,
+        value: slice.valueMinor,
+        share: slice.share,
+      })),
+      transactions: real.transactions.map((txn) => ({
+        id: txn.id,
+        date: txn.date,
+        description: txn.description,
+        kind: txn.kind,
+        gross: txn.grossMinor,
+        fee: 0,
+        net: txn.grossMinor,
+      })),
+    };
+  }
+
   await latency();
   return buildRevenueSummary(channelId);
 }

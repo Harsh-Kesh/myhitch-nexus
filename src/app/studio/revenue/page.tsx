@@ -16,6 +16,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { RailSkeleton } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { CHART_COLORS, chartTooltip } from "@/components/charts/chart-theme";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { useCurrentUser, useRevenueSummary } from "@/lib/mock-api/hooks";
 import type { RevenueSummary } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -25,6 +26,7 @@ type Txn = RevenueSummary["transactions"][number];
 export default function StudioRevenuePage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
+  const isRealChannel = looksLikeRealId(channelId);
   const { data, isLoading } = useRevenueSummary(channelId);
   const { toast } = useToast();
 
@@ -91,18 +93,16 @@ export default function StudioRevenuePage() {
     <>
       <PageHeader
         title="Revenue"
-        description="Earnings, commission and payouts. All figures are simulated — no payment or settlement provider exists in this build."
+        description={
+          isRealChannel
+            ? "Real gross revenue from Stripe purchases and rentals. Commission and payouts aren't configured yet — see the note below."
+            : "Earnings, commission and payouts. All figures are simulated — no payment or settlement provider exists in this build."
+        }
         actions={
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
-              toast({
-                title: "Statement exported",
-                description: "Mock CSV — nothing is downloaded.",
-                tone: "info",
-              })
-            }
+            onClick={() => toast({ title: "CSV export isn't built yet", tone: "info" })}
           >
             <IconDownload />
             Export statement
@@ -118,14 +118,14 @@ export default function StudioRevenuePage() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Stat
                 label="Available to withdraw"
-                value={formatCurrency(data.available)}
+                value={isRealChannel ? "—" : formatCurrency(data.available)}
                 icon={<IconWallet />}
-                hint={`Next payout ${formatDate(data.nextPayoutDate)}`}
+                hint={isRealChannel ? "Payouts aren't built yet" : `Next payout ${formatDate(data.nextPayoutDate)}`}
               />
               <Stat
                 label="Pending clearance"
-                value={formatCurrency(data.pending)}
-                hint="Held 30 days"
+                value={isRealChannel ? "—" : formatCurrency(data.pending)}
+                hint={isRealChannel ? "Payouts aren't built yet" : "Held 30 days"}
               />
               <Stat
                 label="Lifetime earnings"
@@ -209,54 +209,65 @@ export default function StudioRevenuePage() {
                   description="Where your earnings go"
                 />
                 <CardBody className="space-y-4">
-                  <div className="rounded-lg border border-border p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-fg">
-                          Bank transfer · ••••4417
-                        </p>
-                        <p className="mt-0.5 text-xs text-fg-muted">
-                          Monthly on the 28th · 30-day hold · minimum £50.00
-                        </p>
+                  {isRealChannel ? (
+                    <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
+                      Payouts aren&apos;t built yet — that needs a Stripe Connect
+                      integration and bank-account verification for creators, which is
+                      separate work. The transactions below are real; nothing has been
+                      paid out against them yet.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-border p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-fg">
+                              Bank transfer · ••••4417
+                            </p>
+                            <p className="mt-0.5 text-xs text-fg-muted">
+                              Monthly on the 28th · 30-day hold · minimum £50.00
+                            </p>
+                          </div>
+                          <Badge tone="published" size="sm">
+                            Verified
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge tone="published" size="sm">
-                        Verified
-                      </Badge>
-                    </div>
-                  </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() =>
-                        toast({
-                          title: "Withdrawal requested",
-                          description: `${formatCurrency(data.available)} — mock action, no funds move.`,
-                        })
-                      }
-                    >
-                      Withdraw {formatCurrency(data.available)}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() =>
-                        toast({
-                          title: "Payment details are never collected here",
-                          tone: "info",
-                        })
-                      }
-                    >
-                      Change payout method
-                    </Button>
-                  </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() =>
+                            toast({
+                              title: "Withdrawal requested",
+                              description: `${formatCurrency(data.available)} — mock action, no funds move.`,
+                            })
+                          }
+                        >
+                          Withdraw {formatCurrency(data.available)}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() =>
+                            toast({
+                              title: "Payment details are never collected here",
+                              tone: "info",
+                            })
+                          }
+                        >
+                          Change payout method
+                        </Button>
+                      </div>
 
-                  <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
-                    Commission is applied per revenue stream and configured by
-                    platform admins under Settings → Commissions. Current split on
-                    memberships is 85/15 in your favour.
-                  </p>
+                      <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
+                        Commission is applied per revenue stream and configured by
+                        platform admins under Settings → Commissions. Current split on
+                        memberships is 85/15 in your favour.
+                      </p>
+                    </>
+                  )}
                 </CardBody>
               </Card>
             </div>
