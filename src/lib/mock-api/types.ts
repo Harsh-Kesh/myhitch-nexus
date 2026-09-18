@@ -470,6 +470,10 @@ export interface Subscription {
   renewsAt: string;
   startedAt: string;
   benefits: string[];
+  /** Real only — Stripe's cancel_at_period_end: still `status: "active"` (access
+   * continues), but won't renew. The mock's cancelSubscription() flips status straight
+   * to "cancelled" instead, so this only ever appears for a real subscription. */
+  cancelAtPeriodEnd?: boolean;
 }
 
 /* ------------------------------- Upload -------------------------------- */

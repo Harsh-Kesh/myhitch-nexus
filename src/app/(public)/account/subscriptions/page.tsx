@@ -81,8 +81,11 @@ export default function SubscriptionsPage() {
                   title={
                     <span className="flex flex-wrap items-center gap-2">
                       {subscription.name}
-                      <Badge tone={STATUS_TONE[subscription.status]} size="sm">
-                        {subscription.status}
+                      <Badge
+                        tone={subscription.cancelAtPeriodEnd ? "archived" : STATUS_TONE[subscription.status]}
+                        size="sm"
+                      >
+                        {subscription.cancelAtPeriodEnd ? "ending" : subscription.status}
                       </Badge>
                       <Badge tone="outline" size="sm">
                         {subscription.interval}
@@ -92,7 +95,9 @@ export default function SubscriptionsPage() {
                   description={
                     subscription.status === "past-due"
                       ? "Payment failed. Update the payment method to keep access."
-                      : `Renews ${formatDate(subscription.renewsAt, "long")}`
+                      : subscription.cancelAtPeriodEnd
+                        ? `Access ends ${formatDate(subscription.renewsAt, "long")} — it won't renew`
+                        : `Renews ${formatDate(subscription.renewsAt, "long")}`
                   }
                   action={
                     <span className="text-right">
@@ -161,13 +166,15 @@ export default function SubscriptionsPage() {
                     >
                       Update payment method
                     </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setCancelling(subscription)}
-                    >
-                      Cancel
-                    </Button>
+                    {subscription.cancelAtPeriodEnd ? null : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setCancelling(subscription)}
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </div>
                 </CardBody>
               </Card>

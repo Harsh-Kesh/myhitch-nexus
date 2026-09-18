@@ -2537,6 +2537,7 @@ export async function getSubscriptions(): Promise<Subscription[]> {
       renewsAt: item.currentPeriodEnd ?? "",
       startedAt: item.createdAt,
       benefits: ["Ad-free viewing", "Included films and series", "Offline downloads"],
+      cancelAtPeriodEnd: item.cancelAtPeriodEnd,
     }));
   }
 
@@ -2559,6 +2560,7 @@ export async function cancelSubscription(id: string): Promise<Subscription | nul
       renewsAt: data.currentPeriodEnd ?? "",
       startedAt: "",
       benefits: [],
+      cancelAtPeriodEnd: true,
     };
   }
 
