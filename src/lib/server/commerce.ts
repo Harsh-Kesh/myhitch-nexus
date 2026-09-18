@@ -314,13 +314,14 @@ const REVENUE_STREAM_LABEL: Record<CheckoutKind, string> = {
  * real fix (live FX rates) is its own scoped piece of work, not incidental to this one. */
 export async function getRealRevenueSummary(channelId: string): Promise<RealRevenueSummary> {
   const rows = await query<{
+    id: string;
     kind: CheckoutKind;
     amount_minor: number;
     currency: string;
     created_at: string;
     title: string;
   }>(
-    `select e.kind, e.amount_minor, e.currency, e.created_at, v.title
+    `select e.id, e.kind, e.amount_minor, e.currency, e.created_at, v.title
      from entitlements e
      join videos v on v.id = e.video_id
      where v.channel_id = $1
@@ -341,8 +342,8 @@ export async function getRealRevenueSummary(channelId: string): Promise<RealReve
     share: lifetimeMinor > 0 ? Math.round((valueMinor / lifetimeMinor) * 100) : 0,
   }));
 
-  const transactions: RealRevenueTransaction[] = rows.map((row, index) => ({
-    id: `${row.created_at}-${index}`,
+  const transactions: RealRevenueTransaction[] = rows.map((row) => ({
+    id: row.id,
     date: row.created_at,
     description: `${row.title} — ${REVENUE_KIND_LABEL[row.kind]}`,
     kind: REVENUE_KIND_LABEL[row.kind],
