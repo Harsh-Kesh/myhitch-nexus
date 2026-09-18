@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
 import { upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
+import { upsertPayoutAccountFromStripe } from "@/lib/server/payouts";
 
 export async function POST(request: NextRequest) {
   const signature = request.headers.get("stripe-signature");
@@ -44,6 +45,13 @@ export async function POST(request: NextRequest) {
       event.type === "customer.subscription.deleted"
     ) {
       await upsertSubscriptionFromStripe(event.data.object as Stripe.Subscription);
+    } else if (event.type === "account.updated") {
+      // Connect account events: depending on how the Stripe dashboard's webhook
+      // endpoint is configured, these may need "Listen to events on Connected accounts"
+      // enabled on this same endpoint (or a separate Connect-specific endpoint with its
+      // own signing secret) — a real setup step, not just an env var, still to confirm
+      // once this is configured for real.
+      await upsertPayoutAccountFromStripe(event.data.object as Stripe.Account);
     }
     return NextResponse.json({ received: true });
   } catch (err) {

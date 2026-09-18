@@ -1,6 +1,8 @@
 "use client";
 
+import * as React from "react";
 import { IconCoin, IconDownload, IconWallet } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Cell,
   Pie,
@@ -23,12 +25,100 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 
 type Txn = RevenueSummary["transactions"][number];
 
+interface PayoutStatus {
+  connected: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  available: { amountMinor: number; currency: string };
+  history: Array<{ id: string; amountMinor: number; currency: string; status: string; createdAt: string }>;
+}
+
+/** Real Stripe Connect payout onboarding + withdrawal for a real channel — no mock
+ * counterpart exists to preserve a signature for (the mock's own "Payout settings" card
+ * is a fully static, pre-verified fake bank account with no real backing concept at
+ * all), so this talks to the real API directly rather than through the mock-api layer,
+ * same as business/verification/page.tsx did for its own new-real-feature page. */
+function usePayoutStatus(channelId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["payout-status", channelId],
+    queryFn: async (): Promise<PayoutStatus> => {
+      const res = await fetch(`/api/studio/payouts/status/?channelId=${encodeURIComponent(channelId)}`);
+      if (!res.ok) throw new Error("Failed to load payout status.");
+      return res.json();
+    },
+    enabled,
+  });
+}
+
 export default function StudioRevenuePage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
   const isRealChannel = looksLikeRealId(channelId);
   const { data, isLoading } = useRevenueSummary(channelId);
+  const { data: payout, isLoading: isPayoutLoading } = usePayoutStatus(channelId, isRealChannel);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Landing back from real Stripe Connect onboarding — no session_id to verify here
+  // (Account Links don't carry one), just refetch: the webhook (or Stripe's own
+  // eventual-consistency on the account object) is the source of truth for whether
+  // onboarding actually finished.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connect = params.get("connect");
+    if (!connect) return;
+    if (connect === "return") {
+      toast({ title: "Checking your bank account setup…", tone: "info" });
+    }
+    queryClient.invalidateQueries({ queryKey: ["payout-status", channelId] });
+    window.history.replaceState(null, "", "/studio/revenue/");
+    // Only ever run once per real navigation to this exact query string.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onboard = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/studio/payouts/onboard/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, returnPath: "/studio/revenue/" }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Could not start onboarding.");
+      }
+      const { url } = (await res.json()) as { url: string };
+      return url;
+    },
+    onSuccess: (url) => {
+      window.location.href = url;
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't start onboarding", description: err.message, tone: "error" });
+    },
+  });
+
+  const withdraw = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/studio/payouts/withdraw/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; amountMinor?: number };
+      if (!res.ok) throw new Error(body.error ?? "Could not process the withdrawal.");
+      return body.amountMinor ?? 0;
+    },
+    onSuccess: (amountMinor) => {
+      toast({ title: "Withdrawal sent", description: `${formatCurrency(amountMinor)} is on its way.` });
+      queryClient.invalidateQueries({ queryKey: ["payout-status", channelId] });
+      queryClient.invalidateQueries({ queryKey: ["revenue"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't withdraw", description: err.message, tone: "error" });
+    },
+  });
 
   const columns: Array<Column<Txn>> = [
     {
@@ -118,14 +208,26 @@ export default function StudioRevenuePage() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Stat
                 label="Available to withdraw"
-                value={isRealChannel ? "—" : formatCurrency(data.available)}
+                value={
+                  isRealChannel
+                    ? payout
+                      ? formatCurrency(payout.available.amountMinor, payout.available.currency)
+                      : "—"
+                    : formatCurrency(data.available)
+                }
                 icon={<IconWallet />}
-                hint={isRealChannel ? "Payouts aren't built yet" : `Next payout ${formatDate(data.nextPayoutDate)}`}
+                hint={
+                  isRealChannel
+                    ? payout?.payoutsEnabled
+                      ? "No commission deducted yet"
+                      : "Connect a bank account to withdraw"
+                    : `Next payout ${formatDate(data.nextPayoutDate)}`
+                }
               />
               <Stat
                 label="Pending clearance"
                 value={isRealChannel ? "—" : formatCurrency(data.pending)}
-                hint={isRealChannel ? "Payouts aren't built yet" : "Held 30 days"}
+                hint={isRealChannel ? "No holding period is enforced yet" : "Held 30 days"}
               />
               <Stat
                 label="Lifetime earnings"
@@ -210,12 +312,80 @@ export default function StudioRevenuePage() {
                 />
                 <CardBody className="space-y-4">
                   {isRealChannel ? (
-                    <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
-                      Payouts aren&apos;t built yet — that needs a Stripe Connect
-                      integration and bank-account verification for creators, which is
-                      separate work. The transactions below are real; nothing has been
-                      paid out against them yet.
-                    </p>
+                    isPayoutLoading || !payout ? (
+                      <div className="nx-skeleton h-24 rounded-lg" />
+                    ) : payout.payoutsEnabled ? (
+                      <>
+                        <div className="rounded-lg border border-border p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-fg">Bank account connected</p>
+                              <p className="mt-0.5 text-xs text-fg-muted">
+                                Via Stripe Connect · minimum £50.00 per withdrawal
+                              </p>
+                            </div>
+                            <Badge tone="published" size="sm">
+                              Verified
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          loading={withdraw.isPending}
+                          disabled={payout.available.amountMinor < 5000}
+                          onClick={() => withdraw.mutate()}
+                        >
+                          Withdraw {formatCurrency(payout.available.amountMinor, payout.available.currency)}
+                        </Button>
+                        {payout.history.length > 0 ? (
+                          <ul className="space-y-1.5 border-t border-border pt-3">
+                            {payout.history.map((item) => (
+                              <li key={item.id} className="flex items-center justify-between text-xs text-fg-muted">
+                                <span>{formatDate(item.createdAt)}</span>
+                                <span className="nx-tnum text-fg">{formatCurrency(item.amountMinor, item.currency)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
+                          No commission is deducted yet (still unconfigured — see Settings
+                          → Commissions) and no holding period is enforced, so this is
+                          gross revenue, paid out on request.
+                        </p>
+                      </>
+                    ) : payout.connected ? (
+                      <>
+                        <p className="rounded border border-warning/30 bg-warning/10 p-3 text-xs leading-relaxed text-fg-muted">
+                          Bank account details submitted — Stripe is still verifying them.
+                          This can take a few minutes.
+                        </p>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          loading={onboard.isPending}
+                          onClick={() => onboard.mutate()}
+                        >
+                          Check status / finish setup
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-fg-muted">
+                          Connect a bank account through Stripe to withdraw your real
+                          earnings. MYHitch Nexus never collects or stores your bank
+                          details itself.
+                        </p>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          loading={onboard.isPending}
+                          onClick={() => onboard.mutate()}
+                        >
+                          Connect a bank account
+                        </Button>
+                      </>
+                    )
                   ) : (
                     <>
                       <div className="rounded-lg border border-border p-4">
