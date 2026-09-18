@@ -1,7 +1,10 @@
-// POST /api/webhooks/stripe — the source of truth for fulfilling a checkout (see
+// POST /api/webhooks/stripe/ — the source of truth for fulfilling a checkout (see
 // commerce.ts's fulfillCheckoutSession() header comment on why the redirect page also
-// calls it, and why that's safe). Needs STRIPE_WEBHOOK_SECRET, and a webhook endpoint
-// pointed at this URL configured in the Stripe dashboard — neither exists yet.
+// calls it, and why that's safe). Needs STRIPE_WEBHOOK_SECRET and a webhook endpoint
+// pointed at this URL in the Stripe dashboard — both configured 2026-09-18. The
+// endpoint URL MUST include the trailing slash: next.config's trailingSlash: true
+// 308-redirects a request without one, and Stripe's webhook sender does not follow
+// redirects — every delivery silently failed until this was found and fixed.
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
@@ -50,16 +53,8 @@ export async function POST(request: NextRequest) {
       // Channel-membership revenue is credited here, once per invoice — a platform
       // Premium invoice is a no-op inside recordMembershipPaymentFromInvoice() (no
       // channelId in the subscription's metadata), so this event needs no mode check.
-      // Same caveat as account.updated below: whether invoice.paid is actually enabled
-      // on this webhook endpoint in the Stripe dashboard is real dashboard
-      // configuration, not just adding the case here — still to confirm live.
       await recordMembershipPaymentFromInvoice(event.data.object as Stripe.Invoice);
     } else if (event.type === "account.updated") {
-      // Connect account events: depending on how the Stripe dashboard's webhook
-      // endpoint is configured, these may need "Listen to events on Connected accounts"
-      // enabled on this same endpoint (or a separate Connect-specific endpoint with its
-      // own signing secret) — a real setup step, not just an env var, still to confirm
-      // once this is configured for real.
       await upsertPayoutAccountFromStripe(event.data.object as Stripe.Account);
     }
     return NextResponse.json({ received: true });
