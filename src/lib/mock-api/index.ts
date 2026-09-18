@@ -2156,6 +2156,19 @@ export async function addCaseNote(
 }
 
 export async function getPlatformConfig(): Promise<PlatformConfigTables> {
+  if (looksLikeRealId(store.user.id)) {
+    // Categories are already fully real (see getCategories() above) — the other six
+    // tables have no backing table yet (no real consumer reads pricing rules/
+    // commissions/taxes/currencies/payout rules today; building real CRUD for tables
+    // nothing uses would be speculative, not a genuine gap — see
+    // docs/DEVELOPMENT-PLAN.md's 2026-09-17 admin-screens entry), so they stay the mock
+    // seed for now, merged alongside the real categories.
+    // Cached onto store.config so updateConfigTable()'s diff below has a last-known-real
+    // state to compare a "Featured" toggle against, not the stale mock seed.
+    store.config.categories = await getCategories();
+    return clone(store.config);
+  }
+
   await latency("fast");
   return clone(store.config);
 }
@@ -2163,6 +2176,19 @@ export async function getPlatformConfig(): Promise<PlatformConfigTables> {
 export async function addCategory(
   payload: Omit<Category, "id" | "videoCount">,
 ): Promise<Category> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/categories/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not add the category.");
+    }
+    return (await res.json()) as Category;
+  }
+
   await latency();
   const category: Category = { ...payload, id: nextId("cat"), videoCount: 0 };
   store.config.categories = [...store.config.categories, category];
@@ -2183,6 +2209,30 @@ export async function updateConfigTable<K extends keyof PlatformConfigTables>(
   table: K,
   rows: PlatformConfigTables[K],
 ): Promise<PlatformConfigTables[K]> {
+  // Real admin, "categories" table only: /admin/settings only ever mutates this table's
+  // `featured` switch, one row at a time — diff against the previous rows (still cached
+  // in store.config from getPlatformConfig()'s real branch above) to find which row(s)
+  // changed, rather than needing a bulk-update endpoint for a table with no other real
+  // write shape today.
+  if (looksLikeRealId(store.user.id) && table === "categories") {
+    const previous = store.config.categories;
+    const changed = (rows as Category[]).filter((row) => {
+      const before = previous.find((item) => item.id === row.id);
+      return before && before.featured !== row.featured;
+    });
+    await Promise.all(
+      changed.map((row) =>
+        fetch(`/api/admin/categories/${row.id}/`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ featured: row.featured }),
+        }),
+      ),
+    );
+    store.config.categories = rows as Category[];
+    return clone(rows);
+  }
+
   await latency("fast");
   store.config[table] = rows;
   recordAudit({

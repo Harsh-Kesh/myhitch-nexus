@@ -846,6 +846,55 @@ export async function listCategories(): Promise<CategorySummary[]> {
   return rows.map(mapCategoryRow);
 }
 
+export type CreateCategoryResult =
+  | { outcome: "success"; category: CategorySummary }
+  | { outcome: "slug_taken" };
+
+/** Real counterpart of the mock's addCategory() — /admin/settings' Categories tab.
+ * Categories are already real (used by real video publishing since 2026-09-14); this
+ * closes the one remaining gap, the admin write path itself. */
+export async function createCategory(input: {
+  slug: string;
+  name: string;
+  description: string | null;
+  contentType: string;
+  featured: boolean;
+  accentToken: number;
+}): Promise<CreateCategoryResult> {
+  const existing = await queryOne<{ id: string }>(`select id from categories where slug = $1`, [input.slug]);
+  if (existing) return { outcome: "slug_taken" };
+
+  const row = await queryOne<{ id: string }>(
+    `insert into categories (slug, name, description, content_type, featured, accent_token)
+     values ($1, $2, $3, $4, $5, $6) returning id`,
+    [input.slug, input.name, input.description, input.contentType, input.featured, input.accentToken],
+  );
+  return {
+    outcome: "success",
+    category: {
+      id: row!.id,
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      contentType: input.contentType,
+      featured: input.featured,
+      accentToken: input.accentToken,
+      imageUrl: null,
+      videoCount: 0,
+    },
+  };
+}
+
+/** The only field /admin/settings' Categories tab actually edits post-creation (the
+ * "Featured" switch) — see admin/settings/page.tsx. */
+export async function updateCategoryFeatured(id: string, featured: boolean): Promise<boolean> {
+  const rows = await query<{ id: string }>(`update categories set featured = $2 where id = $1 returning id`, [
+    id,
+    featured,
+  ]);
+  return rows.length > 0;
+}
+
 /** Single-category lookup by slug — the counterpart `listCategories()` has had since
  * categories first went real. Without this, category detail pages had nothing but the
  * stale mock store to resolve against, which uses fixed fake ids (`cat_brand_film`) that
