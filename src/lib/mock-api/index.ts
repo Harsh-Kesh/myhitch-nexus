@@ -479,21 +479,31 @@ export async function getEntitlement(
     };
   }
 
-  const hasPremium = store.subscriptions.some(
-    (subscription) => subscription.kind === "platform" && subscription.status === "active",
-  );
-  if (models.includes("subscription") && hasPremium) {
-    return { ...base, granted: true, reason: "subscription" };
-  }
+  // store.subscriptions is a flat, session-global array with no video-id filtering at
+  // all (unlike store.purchases/store.unlocked above, which are keyed by videoId and so
+  // can never accidentally match a real video's uuid) — the seed data ships an always-
+  // active mock "Nexus Premium" subscription (mock-api/data/users.ts), so without this
+  // guard every real signed-in account would incorrectly show as Premium-entitled for
+  // every real subscription-gated video, real subscription or not. Found live: a fresh
+  // real account with no subscription showed "Included with Premium" on a real
+  // subscription-only video before this fix.
+  if (!looksLikeRealId(videoId)) {
+    const hasPremium = store.subscriptions.some(
+      (subscription) => subscription.kind === "platform" && subscription.status === "active",
+    );
+    if (models.includes("subscription") && hasPremium) {
+      return { ...base, granted: true, reason: "subscription" };
+    }
 
-  const hasMembership = store.subscriptions.some(
-    (subscription) =>
-      subscription.kind === "channel-membership" &&
-      subscription.channelId === video.channelId &&
-      subscription.status === "active",
-  );
-  if (models.includes("membership") && hasMembership) {
-    return { ...base, granted: true, reason: "membership" };
+    const hasMembership = store.subscriptions.some(
+      (subscription) =>
+        subscription.kind === "channel-membership" &&
+        subscription.channelId === video.channelId &&
+        subscription.status === "active",
+    );
+    if (models.includes("membership") && hasMembership) {
+      return { ...base, granted: true, reason: "membership" };
+    }
   }
 
   // Paid, unowned: a short preview is allowed, then the paywall takes over.
