@@ -13,6 +13,7 @@ import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { checkRealPremium } from "./subscriptions";
+import { computeChannelNetRevenue, type EntitlementKind } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
 
 export { StripeNotConfiguredError, getStripe };
@@ -284,11 +285,16 @@ export interface RealRevenueTransaction {
   description: string;
   kind: "rental" | "purchase" | "ppv";
   grossMinor: number;
+  feeMinor: number;
+  netMinor: number;
 }
 
 export interface RealRevenueSummary {
   currency: string;
+  /** Net (creator-share) lifetime total — "earnings", not raw revenue. */
   lifetimeMinor: number;
+  lifetimeGrossMinor: number;
+  /** Still gross per stream — this is about revenue *composition*, not earnings. */
   byStream: Array<{ label: string; valueMinor: number; share: number }>;
   transactions: RealRevenueTransaction[];
 }
@@ -304,52 +310,34 @@ const REVENUE_STREAM_LABEL: Record<CheckoutKind, string> = {
   ppv: "Pay-per-view",
 };
 
-/** Real gross revenue for a channel, from the entitlements table — the buildable-now
- * part of P3's "revenue ledger with configurable commission" bullet. Deliberately not
- * the whole bullet: commission itself is still mock-only config (no real consumer reads
- * it yet — same reasoning as the rest of Settings' non-Categories tabs), so there is no
- * real "net after commission" to compute, and payouts are P4 (need Stripe Connect,
- * bank-account KYC — a separate vendor decision, not built here). This intentionally
- * sums raw minor units across currencies without conversion — a known simplification
- * that's harmless while every real transaction so far has been the same currency, and a
- * real fix (live FX rates) is its own scoped piece of work, not incidental to this one. */
+/** Real gross-and-net revenue for a channel — the full "revenue ledger with
+ * configurable commission" bullet, now that commission rates are real too (see
+ * commissions.ts). This intentionally sums raw minor units across currencies without
+ * conversion — a known simplification that's harmless while every real transaction so
+ * far has been the same currency, and a real fix (live FX rates) is its own scoped
+ * piece of work, not incidental to this one. */
 export async function getRealRevenueSummary(channelId: string): Promise<RealRevenueSummary> {
-  const rows = await query<{
-    id: string;
-    kind: CheckoutKind;
-    amount_minor: number;
-    currency: string;
-    created_at: string;
-    title: string;
-  }>(
-    `select e.id, e.kind, e.amount_minor, e.currency, e.created_at, v.title
-     from entitlements e
-     join videos v on v.id = e.video_id
-     where v.channel_id = $1
-     order by e.created_at desc`,
-    [channelId],
-  );
+  const { entries, grossMinor, netMinor, currency } = await computeChannelNetRevenue(channelId);
 
-  const lifetimeMinor = rows.reduce((total, row) => total + row.amount_minor, 0);
-  const currency = rows[0]?.currency ?? "GBP";
-
-  const byKind = new Map<CheckoutKind, number>();
-  for (const row of rows) {
-    byKind.set(row.kind, (byKind.get(row.kind) ?? 0) + row.amount_minor);
+  const byKind = new Map<EntitlementKind, number>();
+  for (const entry of entries) {
+    byKind.set(entry.kind, (byKind.get(entry.kind) ?? 0) + entry.grossMinor);
   }
   const byStream = Array.from(byKind.entries()).map(([kind, valueMinor]) => ({
     label: REVENUE_STREAM_LABEL[kind],
     valueMinor,
-    share: lifetimeMinor > 0 ? Math.round((valueMinor / lifetimeMinor) * 100) : 0,
+    share: grossMinor > 0 ? Math.round((valueMinor / grossMinor) * 100) : 0,
   }));
 
-  const transactions: RealRevenueTransaction[] = rows.map((row) => ({
-    id: row.id,
-    date: row.created_at,
-    description: `${row.title} — ${REVENUE_KIND_LABEL[row.kind]}`,
-    kind: REVENUE_KIND_LABEL[row.kind],
-    grossMinor: row.amount_minor,
+  const transactions: RealRevenueTransaction[] = entries.map((entry) => ({
+    id: entry.id,
+    date: entry.createdAt,
+    description: `${entry.title} — ${REVENUE_KIND_LABEL[entry.kind]}`,
+    kind: REVENUE_KIND_LABEL[entry.kind],
+    grossMinor: entry.grossMinor,
+    feeMinor: entry.feeMinor,
+    netMinor: entry.netMinor,
   }));
 
-  return { currency, lifetimeMinor, byStream, transactions };
+  return { currency, lifetimeMinor: netMinor, lifetimeGrossMinor: grossMinor, byStream, transactions };
 }

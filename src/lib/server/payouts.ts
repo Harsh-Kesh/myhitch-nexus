@@ -5,6 +5,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe } from "./stripeClient";
+import { computeChannelNetRevenue } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
 
 export interface PayoutAccountStatus {
@@ -81,24 +82,18 @@ export async function upsertPayoutAccountFromStripe(account: Stripe.Account): Pr
   );
 }
 
-/** Real gross revenue (entitlements) minus what's already been transferred out — no
- * commission deducted, since commission is still mock-only config with nothing real
- * reading it (same reasoning as the revenue-ledger slice's lifetimeMinor) — this is
- * gross available, an honest simplification, not silently assumed net. */
+/** Real net (creator-share, after commission) revenue minus what's already been
+ * transferred out — computeChannelNetRevenue() is the one place gross-to-net
+ * commission math happens, shared with the revenue-ledger's own summary, so the two can
+ * never disagree about how much a channel has actually earned. */
 export async function getAvailableBalance(organizationId: string): Promise<{ amountMinor: number; currency: string }> {
-  const revenueRow = await queryOne<{ total: string; currency: string | null }>(
-    `select coalesce(sum(e.amount_minor), 0) as total, min(e.currency) as currency
-     from entitlements e join videos v on v.id = e.video_id
-     where v.channel_id = $1`,
-    [organizationId],
-  );
+  const { netMinor, currency } = await computeChannelNetRevenue(organizationId);
   const paidRow = await queryOne<{ total: string }>(
     `select coalesce(sum(amount_minor), 0) as total from payouts where organization_id = $1 and status = 'paid'`,
     [organizationId],
   );
-  const revenue = Number(revenueRow?.total ?? 0);
   const paid = Number(paidRow?.total ?? 0);
-  return { amountMinor: Math.max(revenue - paid, 0), currency: revenueRow?.currency ?? "GBP" };
+  return { amountMinor: Math.max(netMinor - paid, 0), currency };
 }
 
 export type CreatePayoutResult =

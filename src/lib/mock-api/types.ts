@@ -830,6 +830,9 @@ export interface PlatformConfigTables {
   commissions: Array<{
     id: string;
     scope: string;
+    /** Real only — the raw scope key ("purchase_rental" | "ppv" | "membership") a real
+     * edit needs to send back; `scope` itself is the display label. */
+    scopeKey?: string;
     platformShare: number;
     creatorShare: number;
     effectiveFrom: string;

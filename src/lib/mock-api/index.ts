@@ -2280,17 +2280,49 @@ export async function addCaseNote(
   return clone(item);
 }
 
+const COMMISSION_SCOPE_LABEL: Record<string, string> = {
+  purchase_rental: "Rental & purchase",
+  ppv: "Pay-per-view events",
+  membership: "Channel memberships",
+};
+
 export async function getPlatformConfig(): Promise<PlatformConfigTables> {
   if (looksLikeRealId(store.user.id)) {
-    // Categories are already fully real (see getCategories() above) — the other six
-    // tables have no backing table yet (no real consumer reads pricing rules/
-    // commissions/taxes/currencies/payout rules today; building real CRUD for tables
-    // nothing uses would be speculative, not a genuine gap — see
-    // docs/DEVELOPMENT-PLAN.md's 2026-09-17 admin-screens entry), so they stay the mock
-    // seed for now, merged alongside the real categories.
+    // Categories and commissions are real now — the remaining five tables have no
+    // backing table yet (no real consumer reads pricing rules/taxes/currencies/payout
+    // rules today; building real CRUD for tables nothing uses would be speculative, not
+    // a genuine gap — see docs/DEVELOPMENT-PLAN.md's 2026-09-17 admin-screens entry), so
+    // they stay the mock seed for now, merged alongside the real ones.
     // Cached onto store.config so updateConfigTable()'s diff below has a last-known-real
-    // state to compare a "Featured" toggle against, not the stale mock seed.
+    // state to compare a "Featured"/commission-rate change against, not the stale mock
+    // seed. Advertising/affiliate scopes are dropped entirely for a real admin — neither
+    // real ads nor real commerce-affiliate links exist, so a rate for either would be
+    // configuring something that can never actually apply to a real transaction.
     store.config.categories = await getCategories();
+    const res = await fetch(`/api/admin/commissions/`);
+    if (res.ok) {
+      const data = (await res.json()) as {
+        items: Array<{ id: string; scope: string; platformSharePct: number; effectiveFrom: string }>;
+      };
+      // listCommissionRates() returns full history (needed to apply the right rate to
+      // past transactions) — the settings table only ever shows the current rate per
+      // scope, same as the mock always did.
+      const latestByScope = new Map<string, (typeof data.items)[number]>();
+      for (const item of data.items) {
+        const existing = latestByScope.get(item.scope);
+        if (!existing || new Date(item.effectiveFrom) > new Date(existing.effectiveFrom)) {
+          latestByScope.set(item.scope, item);
+        }
+      }
+      store.config.commissions = Array.from(latestByScope.values()).map((item) => ({
+        id: item.id,
+        scope: COMMISSION_SCOPE_LABEL[item.scope] ?? item.scope,
+        scopeKey: item.scope,
+        platformShare: item.platformSharePct,
+        creatorShare: 100 - item.platformSharePct,
+        effectiveFrom: item.effectiveFrom,
+      }));
+    }
     return clone(store.config);
   }
 
@@ -2356,6 +2388,31 @@ export async function updateConfigTable<K extends keyof PlatformConfigTables>(
     );
     store.config.categories = rows as Category[];
     return clone(rows);
+  }
+
+  // Real admin, "commissions" table: same one-row-at-a-time diff, comparing
+  // platformShare (the only field the settings UI's edit action can change) against
+  // the previous real rows.
+  if (looksLikeRealId(store.user.id) && table === "commissions") {
+    type CommissionRow = PlatformConfigTables["commissions"][number];
+    const previous = store.config.commissions;
+    const changed = (rows as CommissionRow[]).filter((row) => {
+      const before = previous.find((item) => item.id === row.id);
+      return before && before.platformShare !== row.platformShare && row.scopeKey;
+    });
+    await Promise.all(
+      changed.map((row) =>
+        fetch(`/api/admin/commissions/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scope: row.scopeKey, platformSharePct: row.platformShare }),
+        }),
+      ),
+    );
+    // A rate change is a genuinely new row (new id, new effectiveFrom) — refetch rather
+    // than trust the client-constructed `rows` as the new real state.
+    const config = await getPlatformConfig();
+    return config.commissions as PlatformConfigTables[K];
   }
 
   await latency("fast");

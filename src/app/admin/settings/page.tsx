@@ -16,7 +16,7 @@ import {
   usePlatformConfig,
   useUpdateConfigTable,
 } from "@/lib/mock-api/hooks";
-import type { ContentType } from "@/lib/mock-api/types";
+import type { ContentType, PlatformConfigTables } from "@/lib/mock-api/types";
 import { cn, formatCurrency, formatDate, slugify } from "@/lib/utils";
 
 const TABS = [
@@ -44,6 +44,12 @@ export default function AdminSettingsPage() {
   const [contentType, setContentType] = React.useState<ContentType>("user-generated");
   const [featured, setFeatured] = React.useState(false);
   const [accentToken, setAccentToken] = React.useState(1);
+
+  // Edit commission rate
+  const [editingCommission, setEditingCommission] = React.useState<
+    PlatformConfigTables["commissions"][number] | null
+  >(null);
+  const [draftPlatformShare, setDraftPlatformShare] = React.useState("");
 
   if (isLoading || !config) return null;
 
@@ -215,7 +221,7 @@ export default function AdminSettingsPage() {
             />
             <CardBody className="p-0">
               <ConfigTable
-                head={["Scope", "Platform", "Creator", "Effective from"]}
+                head={["Scope", "Platform", "Creator", "Effective from", ""]}
                 rows={config.commissions.map((rule) => [
                   <span key="s" className="font-medium text-fg">
                     {rule.scope}
@@ -229,6 +235,19 @@ export default function AdminSettingsPage() {
                   <span key="d" className="nx-tnum text-fg-subtle">
                     {formatDate(rule.effectiveFrom)}
                   </span>,
+                  rule.scopeKey ? (
+                    <Button
+                      key="e"
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => {
+                        setEditingCommission(rule);
+                        setDraftPlatformShare(String(rule.platformShare));
+                      }}
+                    >
+                      Edit
+                    </Button>
+                  ) : null,
                 ])}
               />
             </CardBody>
@@ -462,6 +481,64 @@ export default function AdminSettingsPage() {
             description="Featured categories get a rail on the homepage."
           />
         </div>
+      </Modal>
+
+      {/* Edit commission rate */}
+      <Modal
+        open={Boolean(editingCommission)}
+        onClose={() => setEditingCommission(null)}
+        title={`Edit ${editingCommission?.scope ?? "commission"}`}
+        description="Applies to new transactions from now on — past transactions keep whatever rate was in effect when they happened."
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditingCommission(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={
+                !draftPlatformShare ||
+                Number(draftPlatformShare) < 0 ||
+                Number(draftPlatformShare) > 100
+              }
+              loading={updateTable.isPending}
+              onClick={async () => {
+                if (!editingCommission) return;
+                await updateTable.mutateAsync({
+                  table: "commissions",
+                  rows: config.commissions.map((item) =>
+                    item.id === editingCommission.id
+                      ? { ...item, platformShare: Number(draftPlatformShare) }
+                      : item,
+                  ),
+                });
+                toast({
+                  title: "Commission rate updated",
+                  description: `${editingCommission.scope} is now ${draftPlatformShare}% platform / ${100 - Number(draftPlatformShare)}% creator.`,
+                });
+                setEditingCommission(null);
+              }}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <Field
+          label="Platform share"
+          htmlFor="commission-platform-share"
+          hint="The creator's share is whatever's left — it always adds up to 100%."
+        >
+          <Input
+            id="commission-platform-share"
+            type="number"
+            min={0}
+            max={100}
+            value={draftPlatformShare}
+            onChange={(event) => setDraftPlatformShare(event.target.value)}
+          />
+        </Field>
       </Modal>
     </>
   );

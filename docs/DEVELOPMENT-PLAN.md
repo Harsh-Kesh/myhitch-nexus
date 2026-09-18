@@ -456,6 +456,18 @@ The first real slice of P3 (below) — `purchaseAccess()` had no real branch at 
 
 **Client added Stripe test-mode keys the same day. Full real payment verified end-to-end**, and it surfaced one more real bug: `createCheckoutSession()` built `success_url`/`cancel_url` from `request.nextUrl.origin`, which resolves to Railway's internal proxy address (`localhost:8080`), not the public domain — found by actually completing a real test-mode payment and landing on a dead link after paying. Fixed to use the existing `SITE_URL` constant instead (already the correct pattern used elsewhere for absolute URLs). Re-verified after the fix with a fresh throwaway account and video, this time watching the whole thing happen in the browser: real Stripe-hosted checkout page (test card `4242 4242 4242 4242`) → payment → correct redirect back to `myhitchnexus.com.au` → webhook-fulfilled entitlement → "Payment confirmed" toast → paywall replaced by an "Owned" badge and the real player → `/account/purchases` showing the real title, amount, date and a real sequential invoice number (`NX-2026-000002`). Test accounts, orgs, videos and entitlements cleaned up afterward both times.
 
+### Real commission configuration (2026-09-18)
+
+Closes the "configurable commission" half of P3's revenue-ledger bullet, left deliberately gross-only in the earlier slices today — real payouts made this the next honest gap to close, since "available to withdraw" was paying out 100% gross with no platform cut at all.
+
+**Built**: `commission_rates` table — a new row per change, never updated in place, so a rate change only ever applies to new transactions from that point on (exactly what the admin Settings page has always told the client, a promise the mock UI never had any real config behind). Seeded with the same splits the mock prototype always displayed (30/70 rental & purchase, 25/75 PPV, 15/85 membership) as real starting values, not placeholders. `src/lib/server/commissions.ts`'s `computeChannelNetRevenue()` is the one place gross-to-net math happens — both the revenue-ledger summary and the payouts "available balance" call it, so the two can never disagree about what a channel has actually earned. New `GET`/`POST /api/admin/commissions`. `/admin/settings`' Commissions tab gained an edit action (it had none at all before, even for the mock data) — real for a real admin, writing a new rate and refreshing.
+
+Real revenue transactions now show their actual commission and net amount (previously always 0/gross, a placeholder from the earlier revenue-ledger slice); "Lifetime earnings" is now the real net total, not gross — "earnings" should mean what a creator actually gets to keep.
+
+**Deliberately still absent**: the "membership" commission scope has nothing to apply to yet — real channel memberships don't exist (see the subscriptions migration's own header comment) — it's configured now for when they land, not yet exercised by any real transaction.
+
+**Verified**: `tsc`/lint/build clean; full Playwright suite (44/44).
+
 ### Real creator payouts via Stripe Connect (2026-09-18)
 
 The last piece of real commerce in this pass — closes the "Stripe Connect payouts" bullet from P4, brought forward since the revenue ledger it pays out from was already real. Express accounts: Stripe hosts the entire onboarding UI (identity, bank details), this app never collects or sees any of it directly, same boundary Pass's own Connect integration already draws.
