@@ -128,7 +128,8 @@ export function formatDateTime(input: string | Date | null | undefined): string 
  * Relative time. Deterministic against a caller-supplied `now` so server and
  * client renders agree — passing no `now` is fine in client components only.
  */
-export function relativeTime(input: string | Date, now: Date = new Date()) {
+export function relativeTime(input: string | Date | null | undefined, now: Date = new Date()) {
+  if (input == null) return "—";
   const date = typeof input === "string" ? new Date(input) : input;
   if (Number.isNaN(date.getTime())) return "—";
   const diffSeconds = Math.round((date.getTime() - now.getTime()) / 1000);
