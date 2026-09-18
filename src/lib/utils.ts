@@ -96,9 +96,10 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDate(
-  input: string | Date,
+  input: string | Date | null | undefined,
   style: "short" | "medium" | "long" = "medium",
 ): string {
+  if (input == null) return "—";
   const date = typeof input === "string" ? new Date(input) : input;
   if (Number.isNaN(date.getTime())) return "—";
   const options: Intl.DateTimeFormatOptions =
@@ -110,7 +111,8 @@ export function formatDate(
   return new Intl.DateTimeFormat("en-GB", options).format(date);
 }
 
-export function formatDateTime(input: string | Date): string {
+export function formatDateTime(input: string | Date | null | undefined): string {
+  if (input == null) return "—";
   const date = typeof input === "string" ? new Date(input) : input;
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", {
