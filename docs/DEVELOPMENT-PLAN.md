@@ -520,6 +520,18 @@ Found while starting the RBAC-hardening work item below (an authorization test m
 
 **Verified**: `tsc`/lint/build clean; full Playwright suite. Re-attempted the exact same exploit request against production after deploying and confirmed it now returns 400 rather than a working admin session.
 
+### RBAC authorization test matrix, first slice (2026-09-18)
+
+The "Authorisation" row in §7's testing strategy — a real role × endpoint matrix, not a manual audit — closing part of AC-6/AC-8's evidence requirement. An earlier read-only audit this same day (prompted by the SRS-traceability doc's stale "any user can open /admin" claim) found that RBAC itself was actually solid: every admin route and every ownership-scoped route checked has the right guard. What it also found: there was no *structural* guarantee of that — no middleware, no deny-by-default framework, just per-route discipline with nothing to catch a future regression. This is that safety net, as an automated, repeatable test rather than a one-off manual finding.
+
+**Built**: `scripts/seed-authz-test-accounts.mjs` (idempotent, mirrors `seed-demo-account.mjs`'s pattern) — five single-role fixture accounts, deliberately *not* the demo account (which holds every role and so can never prove a deny case): a viewer, two separate creators (so ownership checks, not just role checks, get exercised — creator2 must never touch creator1's channel), a business account, and an admin. `e2e/authorization.spec.ts` — pure API-level Playwright tests (no browser) against the real `next start` server and real database the rest of `test:e2e` already uses: all 6 admin routes × 5 roles asserting deny-by-default (401 anonymous, 403 everyone but admin), ownership-scoped routes (channel settings, membership tier, revenue, payouts status) proving a *different* creator is denied, not just "some creator," and signed-in-only routes. `AUTHZ-0` is a permanent regression test for the self-registration fix above — asserts `role: "admin"` is rejected on every future run.
+
+**Real bug found while writing this, not a pre-existing gap**: `/api/admin/categories` has no `GET` handler at all (POST-only by design — categories are read through the separate public `/api/categories`), so the test's initial "GET, expect 401/403/200" loop failed with 405 across every role, including admin. Not an authorization bug — the route was never supposed to answer GET — but it meant the matrix's own generic loop was wrong for this one route. Fixed by giving it a dedicated POST-based check: an empty body still distinguishes "stopped at the auth gate" (401/403) from "reached validation" (400), without ever completing a real category creation that would need cleaning up.
+
+**Deliberately not exhaustive yet**: covers the highest-value surfaces (all of `/admin`, real-money routes like revenue/payouts, channel ownership) rather than literally every one of the ~50+ real routes — extending coverage as new routes ship is cheaper now that the pattern and fixtures exist than building it all in one pass would have been.
+
+**Verified**: `tsc`/lint/build clean; the new suite itself (44/44) plus the full existing Playwright suite (44/44) together, confirming the new fixture accounts don't collide with or affect the demo-account-driven journeys.
+
 ### Platform settings' Categories tab made real (2026-09-18)
 
 Categories themselves have been fully real since 2026-09-14 (`getCategories()` has had no mock branch at all, ever — every real video-publishing/browse/upload-wizard read already hit Postgres directly). The one remaining gap was the admin write path: `/admin/settings`' Categories tab (add a category, toggle "Featured") only ever wrote to the in-memory mock store.
@@ -627,7 +639,7 @@ The mechanism, not the intention:
 | Unit | Domain logic: entitlement resolution, commission maths, rights/territory evaluation, publish-gate rules | Coverage floor on `packages/core` |
 | Integration | Route handlers against a real test database; Stripe and Mux in test mode with recorded webhooks | Runs on every PR |
 | E2E | Playwright — the four SRS §7 journeys, desktop + mobile viewports (scaffold already exists) | Blocks merge |
-| Authorisation | Explicit matrix test: every role × every protected endpoint, expecting deny-by-default | Blocks release (AC-6, AC-8) |
+| Authorisation | **Started 2026-09-18** — `e2e/authorization.spec.ts`: real role × endpoint matrix (all 6 admin routes, ownership-scoped channel/revenue/payouts routes with a genuine wrong-owner negative case, signed-in-only routes), deny-by-default asserted throughout. Not yet exhaustive — covers the highest-value surfaces, not literally every protected endpoint. See the dedicated dev-plan entry below. | Blocks release (AC-6, AC-8) |
 | Payments | Negative-path matrix: decline, timeout, duplicate webhook, partial refund, chargeback | Blocks release (AC-5) |
 | Accessibility | axe-core in CI + manual audit + screen-reader walkthrough of UJ-1/UJ-2 | Blocks release (AC-9) |
 | Performance | k6 load tests to NFR-1 targets; Lighthouse CI on catalogue pages | Blocks release (AC-4) |

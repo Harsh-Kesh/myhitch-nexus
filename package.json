@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "node --env-file=.env.local scripts/apply-migrations.mjs",
     "seed:demo-account": "node --env-file=.env.local scripts/seed-demo-account.mjs",
+    "seed:authz-accounts": "node --env-file=.env.local scripts/seed-authz-test-accounts.mjs",
     "test:e2e": "next build && playwright test",
     "test:e2e:only": "playwright test",
     "test:e2e:ui": "playwright test --ui"
