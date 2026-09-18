@@ -131,6 +131,7 @@ export function VideoDetailClient() {
         }
         queryClient.invalidateQueries({ queryKey: qk.entitlement(id) });
         queryClient.invalidateQueries({ queryKey: qk.purchases });
+        queryClient.invalidateQueries({ queryKey: qk.subscriptions });
       } else if (checkout === "cancelled") {
         toast({ title: "Checkout cancelled", description: "No payment was taken.", tone: "info" });
       }
@@ -214,7 +215,19 @@ export function VideoDetailClient() {
   };
 
   const handleSubscribe = async () => {
-    await startSubscription.mutateAsync({ name: "Nexus Premium" });
+    // Same reasoning as handlePurchase() above: a real subscription signup redirects
+    // away and never resolves this promise, but a real failure (already subscribed,
+    // payments not configured) does reject it.
+    try {
+      await startSubscription.mutateAsync({ name: "Nexus Premium" });
+    } catch (err) {
+      toast({
+        title: "Couldn't start checkout",
+        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+      return;
+    }
     setPurchaseOpen(false);
     toast({
       title: "Premium activated",

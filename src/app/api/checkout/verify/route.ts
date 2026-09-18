@@ -1,8 +1,11 @@
 // GET /api/checkout/verify?session_id=... — called by the video page right after a
-// Stripe Checkout redirect back (see commerce.ts's fulfillCheckoutSession() header
-// comment). Real accounts only; only ever confirms/fulfills the caller's own session.
+// Stripe Checkout redirect back, for both a one-time video purchase and a Premium
+// subscription signup (see commerce.ts's fulfillCheckoutSession() header comment on
+// why this alongside the webhook is safe). Real accounts only; only ever
+// confirms/fulfills the caller's own session.
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyCheckoutSession, StripeNotConfiguredError } from "@/lib/server/commerce";
+import { getStripe, verifyCheckoutSession, StripeNotConfiguredError } from "@/lib/server/commerce";
+import { verifySubscriptionSession } from "@/lib/server/subscriptions";
 import { getRequestAccount } from "@/lib/server/rbac";
 
 export async function GET(request: NextRequest) {
@@ -16,7 +19,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const result = await verifyCheckoutSession(sessionId, account.id);
+    const session = await getStripe().checkout.sessions.retrieve(sessionId);
+    const result =
+      session.mode === "subscription"
+        ? await verifySubscriptionSession(sessionId, account.id)
+        : await verifyCheckoutSession(sessionId, account.id);
     if ("outcome" in result && result.outcome === "not_your_session") {
       return NextResponse.json({ error: "That checkout session doesn't belong to you." }, { status: 403 });
     }

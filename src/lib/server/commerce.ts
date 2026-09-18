@@ -9,26 +9,13 @@
 // throws a clear, distinguishable error so routes can return a real "not configured yet"
 // response instead of a bare 500 until real keys land.
 import "server-only";
-import Stripe from "stripe";
+import type Stripe from "stripe";
 import { query, queryOne } from "./db";
+import { getStripe, StripeNotConfiguredError } from "./stripeClient";
+import { checkRealPremium } from "./subscriptions";
 import { SITE_URL } from "@/lib/utils";
 
-export class StripeNotConfiguredError extends Error {
-  constructor() {
-    super("Stripe is not configured (missing STRIPE_SECRET_KEY).");
-    this.name = "StripeNotConfiguredError";
-  }
-}
-
-let stripeClient: Stripe | null = null;
-
-function getStripe(): Stripe {
-  if (stripeClient) return stripeClient;
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new StripeNotConfiguredError();
-  stripeClient = new Stripe(key);
-  return stripeClient;
-}
+export { StripeNotConfiguredError, getStripe };
 
 export type CheckoutKind = "buy" | "rent" | "ppv";
 
@@ -200,10 +187,15 @@ export async function verifyCheckoutSession(
 
 export interface RealEntitlementResult {
   granted: boolean;
-  kind?: CheckoutKind;
+  kind?: CheckoutKind | "subscription";
   expiresAt?: string;
 }
 
+/** A subscription-gated video (access_models includes "subscription") needs no per-video
+ * entitlement row at all — an active Nexus Premium subscription covers every one of
+ * them. Checked as a fallback, after the per-video entitlement lookup finds nothing, so
+ * a video that's both individually owned *and* subscription-gated still reports the more
+ * specific reason. */
 export async function checkRealEntitlement(accountId: string, videoId: string): Promise<RealEntitlementResult> {
   // Lazily expires a rental on read rather than needing a scheduled job — same pattern
   // as videoPublishing.ts's activateScheduledVideos(), correct at this app's read-heavy
@@ -220,8 +212,17 @@ export async function checkRealEntitlement(accountId: string, videoId: string): 
      order by created_at desc limit 1`,
     [accountId, videoId],
   );
-  if (!row) return { granted: false };
-  return { granted: true, kind: row.kind, expiresAt: row.expires_at ?? undefined };
+  if (row) return { granted: true, kind: row.kind, expiresAt: row.expires_at ?? undefined };
+
+  const priceRow = await queryOne<{ access_models: string[] }>(
+    `select access_models from video_pricing where video_id = $1`,
+    [videoId],
+  );
+  if (priceRow?.access_models.includes("subscription") && (await checkRealPremium(accountId))) {
+    return { granted: true, kind: "subscription" };
+  }
+
+  return { granted: false };
 }
 
 export interface PurchaseRow {
@@ -352,5 +353,3 @@ export async function getRealRevenueSummary(channelId: string): Promise<RealReve
 
   return { currency, lifetimeMinor, byStream, transactions };
 }
-
-export { getStripe };

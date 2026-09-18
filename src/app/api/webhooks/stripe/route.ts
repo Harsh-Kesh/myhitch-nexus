@@ -5,6 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
+import { upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
 
 export async function POST(request: NextRequest) {
   const signature = request.headers.get("stripe-signature");
@@ -27,7 +28,22 @@ export async function POST(request: NextRequest) {
 
   try {
     if (event.type === "checkout.session.completed") {
-      await fulfillCheckoutSession(event.data.object as Stripe.Checkout.Session);
+      // One checkout.session.completed event covers both a one-time video purchase and
+      // a Premium subscription signup — mode tells them apart. The subscription case
+      // doesn't need handling here at all: subscription_data.metadata (set at session
+      // creation, see subscriptions.ts) already put accountId on the Subscription
+      // object itself, so the customer.subscription.created event below is
+      // self-sufficient without this one.
+      const session = event.data.object as Stripe.Checkout.Session;
+      if (session.mode === "payment") {
+        await fulfillCheckoutSession(session);
+      }
+    } else if (
+      event.type === "customer.subscription.created" ||
+      event.type === "customer.subscription.updated" ||
+      event.type === "customer.subscription.deleted"
+    ) {
+      await upsertSubscriptionFromStripe(event.data.object as Stripe.Subscription);
     }
     return NextResponse.json({ received: true });
   } catch (err) {

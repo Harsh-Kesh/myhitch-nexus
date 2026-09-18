@@ -10,8 +10,9 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { channelById } from "@/lib/mock-api/data/channels";
-import { useCancelSubscription, useSubscriptions } from "@/lib/mock-api/hooks";
+import { useCancelSubscription, useCurrentUser, useSubscriptions } from "@/lib/mock-api/hooks";
 import type { Subscription } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -22,6 +23,8 @@ const STATUS_TONE: Record<Subscription["status"], "published" | "archived" | "da
 };
 
 export default function SubscriptionsPage() {
+  const { data: user } = useCurrentUser();
+  const isRealAccount = Boolean(user?.id && looksLikeRealId(user.id));
   const { data: subscriptions = [], isLoading } = useSubscriptions();
   const cancelSubscription = useCancelSubscription();
   const { toast } = useToast();
@@ -149,8 +152,9 @@ export default function SubscriptionsPage() {
                       onClick={() =>
                         toast({
                           title: "Payment method",
-                          description:
-                            "Payment details are never collected in this prototype.",
+                          description: isRealAccount
+                            ? "Changing your card isn't built yet — cancel and re-subscribe with a different card for now."
+                            : "Payment details are never collected in this prototype.",
                           tone: "info",
                         })
                       }

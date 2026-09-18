@@ -442,12 +442,23 @@ export async function getEntitlement(
   if (looksLikeRealId(videoId) && looksLikeRealId(userId)) {
     const res = await fetch(`/api/videos/${videoId}/entitlement/`);
     if (res.ok) {
-      const real = (await res.json()) as { granted: boolean; kind?: "buy" | "rent" | "ppv"; expiresAt?: string };
+      const real = (await res.json()) as {
+        granted: boolean;
+        kind?: "buy" | "rent" | "ppv" | "subscription";
+        expiresAt?: string;
+      };
       if (real.granted) {
         return {
           ...base,
           granted: true,
-          reason: real.kind === "rent" ? "rented" : real.kind === "ppv" ? "ticket" : "purchased",
+          reason:
+            real.kind === "rent"
+              ? "rented"
+              : real.kind === "ppv"
+                ? "ticket"
+                : real.kind === "subscription"
+                  ? "subscription"
+                  : "purchased",
           expiresAt: real.expiresAt,
         };
       }
@@ -564,10 +575,31 @@ export async function purchaseAccess(
   return record;
 }
 
+/** Real Nexus Premium only (channelId omitted) for a real account — see
+ * 20260918000002_subscriptions.sql's header comment on why channel memberships
+ * (channelId passed) always stay mock: there's no real design for those to build
+ * against. Same "redirects away, never resolves" shape as purchaseAccess()'s real
+ * branch — a real subscription signup has no synchronous "subscribed" the way the mock
+ * always did. */
 export async function startSubscription(
   name: string,
   channelId?: string,
 ): Promise<Subscription> {
+  if (!channelId && looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/subscriptions/checkout/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ returnPath: window.location.pathname }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not start checkout.");
+    }
+    const { url } = (await res.json()) as { url: string };
+    window.location.href = url;
+    return new Promise<Subscription>(() => {});
+  }
+
   await latency("slow");
   const subscription: Subscription = {
     id: nextId("sub"),
@@ -2463,12 +2495,63 @@ export async function getPurchases(): Promise<PurchaseRecord[]> {
   return clone(store.purchases);
 }
 
+const REAL_SUBSCRIPTION_STATUS: Record<string, Subscription["status"]> = {
+  active: "active",
+  past_due: "past-due",
+  cancelled: "cancelled",
+  incomplete: "past-due",
+};
+
 export async function getSubscriptions(): Promise<Subscription[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/subscriptions/`);
+    if (!res.ok) throw new Error(`GET /api/subscriptions failed with ${res.status}`);
+    const data = (await res.json()) as {
+      items: Array<{
+        id: string;
+        status: string;
+        priceMinor: number;
+        currency: string;
+        currentPeriodEnd: string | null;
+        cancelAtPeriodEnd: boolean;
+        createdAt: string;
+      }>;
+    };
+    return data.items.map((item) => ({
+      id: item.id,
+      name: "Nexus Premium",
+      kind: "platform",
+      price: { amount: item.priceMinor, currency: item.currency as Money["currency"] },
+      interval: "monthly",
+      status: REAL_SUBSCRIPTION_STATUS[item.status] ?? "active",
+      renewsAt: item.currentPeriodEnd ?? "",
+      startedAt: item.createdAt,
+      benefits: ["Ad-free viewing", "Included films and series", "Offline downloads"],
+    }));
+  }
+
   await latency("fast");
   return clone(store.subscriptions);
 }
 
 export async function cancelSubscription(id: string): Promise<Subscription | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/subscriptions/${id}/cancel/`, { method: "POST" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { currentPeriodEnd: string | null };
+    return {
+      id,
+      name: "Nexus Premium",
+      kind: "platform",
+      price: { amount: 0, currency: "GBP" },
+      interval: "monthly",
+      status: "active",
+      renewsAt: data.currentPeriodEnd ?? "",
+      startedAt: "",
+      benefits: [],
+    };
+  }
+
   await latency();
   const subscription = store.subscriptions.find((item) => item.id === id);
   if (!subscription) return null;
