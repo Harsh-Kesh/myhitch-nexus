@@ -31,7 +31,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/field";
+import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { VideoCard } from "@/components/video/video-card";
 import { looksLikeRealId } from "@/lib/mock-api";
@@ -820,6 +820,7 @@ function AboutPanel({ video }: { video: Video }) {
 }
 
 function DetailsPanel({ video }: { video: Video }) {
+  const [claimOpen, setClaimOpen] = React.useState(false);
   const rows: Array<[string, React.ReactNode]> = [
     ["Release date", formatDate(video.releaseDate, "long")],
     ["Runtime", formatRuntime(video.durationSeconds)],
@@ -878,18 +879,167 @@ function DetailsPanel({ video }: { video: Video }) {
   ];
 
   return (
-    <Card>
-      <CardBody className="p-0">
-        <dl className="divide-y divide-border">
-          {rows.map(([label, value]) => (
-            <div key={label} className="grid gap-1 px-5 py-3 sm:grid-cols-[12rem_1fr]">
-              <dt className="text-sm text-fg-subtle">{label}</dt>
-              <dd className="text-sm text-fg">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      </CardBody>
-    </Card>
+    <>
+      <Card>
+        <CardBody className="p-0">
+          <dl className="divide-y divide-border">
+            {rows.map(([label, value]) => (
+              <div key={label} className="grid gap-1 px-5 py-3 sm:grid-cols-[12rem_1fr]">
+                <dt className="text-sm text-fg-subtle">{label}</dt>
+                <dd className="text-sm text-fg">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </CardBody>
+        <div className="border-t border-border px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setClaimOpen(true)}
+            className="text-xs text-fg-subtle underline decoration-dotted underline-offset-2 transition-colors hover:text-fg"
+          >
+            Report a copyright claim on this video
+          </button>
+        </div>
+      </Card>
+      <CopyrightClaimModal open={claimOpen} onClose={() => setClaimOpen(false)} videoId={video.id} />
+    </>
+  );
+}
+
+function CopyrightClaimModal({
+  open,
+  onClose,
+  videoId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  videoId: string;
+}) {
+  const { toast } = useToast();
+  const [claimantName, setClaimantName] = React.useState("");
+  const [claimantEmail, setClaimantEmail] = React.useState("");
+  const [claimantOrganization, setClaimantOrganization] = React.useState("");
+  const [workDescription, setWorkDescription] = React.useState("");
+  const [infringementDescription, setInfringementDescription] = React.useState("");
+  const [goodFaith, setGoodFaith] = React.useState(false);
+  const [accurate, setAccurate] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const reset = () => {
+    setClaimantName("");
+    setClaimantEmail("");
+    setClaimantOrganization("");
+    setWorkDescription("");
+    setInfringementDescription("");
+    setGoodFaith(false);
+    setAccurate(false);
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/copyright/claims/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId,
+          claimantName,
+          claimantEmail,
+          claimantOrganization: claimantOrganization || undefined,
+          workDescription,
+          infringementDescription,
+          goodFaithStatement: goodFaith,
+          accuracyStatement: accurate,
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not submit the claim.");
+      }
+      const claim = (await res.json()) as { reference: string };
+      toast({
+        title: "Claim submitted",
+        description: `Reference ${claim.reference}. The video has been restricted pending review.`,
+      });
+      reset();
+      onClose();
+    } catch (err) {
+      toast({
+        title: "Couldn't submit the claim",
+        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const canSubmit =
+    claimantName.trim() &&
+    /.+@.+\..+/.test(claimantEmail) &&
+    workDescription.trim() &&
+    infringementDescription.trim() &&
+    goodFaith &&
+    accurate;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Report a copyright claim"
+      description="For rights holders reporting infringing content. A well-formed claim restricts the video immediately, pending review — the uploader can contest it with a counter-notice."
+      size="md"
+    >
+      <div className="space-y-4">
+        <Field label="Your name" htmlFor="claim-name" required>
+          <Input id="claim-name" value={claimantName} onChange={(e) => setClaimantName(e.target.value)} />
+        </Field>
+        <Field label="Your email" htmlFor="claim-email" required>
+          <Input
+            id="claim-email"
+            type="email"
+            value={claimantEmail}
+            onChange={(e) => setClaimantEmail(e.target.value)}
+          />
+        </Field>
+        <Field label="Organization (optional)" htmlFor="claim-org">
+          <Input
+            id="claim-org"
+            value={claimantOrganization}
+            onChange={(e) => setClaimantOrganization(e.target.value)}
+          />
+        </Field>
+        <Field label="Describe the copyrighted work" htmlFor="claim-work" required>
+          <Textarea
+            id="claim-work"
+            rows={2}
+            value={workDescription}
+            onChange={(e) => setWorkDescription(e.target.value)}
+          />
+        </Field>
+        <Field label="Describe how this video infringes it" htmlFor="claim-infringement" required>
+          <Textarea
+            id="claim-infringement"
+            rows={3}
+            value={infringementDescription}
+            onChange={(e) => setInfringementDescription(e.target.value)}
+          />
+        </Field>
+        <Checkbox
+          checked={goodFaith}
+          onChange={(e) => setGoodFaith(e.target.checked)}
+          label="I have a good-faith belief that this use is not authorized by the copyright owner, its agent, or the law."
+        />
+        <Checkbox
+          checked={accurate}
+          onChange={(e) => setAccurate(e.target.checked)}
+          label="The information in this notice is accurate, and, under penalty of perjury, I am authorized to act on behalf of the copyright owner."
+        />
+        <Button className="w-full" onClick={submit} loading={submitting} disabled={!canSubmit}>
+          Submit claim
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

@@ -4,6 +4,7 @@ import {
   IconBell,
   IconBookmark,
   IconCreditCard,
+  IconGavel,
   IconHistory,
   IconReceipt,
   IconSettings,
@@ -20,6 +21,7 @@ const TABS = [
   { href: "/account/purchases", label: "Purchases", icon: <IconReceipt /> },
   { href: "/account/rentals", label: "Rentals", icon: <IconClock /> },
   { href: "/account/subscriptions", label: "Subscriptions", icon: <IconCreditCard /> },
+  { href: "/account/copyright", label: "Copyright", icon: <IconGavel /> },
   { href: "/account/notifications", label: "Notifications", icon: <IconBell /> },
   { href: "/account/settings", label: "Settings", icon: <IconSettings /> },
 ];
