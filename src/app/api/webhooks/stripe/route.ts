@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
 import { upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
+import { recordMembershipPaymentFromInvoice } from "@/lib/server/channelMemberships";
 import { upsertPayoutAccountFromStripe } from "@/lib/server/payouts";
 
 export async function POST(request: NextRequest) {
@@ -45,6 +46,14 @@ export async function POST(request: NextRequest) {
       event.type === "customer.subscription.deleted"
     ) {
       await upsertSubscriptionFromStripe(event.data.object as Stripe.Subscription);
+    } else if (event.type === "invoice.paid") {
+      // Channel-membership revenue is credited here, once per invoice — a platform
+      // Premium invoice is a no-op inside recordMembershipPaymentFromInvoice() (no
+      // channelId in the subscription's metadata), so this event needs no mode check.
+      // Same caveat as account.updated below: whether invoice.paid is actually enabled
+      // on this webhook endpoint in the Stripe dashboard is real dashboard
+      // configuration, not just adding the case here — still to confirm live.
+      await recordMembershipPaymentFromInvoice(event.data.object as Stripe.Invoice);
     } else if (event.type === "account.updated") {
       // Connect account events: depending on how the Stripe dashboard's webhook
       // endpoint is configured, these may need "Listen to events on Connected accounts"

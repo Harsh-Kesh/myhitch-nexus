@@ -444,7 +444,7 @@ export async function getEntitlement(
     if (res.ok) {
       const real = (await res.json()) as {
         granted: boolean;
-        kind?: "buy" | "rent" | "ppv" | "subscription";
+        kind?: "buy" | "rent" | "ppv" | "subscription" | "membership";
         expiresAt?: string;
       };
       if (real.granted) {
@@ -458,7 +458,9 @@ export async function getEntitlement(
                 ? "ticket"
                 : real.kind === "subscription"
                   ? "subscription"
-                  : "purchased",
+                  : real.kind === "membership"
+                    ? "membership"
+                    : "purchased",
           expiresAt: real.expiresAt,
         };
       }
@@ -585,16 +587,30 @@ export async function purchaseAccess(
   return record;
 }
 
-/** Real Nexus Premium only (channelId omitted) for a real account — see
- * 20260918000002_subscriptions.sql's header comment on why channel memberships
- * (channelId passed) always stay mock: there's no real design for those to build
- * against. Same "redirects away, never resolves" shape as purchaseAccess()'s real
- * branch — a real subscription signup has no synchronous "subscribed" the way the mock
- * always did. */
+/** Real Nexus Premium (channelId omitted) and real channel memberships (channelId is a
+ * real channel's id) both redirect to a real Stripe Checkout session; a mock channelId
+ * (or a fully mock account) falls through to the simulated subscription below, same
+ * "redirects away, never resolves" shape as purchaseAccess()'s real branch — a real
+ * subscription signup has no synchronous "subscribed" the way the mock always did. */
 export async function startSubscription(
   name: string,
   channelId?: string,
 ): Promise<Subscription> {
+  if (looksLikeRealId(store.user.id) && channelId && looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/channels/${channelId}/membership/checkout/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ returnPath: window.location.pathname }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not start checkout.");
+    }
+    const { url } = (await res.json()) as { url: string };
+    window.location.href = url;
+    return new Promise<Subscription>(() => {});
+  }
+
   if (!channelId && looksLikeRealId(store.user.id)) {
     const res = await fetch(`/api/subscriptions/checkout/`, {
       method: "POST",
@@ -2582,18 +2598,23 @@ export async function getSubscriptions(): Promise<Subscription[]> {
         currentPeriodEnd: string | null;
         cancelAtPeriodEnd: boolean;
         createdAt: string;
+        channelId: string | null;
+        channelName: string | null;
       }>;
     };
     return data.items.map((item) => ({
       id: item.id,
-      name: "Nexus Premium",
-      kind: "platform",
+      name: item.channelId ? `${item.channelName ?? "Channel"} membership` : "Nexus Premium",
+      kind: item.channelId ? "channel-membership" : "platform",
+      channelId: item.channelId ?? undefined,
       price: { amount: item.priceMinor, currency: item.currency as Money["currency"] },
       interval: "monthly",
       status: REAL_SUBSCRIPTION_STATUS[item.status] ?? "active",
       renewsAt: item.currentPeriodEnd ?? "",
       startedAt: item.createdAt,
-      benefits: ["Ad-free viewing", "Included films and series", "Offline downloads"],
+      benefits: item.channelId
+        ? ["Members-only content", "Supports this channel directly"]
+        : ["Ad-free viewing", "Included films and series", "Offline downloads"],
       cancelAtPeriodEnd: item.cancelAtPeriodEnd,
     }));
   }

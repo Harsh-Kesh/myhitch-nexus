@@ -22,7 +22,7 @@ import {
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VideoPlayer } from "@/components/player/video-player";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusBadge } from "@/components/ui/badge";
@@ -214,12 +214,12 @@ export function VideoDetailClient() {
     });
   };
 
-  const handleSubscribe = async () => {
+  const handleSubscribe = async (channelId?: string) => {
     // Same reasoning as handlePurchase() above: a real subscription signup redirects
     // away and never resolves this promise, but a real failure (already subscribed,
     // payments not configured) does reject it.
     try {
-      await startSubscription.mutateAsync({ name: "Nexus Premium" });
+      await startSubscription.mutateAsync({ name: channelId ? "Channel membership" : "Nexus Premium", channelId });
     } catch (err) {
       toast({
         title: "Couldn't start checkout",
@@ -230,8 +230,10 @@ export function VideoDetailClient() {
     }
     setPurchaseOpen(false);
     toast({
-      title: "Premium activated",
-      description: "Titles included with Premium now play without a purchase.",
+      title: channelId ? "Membership activated" : "Premium activated",
+      description: channelId
+        ? "You now have access to this channel's members-only content."
+        : "Titles included with Premium now play without a purchase.",
     });
   };
 
@@ -931,6 +933,22 @@ function RatingControl({
   );
 }
 
+/** Real membership price for a real channel — no mock counterpart to preserve a
+ * signature for (the mock's own "membership" row has always shown a flat hardcoded
+ * price with nothing configurable behind it), so this talks to the new API directly,
+ * same as studio/revenue's usePayoutStatus(). */
+function useMembershipTier(channelId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["membership-tier", channelId],
+    queryFn: async (): Promise<{ priceMinor: number; currency: string; isEnabled: boolean } | null> => {
+      const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/membership-tier/`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled,
+  });
+}
+
 function PurchaseModal({
   open,
   onClose,
@@ -944,10 +962,24 @@ function PurchaseModal({
   video: Video;
   loading: boolean;
   onPurchase: (kind: "buy" | "rent" | "ppv") => void;
-  onSubscribe: () => void;
+  onSubscribe: (channelId?: string) => void;
 }) {
   const { rentPrice, buyPrice, ppvPrice, accessModels, rentalWindowHours } =
     video.pricing;
+  const isRealChannel = looksLikeRealId(video.channelId);
+  const { data: membershipTier } = useMembershipTier(
+    video.channelId,
+    isRealChannel && accessModels.includes("membership"),
+  );
+  // A real channel that hasn't configured (or has disabled) a real tier has nothing to
+  // sell — showing the row would only lead to an honest "not available" rejection at
+  // checkout, so it's left off entirely instead, same "don't show a broken offer"
+  // reasoning as the rest of this app's real/mock split.
+  const showMembership = accessModels.includes("membership") && (!isRealChannel || membershipTier?.isEnabled);
+  const membershipPrice =
+    isRealChannel && membershipTier
+      ? `${formatCurrency(membershipTier.priceMinor, membershipTier.currency)} / month`
+      : "From £4.00 / month";
 
   return (
     <Modal
@@ -1008,14 +1040,14 @@ function PurchaseModal({
           />
         ) : null}
 
-        {accessModels.includes("membership") ? (
+        {showMembership ? (
           <OfferRow
             title="Channel membership"
             description="Supports the channel directly and unlocks members-only content."
-            price="From £4.00 / month"
+            price={membershipPrice}
             icon={<IconStar />}
             loading={loading}
-            onSelect={onSubscribe}
+            onSelect={() => onSubscribe(video.channelId)}
           />
         ) : null}
       </div>

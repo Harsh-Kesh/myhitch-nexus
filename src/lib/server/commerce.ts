@@ -13,7 +13,8 @@ import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { checkRealPremium } from "./subscriptions";
-import { computeChannelNetRevenue, type EntitlementKind } from "./commissions";
+import { checkRealChannelMembership } from "./channelMemberships";
+import { computeChannelNetRevenue, type RevenueEntryKind } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
 
 export { StripeNotConfiguredError, getStripe };
@@ -188,15 +189,16 @@ export async function verifyCheckoutSession(
 
 export interface RealEntitlementResult {
   granted: boolean;
-  kind?: CheckoutKind | "subscription";
+  kind?: CheckoutKind | "subscription" | "membership";
   expiresAt?: string;
 }
 
 /** A subscription-gated video (access_models includes "subscription") needs no per-video
  * entitlement row at all — an active Nexus Premium subscription covers every one of
- * them. Checked as a fallback, after the per-video entitlement lookup finds nothing, so
- * a video that's both individually owned *and* subscription-gated still reports the more
- * specific reason. */
+ * them, and a membership-gated video is covered the same way by an active membership on
+ * that specific channel. Checked as a fallback, after the per-video entitlement lookup
+ * finds nothing, so a video that's both individually owned *and* subscription/membership-
+ * gated still reports the more specific reason. */
 export async function checkRealEntitlement(accountId: string, videoId: string): Promise<RealEntitlementResult> {
   // Lazily expires a rental on read rather than needing a scheduled job — same pattern
   // as videoPublishing.ts's activateScheduledVideos(), correct at this app's read-heavy
@@ -215,12 +217,20 @@ export async function checkRealEntitlement(accountId: string, videoId: string): 
   );
   if (row) return { granted: true, kind: row.kind, expiresAt: row.expires_at ?? undefined };
 
-  const priceRow = await queryOne<{ access_models: string[] }>(
-    `select access_models from video_pricing where video_id = $1`,
+  const priceRow = await queryOne<{ access_models: string[]; channel_id: string }>(
+    `select p.access_models, v.channel_id from video_pricing p
+     join videos v on v.id = p.video_id
+     where p.video_id = $1`,
     [videoId],
   );
   if (priceRow?.access_models.includes("subscription") && (await checkRealPremium(accountId))) {
     return { granted: true, kind: "subscription" };
+  }
+  if (
+    priceRow?.access_models.includes("membership") &&
+    (await checkRealChannelMembership(accountId, priceRow.channel_id))
+  ) {
+    return { granted: true, kind: "membership" };
   }
 
   return { granted: false };
@@ -283,7 +293,7 @@ export interface RealRevenueTransaction {
   id: string;
   date: string;
   description: string;
-  kind: "rental" | "purchase" | "ppv";
+  kind: "rental" | "purchase" | "ppv" | "membership";
   grossMinor: number;
   feeMinor: number;
   netMinor: number;
@@ -299,15 +309,17 @@ export interface RealRevenueSummary {
   transactions: RealRevenueTransaction[];
 }
 
-const REVENUE_KIND_LABEL: Record<CheckoutKind, RealRevenueTransaction["kind"]> = {
+const REVENUE_KIND_LABEL: Record<RevenueEntryKind, RealRevenueTransaction["kind"]> = {
   buy: "purchase",
   rent: "rental",
   ppv: "ppv",
+  membership: "membership",
 };
-const REVENUE_STREAM_LABEL: Record<CheckoutKind, string> = {
+const REVENUE_STREAM_LABEL: Record<RevenueEntryKind, string> = {
   buy: "Purchases",
   rent: "Rentals",
   ppv: "Pay-per-view",
+  membership: "Memberships",
 };
 
 /** Real gross-and-net revenue for a channel — the full "revenue ledger with
@@ -319,7 +331,7 @@ const REVENUE_STREAM_LABEL: Record<CheckoutKind, string> = {
 export async function getRealRevenueSummary(channelId: string): Promise<RealRevenueSummary> {
   const { entries, grossMinor, netMinor, currency } = await computeChannelNetRevenue(channelId);
 
-  const byKind = new Map<EntitlementKind, number>();
+  const byKind = new Map<RevenueEntryKind, number>();
   for (const entry of entries) {
     byKind.set(entry.kind, (byKind.get(entry.kind) ?? 0) + entry.grossMinor);
   }

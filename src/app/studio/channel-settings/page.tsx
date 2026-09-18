@@ -2,6 +2,7 @@
 
 import { IconCheck, IconExternalLink, IconPencil } from "@tabler/icons-react";
 import * as React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,116 @@ import { looksLikeRealId } from "@/lib/mock-api";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import { useChannel, useCurrentUser, useUpdateChannel } from "@/lib/mock-api/hooks";
 import { compactNumber, formatDate } from "@/lib/utils";
+
+interface MembershipTier {
+  priceMinor: number;
+  currency: string;
+  isEnabled: boolean;
+}
+
+/** Real per-channel membership pricing — no mock counterpart to preserve a signature
+ * for (the mock's own "Offer channel memberships" switch has always been local
+ * component state that saved nowhere), so this talks to the new API directly, same as
+ * studio/revenue's usePayoutStatus(). */
+function useMembershipTier(channelId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["membership-tier", channelId],
+    queryFn: async (): Promise<MembershipTier | null> => {
+      const res = await fetch(`/api/channels/${channelId}/membership-tier/`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled,
+  });
+}
+
+function useSaveMembershipTier(channelId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: MembershipTier) => {
+      const res = await fetch(`/api/channels/${channelId}/membership-tier/`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          priceMinor: input.priceMinor,
+          currency: input.currency,
+          isEnabled: input.isEnabled,
+          benefits: ["Members-only content", "Supports this channel directly"],
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not save membership settings.");
+      }
+      return res.json() as Promise<MembershipTier>;
+    },
+    onSuccess: () => client.invalidateQueries({ queryKey: ["membership-tier", channelId] }),
+  });
+}
+
+function RealMembershipSettings({ channelId }: { channelId: string }) {
+  const { data: tier, isLoading } = useMembershipTier(channelId, true);
+  const saveTier = useSaveMembershipTier(channelId);
+  const { toast } = useToast();
+
+  const [enabled, setEnabled] = React.useState(false);
+  const [price, setPrice] = React.useState("4.00");
+
+  React.useEffect(() => {
+    if (isLoading) return;
+    setEnabled(tier?.isEnabled ?? false);
+    setPrice(tier ? (tier.priceMinor / 100).toFixed(2) : "4.00");
+  }, [tier, isLoading]);
+
+  const dirty = tier ? enabled !== tier.isEnabled || price !== (tier.priceMinor / 100).toFixed(2) : true;
+
+  const save = async () => {
+    const priceMinor = Math.round(Number(price) * 100);
+    if (!Number.isInteger(priceMinor) || priceMinor <= 0) {
+      toast({ title: "Enter a price greater than £0.00", tone: "error" });
+      return;
+    }
+    try {
+      await saveTier.mutateAsync({ priceMinor, currency: tier?.currency ?? "GBP", isEnabled: enabled });
+      toast({ title: "Membership settings saved" });
+    } catch (err) {
+      toast({
+        title: "Couldn't save membership settings",
+        description: err instanceof Error ? err.message : undefined,
+        tone: "error",
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <Switch
+        checked={enabled}
+        onCheckedChange={setEnabled}
+        label="Offer channel memberships"
+        description="Lets viewers subscribe monthly for members-only content, via a real Stripe checkout."
+      />
+      {enabled ? (
+        <Field label="Monthly price (GBP)" htmlFor="membership-price">
+          <Input
+            id="membership-price"
+            type="number"
+            min="0.50"
+            step="0.50"
+            value={price}
+            onChange={(event) => setPrice(event.target.value)}
+            className="w-32"
+          />
+        </Field>
+      ) : null}
+      {dirty ? (
+        <Button size="sm" onClick={save} loading={saveTier.isPending}>
+          Save membership settings
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 const LANGUAGES = [
   "English", "Welsh", "German", "French", "Spanish", "Portuguese", "Polish", "Urdu", "Sinhala", "Tamil",
@@ -340,12 +451,16 @@ export default function ChannelSettingsPage() {
               label="Allow advertising on my content"
               description="Enables pre-roll, mid-roll and overlay placements and the associated revenue share."
             />
-            <Switch
-              checked={membershipsEnabled}
-              onCheckedChange={setMembershipsEnabled}
-              label="Offer channel memberships"
-              description="Lets viewers subscribe monthly for members-only content."
-            />
+            {isRealChannel ? (
+              <RealMembershipSettings channelId={channelId} />
+            ) : (
+              <Switch
+                checked={membershipsEnabled}
+                onCheckedChange={setMembershipsEnabled}
+                label="Offer channel memberships"
+                description="Lets viewers subscribe monthly for members-only content."
+              />
+            )}
             <Switch
               checked={commentsEnabled}
               onCheckedChange={setCommentsEnabled}

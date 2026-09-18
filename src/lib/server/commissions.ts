@@ -52,6 +52,7 @@ function pickEffectiveRate(rates: CommissionRate[], scope: CommissionScope, at: 
 }
 
 export type EntitlementKind = "buy" | "rent" | "ppv";
+export type RevenueEntryKind = EntitlementKind | "membership";
 
 function scopeForEntitlementKind(kind: EntitlementKind): CommissionScope {
   return kind === "ppv" ? "ppv" : "purchase_rental";
@@ -59,7 +60,7 @@ function scopeForEntitlementKind(kind: EntitlementKind): CommissionScope {
 
 export interface ChannelRevenueEntry {
   id: string;
-  kind: EntitlementKind;
+  kind: RevenueEntryKind;
   title: string;
   createdAt: string;
   grossMinor: number;
@@ -75,12 +76,11 @@ export interface ChannelRevenue {
   currency: string;
 }
 
-/** One-time-purchase (buy/rent/ppv) revenue only — channel memberships aren't real yet
- * (see the subscriptions migration's own header comment), so there's nothing of that
- * scope to include here today; the "membership" commission rate exists for when that
- * lands. */
+/** One-time purchases (buy/rent/ppv) plus recurring channel-membership payments — the
+ * only two real revenue sources a channel has. Combined and re-sorted by date so the
+ * ledger reads as one timeline rather than two lists stitched together. */
 export async function computeChannelNetRevenue(organizationId: string): Promise<ChannelRevenue> {
-  const rows = await query<{
+  const entitlementRows = await query<{
     id: string;
     kind: EntitlementKind;
     amount_minor: number;
@@ -95,17 +95,30 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
      order by e.created_at desc`,
     [organizationId],
   );
+  const membershipRows = await query<{
+    id: string;
+    amount_minor: number;
+    currency: string;
+    created_at: string;
+  }>(
+    `select id, amount_minor, currency, created_at from membership_payments
+     where channel_id = $1
+     order by created_at desc`,
+    [organizationId],
+  );
   const rates = await listCommissionRates();
 
   let grossMinor = 0;
   let netMinor = 0;
-  const entries = rows.map((row) => {
+  const entries: ChannelRevenueEntry[] = [];
+
+  for (const row of entitlementRows) {
     const pct = pickEffectiveRate(rates, scopeForEntitlementKind(row.kind), new Date(row.created_at));
     const feeMinor = Math.round((row.amount_minor * pct) / 100);
     const rowNetMinor = row.amount_minor - feeMinor;
     grossMinor += row.amount_minor;
     netMinor += rowNetMinor;
-    return {
+    entries.push({
       id: row.id,
       kind: row.kind,
       title: row.title,
@@ -114,8 +127,28 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
       feeMinor,
       netMinor: rowNetMinor,
       currency: row.currency,
-    };
-  });
+    });
+  }
 
-  return { entries, grossMinor, netMinor, currency: rows[0]?.currency ?? "GBP" };
+  for (const row of membershipRows) {
+    const pct = pickEffectiveRate(rates, "membership", new Date(row.created_at));
+    const feeMinor = Math.round((row.amount_minor * pct) / 100);
+    const rowNetMinor = row.amount_minor - feeMinor;
+    grossMinor += row.amount_minor;
+    netMinor += rowNetMinor;
+    entries.push({
+      id: row.id,
+      kind: "membership",
+      title: "Channel membership",
+      createdAt: row.created_at,
+      grossMinor: row.amount_minor,
+      feeMinor,
+      netMinor: rowNetMinor,
+      currency: row.currency,
+    });
+  }
+
+  entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  return { entries, grossMinor, netMinor, currency: entries[0]?.currency ?? "GBP" };
 }

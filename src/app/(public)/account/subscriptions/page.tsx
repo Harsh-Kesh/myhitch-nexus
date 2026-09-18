@@ -11,8 +11,7 @@ import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
-import { channelById } from "@/lib/mock-api/data/channels";
-import { useCancelSubscription, useCurrentUser, useSubscriptions } from "@/lib/mock-api/hooks";
+import { useCancelSubscription, useChannel, useCurrentUser, useSubscriptions } from "@/lib/mock-api/hooks";
 import type { Subscription } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -71,115 +70,14 @@ export default function SubscriptionsPage() {
       {active.length > 0 ? (
         <section className="space-y-3">
           <h2 className="font-display text-lg font-semibold text-fg">Active</h2>
-          {active.map((subscription) => {
-            const channel = subscription.channelId
-              ? channelById(subscription.channelId)
-              : null;
-            return (
-              <Card key={subscription.id}>
-                <CardHeader
-                  title={
-                    <span className="flex flex-wrap items-center gap-2">
-                      {subscription.name}
-                      <Badge
-                        tone={subscription.cancelAtPeriodEnd ? "archived" : STATUS_TONE[subscription.status]}
-                        size="sm"
-                      >
-                        {subscription.cancelAtPeriodEnd ? "ending" : subscription.status}
-                      </Badge>
-                      <Badge tone="outline" size="sm">
-                        {subscription.interval}
-                      </Badge>
-                    </span>
-                  }
-                  description={
-                    subscription.status === "past-due"
-                      ? "Payment failed. Update the payment method to keep access."
-                      : subscription.cancelAtPeriodEnd
-                        ? `Access ends ${formatDate(subscription.renewsAt, "long")} — it won't renew`
-                        : `Renews ${formatDate(subscription.renewsAt, "long")}`
-                  }
-                  action={
-                    <span className="text-right">
-                      <span className="block font-display text-lg font-semibold text-fg nx-tnum">
-                        {formatCurrency(
-                          subscription.price.amount,
-                          subscription.price.currency,
-                        )}
-                      </span>
-                      <span className="block text-2xs text-fg-subtle">
-                        per {subscription.interval === "monthly" ? "month" : "year"}
-                      </span>
-                    </span>
-                  }
-                />
-                <CardBody className="space-y-4">
-                  {channel ? (
-                    <Link
-                      href={`/channel/${channel.id}`}
-                      className="flex items-center gap-2.5"
-                    >
-                      <Avatar
-                        name={channel.name}
-                        gradient={channel.avatarGradient}
-                        src={channel.avatarUrl}
-                        size="sm"
-                        verified={channel.verified}
-                      />
-                      <span className="text-sm text-fg-muted transition-colors hover:text-fg">
-                        {channel.name}
-                      </span>
-                    </Link>
-                  ) : null}
-
-                  <ul className="space-y-1.5">
-                    {subscription.benefits.map((benefit) => (
-                      <li key={benefit} className="flex items-start gap-2 text-sm text-fg-muted">
-                        <IconCheck className="mt-0.5 size-4 shrink-0 text-success" />
-                        {benefit}
-                      </li>
-                    ))}
-                  </ul>
-
-                  {subscription.status === "past-due" ? (
-                    <p className="flex items-start gap-2 rounded border border-danger/30 bg-danger/10 p-3 text-xs leading-relaxed text-fg-muted">
-                      <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
-                      The last payment was declined on{" "}
-                      {formatDate(subscription.renewsAt)}. Access continues for a
-                      short grace period.
-                    </p>
-                  ) : null}
-
-                  <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        toast({
-                          title: "Payment method",
-                          description: isRealAccount
-                            ? "Changing your card isn't built yet — cancel and re-subscribe with a different card for now."
-                            : "Payment details are never collected in this prototype.",
-                          tone: "info",
-                        })
-                      }
-                    >
-                      Update payment method
-                    </Button>
-                    {subscription.cancelAtPeriodEnd ? null : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setCancelling(subscription)}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
+          {active.map((subscription) => (
+            <SubscriptionCard
+              key={subscription.id}
+              subscription={subscription}
+              isRealAccount={isRealAccount}
+              onCancel={() => setCancelling(subscription)}
+            />
+          ))}
         </section>
       ) : null}
 
@@ -224,5 +122,116 @@ export default function SubscriptionsPage() {
         loading={cancelSubscription.isPending}
       />
     </div>
+  );
+}
+
+/** Its own component so useChannel() (real/mock-aware — see mock-api's getChannel())
+ * can be called once per row without breaking the rules of hooks inside the .map()
+ * above. Works for a real channel-membership subscription's real uuid the same way it
+ * already does for a mock channel id. */
+function SubscriptionCard({
+  subscription,
+  isRealAccount,
+  onCancel,
+}: {
+  subscription: Subscription;
+  isRealAccount: boolean;
+  onCancel: () => void;
+}) {
+  const { data: channel } = useChannel(subscription.channelId ?? "");
+  const { toast } = useToast();
+
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex flex-wrap items-center gap-2">
+            {subscription.name}
+            <Badge
+              tone={subscription.cancelAtPeriodEnd ? "archived" : STATUS_TONE[subscription.status]}
+              size="sm"
+            >
+              {subscription.cancelAtPeriodEnd ? "ending" : subscription.status}
+            </Badge>
+            <Badge tone="outline" size="sm">
+              {subscription.interval}
+            </Badge>
+          </span>
+        }
+        description={
+          subscription.status === "past-due"
+            ? "Payment failed. Update the payment method to keep access."
+            : subscription.cancelAtPeriodEnd
+              ? `Access ends ${formatDate(subscription.renewsAt, "long")} — it won't renew`
+              : `Renews ${formatDate(subscription.renewsAt, "long")}`
+        }
+        action={
+          <span className="text-right">
+            <span className="block font-display text-lg font-semibold text-fg nx-tnum">
+              {formatCurrency(subscription.price.amount, subscription.price.currency)}
+            </span>
+            <span className="block text-2xs text-fg-subtle">
+              per {subscription.interval === "monthly" ? "month" : "year"}
+            </span>
+          </span>
+        }
+      />
+      <CardBody className="space-y-4">
+        {channel ? (
+          <Link href={`/channel/${channel.id}`} className="flex items-center gap-2.5">
+            <Avatar
+              name={channel.name}
+              gradient={channel.avatarGradient}
+              src={channel.avatarUrl}
+              size="sm"
+              verified={channel.verified}
+            />
+            <span className="text-sm text-fg-muted transition-colors hover:text-fg">
+              {channel.name}
+            </span>
+          </Link>
+        ) : null}
+
+        <ul className="space-y-1.5">
+          {subscription.benefits.map((benefit) => (
+            <li key={benefit} className="flex items-start gap-2 text-sm text-fg-muted">
+              <IconCheck className="mt-0.5 size-4 shrink-0 text-success" />
+              {benefit}
+            </li>
+          ))}
+        </ul>
+
+        {subscription.status === "past-due" ? (
+          <p className="flex items-start gap-2 rounded border border-danger/30 bg-danger/10 p-3 text-xs leading-relaxed text-fg-muted">
+            <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+            The last payment was declined on {formatDate(subscription.renewsAt)}. Access
+            continues for a short grace period.
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              toast({
+                title: "Payment method",
+                description: isRealAccount
+                  ? "Changing your card isn't built yet — cancel and re-subscribe with a different card for now."
+                  : "Payment details are never collected in this prototype.",
+                tone: "info",
+              })
+            }
+          >
+            Update payment method
+          </Button>
+          {subscription.cancelAtPeriodEnd ? null : (
+            <Button variant="secondary" size="sm" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+        </div>
+      </CardBody>
+    </Card>
   );
 }
