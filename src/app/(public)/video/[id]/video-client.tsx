@@ -20,8 +20,9 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { VideoPlayer } from "@/components/player/video-player";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusBadge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { VideoCard } from "@/components/video/video-card";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { CONTENT_TYPE_LABELS, categoryById } from "@/lib/mock-api/data/categories";
 import {
   useComments,
@@ -52,6 +54,7 @@ import {
   useVideo,
   useWatchProgress,
   useWatchlist,
+  qk,
 } from "@/lib/mock-api/hooks";
 import { useChannel } from "@/lib/mock-api/hooks";
 import type { Video } from "@/lib/mock-api/types";
@@ -72,7 +75,7 @@ export function VideoDetailClient() {
 
   const { data: video, isLoading } = useVideo(id);
   const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
-  const { data: entitlement } = useEntitlement(id);
+  const { data: entitlement } = useEntitlement(id, currentUser?.id, !isCurrentUserLoading);
   const { data: channel } = useChannel(video?.channelId ?? "");
   const { data: related = [] } = useRelatedVideos(id);
   const { data: comments = [] } = useComments(id);
@@ -90,6 +93,52 @@ export function VideoDetailClient() {
   const purchase = usePurchaseAccess(id);
   const startSubscription = useStartSubscription();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+
+  // Landing back from a real Stripe Checkout redirect (see commerce.ts's
+  // createCheckoutSession()) — there's no synchronous "purchase complete" for a real
+  // payment, only this return trip. Verifying here (rather than only trusting the
+  // webhook) makes it feel instant and works even before a webhook endpoint is
+  // configured in the Stripe dashboard; the webhook remains the actual source of truth
+  // for fulfillment, this is a UX nicety on top of it (see fulfillCheckoutSession()'s
+  // idempotency comment).
+  React.useEffect(() => {
+    const checkout = searchParams.get("checkout");
+    if (!checkout) return;
+    const sessionId = searchParams.get("session_id");
+
+    (async () => {
+      if (checkout === "success" && sessionId) {
+        try {
+          const res = await fetch(`/api/checkout/verify/?session_id=${encodeURIComponent(sessionId)}`);
+          const data = (await res.json()) as { granted?: boolean; error?: string };
+          if (res.ok && data.granted) {
+            toast({ title: "Payment confirmed", description: "You can now watch this in full." });
+          } else {
+            toast({
+              title: "Still confirming your payment",
+              description: "This can take a few seconds — refresh if it doesn't unlock shortly.",
+              tone: "info",
+            });
+          }
+        } catch {
+          toast({
+            title: "Still confirming your payment",
+            description: "This can take a few seconds — refresh if it doesn't unlock shortly.",
+            tone: "info",
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: qk.entitlement(id) });
+        queryClient.invalidateQueries({ queryKey: qk.purchases });
+      } else if (checkout === "cancelled") {
+        toast({ title: "Checkout cancelled", description: "No payment was taken.", tone: "info" });
+      }
+      router.replace(`/video/${id}/`, { scroll: false });
+    })();
+    // Only ever run once per real navigation to this exact query string.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Redirect guests to the login page — video content requires sign-in. Gated on the
   // *current user* query's own loading state, not the video's (a bug: on a fresh
@@ -136,7 +185,22 @@ export function VideoDetailClient() {
   const { rentPrice, buyPrice, ppvPrice, accessModels } = video.pricing;
 
   const handlePurchase = async (kind: "buy" | "rent" | "ppv") => {
-    await purchase.mutateAsync(kind);
+    // A real checkout redirects the browser away and never resolves this promise (see
+    // purchaseAccess()'s header comment) — everything below only ever runs for the mock
+    // path. A real failure (payments not configured, already entitled, ...) does reject
+    // it, though, and needs handling here rather than becoming an unhandled rejection —
+    // found live by actually clicking through this against a real video with no Stripe
+    // keys configured yet, not by static review.
+    try {
+      await purchase.mutateAsync(kind);
+    } catch (err) {
+      toast({
+        title: "Couldn't start checkout",
+        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+      return;
+    }
     setPurchaseOpen(false);
     toast({
       title:
@@ -877,7 +941,11 @@ function PurchaseModal({
       open={open}
       onClose={onClose}
       title={`Get access to ${video.title}`}
-      description="Mock checkout. No payment provider is contacted and no card details are collected anywhere in this build."
+      description={
+        looksLikeRealId(video.id)
+          ? "You'll be taken to a secure Stripe checkout page to complete payment."
+          : "Mock checkout. No payment provider is contacted and no card details are collected anywhere in this build."
+      }
       size="md"
     >
       <div className="space-y-3">

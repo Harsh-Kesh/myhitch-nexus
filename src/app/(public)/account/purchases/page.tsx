@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { videoById } from "@/lib/mock-api/data/videos";
-import { usePurchases } from "@/lib/mock-api/hooks";
+import { useCurrentUser, usePurchases } from "@/lib/mock-api/hooks";
 import type { PurchaseRecord } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -31,6 +32,8 @@ const STATUS_TONE: Record<
 };
 
 export default function PurchasesPage() {
+  const { data: user } = useCurrentUser();
+  const isRealAccount = Boolean(user?.id && looksLikeRealId(user.id));
   const { data: purchases = [], isLoading } = usePurchases();
   const { toast } = useToast();
 
@@ -38,15 +41,15 @@ export default function PurchasesPage() {
     {
       key: "title",
       header: "Title",
-      sortValue: (row) => videoById(row.videoId)?.title ?? row.videoId,
+      sortValue: (row) => row.videoTitle ?? videoById(row.videoId)?.title ?? row.videoId,
       cell: (row) => {
-        const video = videoById(row.videoId);
+        const title = row.videoTitle ?? videoById(row.videoId)?.title ?? row.videoId;
         return (
           <Link
             href={`/video/${row.videoId}`}
             className="font-medium text-fg transition-colors hover:text-accent"
           >
-            {video?.title ?? row.videoId}
+            {title}
           </Link>
         );
       },
@@ -104,8 +107,8 @@ export default function PurchasesPage() {
           size="xs"
           onClick={() =>
             toast({
-              title: "Receipt generated",
-              description: `${row.invoiceNumber} — mock PDF, nothing is downloaded.`,
+              title: "Receipt download isn't built yet",
+              description: `Your invoice number is ${row.invoiceNumber}.`,
               tone: "info",
             })
           }
@@ -145,8 +148,7 @@ export default function PurchasesPage() {
           size="sm"
           onClick={() =>
             toast({
-              title: "Export queued",
-              description: "Mock CSV export — nothing leaves the browser.",
+              title: "CSV export isn't built yet",
               tone: "info",
             })
           }
@@ -164,8 +166,9 @@ export default function PurchasesPage() {
       />
 
       <p className="text-xs leading-relaxed text-fg-subtle">
-        Payments are mocked. No payment gateway, settlement or refund processing
-        exists anywhere in this build.
+        {isRealAccount
+          ? "Real payments via Stripe Checkout. Refund processing isn't built yet — contact support for a refund."
+          : "Payments are mocked. No payment gateway, settlement or refund processing exists anywhere in this build."}
       </p>
     </div>
   );

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cache } from "react";
+import { cache, Suspense } from "react";
 import { channelById } from "@/lib/mock-api/data/channels";
 import { videos } from "@/lib/mock-api/data/videos";
 import { looksLikeRealId } from "@/lib/mock-api";
@@ -111,7 +111,13 @@ export default async function VideoDetailPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       ) : null}
-      <VideoDetailClient />
+      {/* VideoDetailClient reads useSearchParams() (to catch a Stripe Checkout
+          `?checkout=` return) — required on a statically-generated page, and harmless
+          here since the client component's own isLoading skeleton is already the first
+          paint in every case. */}
+      <Suspense fallback={null}>
+        <VideoDetailClient />
+      </Suspense>
     </>
   );
 }

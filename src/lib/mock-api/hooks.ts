@@ -187,11 +187,20 @@ export const useIsFollowing = (channelId: string) =>
 
 /* ---------------------------- Entitlement ------------------------------- */
 
-export const useEntitlement = (videoId: string) =>
+// userId defaults to the mock viewer id — real callers pass the real signed-in
+// account's id (video-client.tsx does, from useCurrentUser()) so a real video's
+// entitlement check in mock-api/index.ts's getEntitlement() actually queries against
+// the right account instead of a hardcoded mock id that can never own anything real.
+// `ready` defaults to true for every other caller of this hook; video-client.tsx passes
+// `!isCurrentUserLoading` so this never fires (and caches) with the default userId
+// before the real one is known — qk.entitlement() doesn't key on userId, so a query
+// that already ran with the wrong id wouldn't otherwise refetch once the real one
+// arrives (the same hydration-ordering gap admin-shell.tsx hit — see its own comment).
+export const useEntitlement = (videoId: string, userId = "usr_viewer", ready = true) =>
   useQuery({
     queryKey: qk.entitlement(videoId),
-    queryFn: () => api.getEntitlement("usr_viewer", videoId),
-    enabled: Boolean(videoId),
+    queryFn: () => api.getEntitlement(userId, videoId),
+    enabled: Boolean(videoId) && ready,
   });
 
 export const useRequestCountry = () =>

@@ -36,6 +36,7 @@ import type {
   LiveEvent,
   MagazineArticle,
   ModerationAction,
+  Money,
   ModerationItem,
   Organisation,
   PlatformConfigTables,
@@ -433,6 +434,26 @@ export async function getEntitlement(
     };
   }
 
+  // Real Stripe-backed entitlements (docs/DEVELOPMENT-PLAN.md's P3 first slice) — for a
+  // real video and a real signed-in account, this is the actual "did they buy/rent/
+  // unlock it" answer; store.purchases below can never contain a real video's id, so it
+  // would otherwise just fall through to the honest preview state every real paid video
+  // used to hit unconditionally.
+  if (looksLikeRealId(videoId) && looksLikeRealId(userId)) {
+    const res = await fetch(`/api/videos/${videoId}/entitlement/`);
+    if (res.ok) {
+      const real = (await res.json()) as { granted: boolean; kind?: "buy" | "rent" | "ppv"; expiresAt?: string };
+      if (real.granted) {
+        return {
+          ...base,
+          granted: true,
+          reason: real.kind === "rent" ? "rented" : real.kind === "ppv" ? "ticket" : "purchased",
+          expiresAt: real.expiresAt,
+        };
+      }
+    }
+  }
+
   const owned = store.purchases.find(
     (purchase) =>
       purchase.videoId === videoId &&
@@ -474,11 +495,30 @@ export async function getEntitlement(
   };
 }
 
-/** Mock checkout. No payment provider is contacted — see §12. */
+/** Mock checkout for a mock video — see §12. Real videos redirect to a real Stripe
+ * Checkout session instead (docs/DEVELOPMENT-PLAN.md's P3 first slice); the browser
+ * navigates away, so this deliberately never resolves in that branch — there is no
+ * synchronous "purchase complete" for a real payment, only a redirect back once Stripe
+ * confirms it (see video-client.tsx's handling of the `?checkout=` return param). */
 export async function purchaseAccess(
   videoId: string,
   kind: "buy" | "rent" | "ppv" | "ticket",
 ): Promise<PurchaseRecord> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/checkout/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not start checkout.");
+    }
+    const { url } = (await res.json()) as { url: string };
+    window.location.href = url;
+    return new Promise<PurchaseRecord>(() => {});
+  }
+
   await latency("slow");
   const video = store.videos.find((item) => item.id === videoId);
   const price =
@@ -2346,6 +2386,36 @@ export async function setActiveRole(role: User["activeRole"]): Promise<User> {
 }
 
 export async function getPurchases(): Promise<PurchaseRecord[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/purchases/`);
+    if (!res.ok) throw new Error(`GET /api/purchases failed with ${res.status}`);
+    const data = (await res.json()) as {
+      items: Array<{
+        id: string;
+        videoId: string;
+        videoTitle: string;
+        kind: "buy" | "rent" | "ppv";
+        amountMinor: number;
+        currency: string;
+        status: PurchaseRecord["status"];
+        invoiceNumber: string;
+        purchasedAt: string;
+        expiresAt: string | null;
+      }>;
+    };
+    return data.items.map((item) => ({
+      id: item.id,
+      videoId: item.videoId,
+      videoTitle: item.videoTitle,
+      kind: item.kind,
+      price: { amount: item.amountMinor, currency: item.currency as Money["currency"] },
+      purchasedAt: item.purchasedAt,
+      expiresAt: item.expiresAt,
+      status: item.status,
+      invoiceNumber: item.invoiceNumber,
+    }));
+  }
+
   await latency("fast");
   return clone(store.purchases);
 }

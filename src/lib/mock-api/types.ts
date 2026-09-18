@@ -447,6 +447,10 @@ export interface WatchProgress {
 export interface PurchaseRecord {
   id: string;
   videoId: string;
+  /** Only set for a real purchase — videoById() (mock-only lookup) can never resolve a
+   * real video's id, so without this the purchases page would show a bare uuid instead
+   * of a title. */
+  videoTitle?: string;
   kind: "buy" | "rent" | "ppv" | "subscription" | "membership";
   price: Money;
   purchasedAt: string;
