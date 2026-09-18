@@ -482,9 +482,21 @@ export function VideoDetailClient() {
                           disabled={!commentBody.trim()}
                           loading={postComment.isPending}
                           onClick={async () => {
-                            await postComment.mutateAsync(commentBody.trim());
+                            const posted = await postComment.mutateAsync(commentBody.trim());
                             setCommentBody("");
-                            toast({ title: "Comment posted" });
+                            // A link auto-holds a comment for the channel to review (see
+                            // engagement.ts's postComment()) — it won't show up in the
+                            // list below yet, so say so rather than letting it silently
+                            // vanish with no explanation.
+                            toast(
+                              posted.status === "held"
+                                ? {
+                                    title: "Comment awaiting review",
+                                    description: "It contains a link, so it's held until the channel approves it.",
+                                    tone: "info",
+                                  }
+                                : { title: "Comment posted" },
+                            );
                           }}
                         >
                           Comment

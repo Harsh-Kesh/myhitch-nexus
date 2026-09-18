@@ -16,6 +16,7 @@ import { nextId, persistLogin, recordAudit, store } from "./store";
 import type {
   AdminCase,
   AdminDashboardSummary,
+  AdminUserRow,
   AnalyticsRange,
   AppNotification,
   AuditLogEntry,
@@ -293,16 +294,14 @@ export async function getChannelVideos(
   channelId: string,
   opts: { includeUnpublished?: boolean } = {},
 ): Promise<Video[]> {
-  // Live 2026-09-14 for the public case, real ids only (see looksLikeRealId's comment
-  // above) — GET /api/channels/{id}/videos/ has no concept of a caller identity yet
-  // (Auth0 paused), so it can only ever serve published content, which is exactly what
-  // every viewer-facing caller needs. Studio/Business pages pass
-  // includeUnpublished:true to see their own drafts, which stays on mock until there's
-  // a real authenticated owner check to gate it — serving draft content through an
-  // unauthenticated route would be a real content-exposure bug, not a shortcut worth
-  // taking for a quick swap.
-  if (!opts.includeUnpublished && looksLikeRealId(channelId)) {
-    const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/videos/`);
+  // Live 2026-09-14 for the public (published-only) case; live 2026-09-17 for
+  // includeUnpublished too, now that GET /api/channels/{id}/videos/ has a real
+  // authenticated membership check to gate draft/pending/scheduled content behind (see
+  // that route's own header comment) — Studio's and Business's own content lists no
+  // longer fall back to mock data for a real channel.
+  if (looksLikeRealId(channelId)) {
+    const qs = opts.includeUnpublished ? "?includeUnpublished=true" : "";
+    const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/videos/${qs}`);
     if (!res.ok) {
       throw new Error(`GET /api/channels/${channelId}/videos failed with ${res.status}`);
     }
@@ -733,6 +732,16 @@ export async function moderateComment(
   commentId: string,
   action: "publish" | "hold" | "remove" | "pin" | "heart",
 ): Promise<Comment | null> {
+  if (looksLikeRealId(commentId)) {
+    const res = await fetch(`/api/studio/comments/${commentId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as Comment;
+  }
+
   await latency("fast");
   const comment = store.comments.find((item) => item.id === commentId);
   if (!comment) return null;
@@ -754,6 +763,15 @@ export async function moderateComment(
 }
 
 export async function getModerationComments(channelId: string): Promise<Comment[]> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/studio/comments/?channelId=${encodeURIComponent(channelId)}`);
+    if (!res.ok) {
+      throw new Error(`GET /api/studio/comments failed with ${res.status}`);
+    }
+    const data = (await res.json()) as { items: Comment[] };
+    return data.items;
+  }
+
   await latency("fast");
   const channelVideoIds = store.videos
     .filter((video) => video.channelId === channelId)
@@ -1431,6 +1449,19 @@ export async function updateVideoStatus(
   videoId: string,
   status: ContentStatus,
 ): Promise<Video | null> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/studio/videos/${videoId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not update the video's status.");
+    }
+    return (await res.json()) as Video;
+  }
+
   await latency();
   const video = store.videos.find((item) => item.id === videoId);
   if (!video) return null;
@@ -1768,6 +1799,14 @@ export async function getAdminSummary(): Promise<AdminDashboardSummary> {
 export async function getModerationQueue(
   queue?: ModerationItem["queue"],
 ): Promise<ModerationItem[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const qs = queue ? `?queue=${encodeURIComponent(queue)}` : "";
+    const res = await fetch(`/api/admin/moderation/${qs}`);
+    if (!res.ok) throw new Error(`GET /api/admin/moderation failed with ${res.status}`);
+    const data = (await res.json()) as { items: ModerationItem[] };
+    return data.items;
+  }
+
   await latency("fast");
   const items = queue
     ? store.moderationQueue.filter((item) => item.queue === queue)
@@ -1800,6 +1839,48 @@ export async function actionModerationItem(
   action: ModerationAction,
   reason: string,
 ): Promise<{ item: ModerationItem; audit: AuditLogEntry } | null> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/moderation/${itemId}/action/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { audit: { id: string; targetId: string } };
+    // Only `audit.id`/`audit.targetId` are ever read by a caller (the reviews page's
+    // toast) — `item` here is a placeholder to satisfy the shared mock/real return type,
+    // never rendered.
+    return {
+      item: {
+        id: itemId,
+        kind: "content",
+        targetId: data.audit.targetId,
+        title: "",
+        channelId: "",
+        submittedAt: new Date().toISOString(),
+        priority: "normal",
+        queue: "pending-review",
+        reportReasons: [],
+        reportCount: 0,
+        status: "actioned",
+        assignedTo: null,
+        notes: "",
+      },
+      audit: {
+        id: data.audit.id,
+        actor: store.user.name,
+        actorRole: "admin",
+        action: `moderation.${action.replace("-", "_")}`,
+        targetType: "content",
+        targetId: data.audit.targetId,
+        reason,
+        createdAt: new Date().toISOString(),
+        ip: "",
+        severity: "info",
+      },
+    };
+  }
+
   await latency();
   const item = store.moderationQueue.find((entry) => entry.id === itemId);
   if (!item) return null;
@@ -1874,6 +1955,20 @@ export async function getAuditLog(filters: {
   targetType?: string;
   query?: string;
 } = {}): Promise<AuditLogEntry[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const params = new URLSearchParams();
+    if (filters.severity) params.set("severity", filters.severity);
+    if (filters.targetType) params.set("targetType", filters.targetType);
+    if (filters.query) params.set("query", filters.query);
+    const qs = params.toString();
+    const res = await fetch(`/api/admin/audit-log/${qs ? `?${qs}` : ""}`);
+    if (!res.ok) throw new Error(`GET /api/admin/audit-log failed with ${res.status}`);
+    const data = (await res.json()) as { items: AuditLogEntry[] };
+    // filters.actor has no real column to match against (actor_account_id, not a name)
+    // and no caller passes it today — applied client-side if it ever does.
+    return filters.actor ? data.items.filter((entry) => entry.actor === filters.actor) : data.items;
+  }
+
   await latency("fast");
   return clone(
     store.auditLog.filter((entry) => {
@@ -1891,6 +1986,13 @@ export async function getAuditLog(filters: {
 }
 
 export async function getAdminUsers() {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/users/`);
+    if (!res.ok) throw new Error(`GET /api/admin/users failed with ${res.status}`);
+    const data = (await res.json()) as { items: AdminUserRow[] };
+    return data.items;
+  }
+
   await latency("fast");
   return clone(store.adminUsers);
 }
@@ -1899,6 +2001,16 @@ export async function updateUserRole(
   userId: string,
   roles: User["roles"],
 ): Promise<void> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/users/${userId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roles }),
+    });
+    if (!res.ok) throw new Error(`PATCH /api/admin/users/${userId} failed with ${res.status}`);
+    return;
+  }
+
   await latency("fast");
   const row = store.adminUsers.find((entry) => entry.id === userId);
   if (row) row.roles = roles;
@@ -1918,6 +2030,16 @@ export async function updateUserStatus(
   status: User["status"],
   reason: string,
 ): Promise<void> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/users/${userId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reason }),
+    });
+    if (!res.ok) throw new Error(`PATCH /api/admin/users/${userId} failed with ${res.status}`);
+    return;
+  }
+
   await latency("fast");
   const row = store.adminUsers.find((entry) => entry.id === userId);
   if (row) row.status = status;
@@ -1933,6 +2055,13 @@ export async function updateUserStatus(
 }
 
 export async function getOrganisations(): Promise<Organisation[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/organisations/`);
+    if (!res.ok) throw new Error(`GET /api/admin/organisations failed with ${res.status}`);
+    const data = (await res.json()) as { items: Organisation[] };
+    return data.items;
+  }
+
   await latency("fast");
   return clone(store.organisations);
 }
@@ -1942,6 +2071,21 @@ export async function updateOrganisationStatus(
   status: Organisation["verificationStatus"],
   reason: string,
 ): Promise<Organisation | null> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/organisations/${orgId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reason }),
+    });
+    if (!res.ok) return null;
+    // Only ok/error is read by the caller (admin/organisations/page.tsx invalidates
+    // qk.organisations and refetches rather than using the return value) — refetch the
+    // one row rather than the whole list for a lighter round trip.
+    const refreshed = await fetch(`/api/admin/organisations/`);
+    const data = (await refreshed.json()) as { items: Organisation[] };
+    return data.items.find((org) => org.id === orgId) ?? null;
+  }
+
   await latency();
   const org = store.organisations.find((entry) => entry.id === orgId);
   if (!org) return null;

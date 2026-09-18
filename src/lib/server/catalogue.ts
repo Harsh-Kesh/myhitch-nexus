@@ -19,6 +19,7 @@
 import "server-only";
 import { query, queryOne } from "./db";
 import { getTypesenseClient, VIDEOS_COLLECTION } from "./typesense";
+import { activateScheduledVideos } from "./videoPublishing";
 
 export interface VideoPricing {
   accessModels: string[];
@@ -68,6 +69,7 @@ export interface VideoSummary {
   durationSeconds: number;
   releaseDate: string | null;
   publishedAt: string | null;
+  scheduledFor: string | null;
   language: string | null;
   country: string | null;
   pricing: VideoPricing;
@@ -105,6 +107,7 @@ interface VideoSummaryRow {
   duration_seconds: number;
   release_date: string | null;
   published_at: string | null;
+  scheduled_for: string | null;
   language: string | null;
   country: string | null;
   access_models: string[] | null;
@@ -146,7 +149,7 @@ const VIDEO_SUMMARY_COLUMNS = `
   v.id, v.slug, v.title, v.synopsis, v.channel_id,
   o.name as channel_name, o.handle as channel_handle,
   v.content_type, v.status, v.processing_status, v.thumbnail_url, v.poster_gradient, v.duration_seconds,
-  v.release_date, v.published_at, v.language, v.country,
+  v.release_date, v.published_at, v.scheduled_for, v.language, v.country,
   v.views, v.unique_viewers, v.likes, v.rating_average, v.rating_count,
   v.comment_count, v.watch_time_seconds, v.completion_rate,
   p.access_models, p.rent_price_minor, p.rent_price_currency,
@@ -179,6 +182,7 @@ function mapVideoSummary(row: VideoSummaryRow): VideoSummary {
     durationSeconds: row.duration_seconds,
     releaseDate: row.release_date,
     publishedAt: row.published_at,
+    scheduledFor: row.scheduled_for,
     language: row.language,
     country: row.country,
     pricing: {
@@ -672,7 +676,6 @@ export interface VideoDetail extends VideoSummary {
   hasAudioDescription: boolean;
   trailerAvailable: boolean;
   languageCode: string | null;
-  scheduledFor: string | null;
   sampleSrc: string | null;
   watermarkEnabled: boolean;
   seriesId: string | null;
@@ -698,6 +701,7 @@ export interface VideoDetail extends VideoSummary {
  * a 404, this layer just reports absence. pricing/rights come from mapVideoSummary()
  * (VIDEO_SUMMARY_COLUMNS already joins both) — no separate query for either here. */
 export async function getVideoById(id: string): Promise<VideoDetail | null> {
+  await activateScheduledVideos();
   const row = await queryOne<
     VideoSummaryRow & {
       hero_url: string | null;
@@ -705,7 +709,6 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
       has_audio_description: boolean;
       trailer_available: boolean;
       language_code: string | null;
-      scheduled_for: string | null;
       sample_src: string | null;
       watermark_enabled: boolean;
       series_id: string | null;
@@ -716,7 +719,7 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
   >(
     `select ${VIDEO_SUMMARY_COLUMNS},
        v.hero_url, v.production_company, v.has_audio_description, v.trailer_available,
-       v.language_code, v.scheduled_for, v.sample_src, v.watermark_enabled,
+       v.language_code, v.sample_src, v.watermark_enabled,
        v.series_id, s.title as series_title, v.season_number, v.episode_number
      from videos v
      ${VIDEO_SUMMARY_JOINS}
@@ -764,7 +767,6 @@ export async function getVideoById(id: string): Promise<VideoDetail | null> {
     hasAudioDescription: row.has_audio_description,
     trailerAvailable: row.trailer_available,
     languageCode: row.language_code,
-    scheduledFor: row.scheduled_for,
     sampleSrc: row.sample_src,
     watermarkEnabled: row.watermark_enabled,
     seriesId: row.series_id,
@@ -999,15 +1001,28 @@ export async function listChannels(): Promise<ChannelDetail[]> {
   }));
 }
 
-export async function getChannelVideos(channelId: string, limit = 24, offset = 0): Promise<VideoSummary[]> {
+/** `includeUnpublished` is for the owning channel's own Studio content list — the caller
+ * (GET /api/channels/[id]/videos) is responsible for checking that the requester is
+ * actually a member of `channelId` before ever setting it, since this returns draft/
+ * pending/scheduled/restricted rows too. Without it, only published content, same as
+ * before. */
+export async function getChannelVideos(
+  channelId: string,
+  opts: { limit?: number; offset?: number; includeUnpublished?: boolean } = {},
+): Promise<VideoSummary[]> {
+  if (opts.includeUnpublished) await activateScheduledVideos();
+  const limit = Math.min(Math.max(opts.limit ?? 24, 1), 100);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const statusFilter = opts.includeUnpublished ? "" : "and v.status = 'published'";
+  const orderBy = opts.includeUnpublished ? "v.created_at desc" : "v.published_at desc nulls last";
   const rows = await query<VideoSummaryRow>(
     `select ${VIDEO_SUMMARY_COLUMNS}
      from videos v
      ${VIDEO_SUMMARY_JOINS}
-     where v.channel_id = $1 and v.status = 'published'
-     order by v.published_at desc nulls last
+     where v.channel_id = $1 ${statusFilter}
+     order by ${orderBy}
      limit $2 offset $3`,
-    [channelId, Math.min(Math.max(limit, 1), 100), Math.max(offset, 0)],
+    [channelId, limit, offset],
   );
   return rows.map(mapVideoSummary);
 }

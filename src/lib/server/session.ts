@@ -79,7 +79,7 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
     `select a.id, a.email, a.full_name, a.handle, a.avatar_url, a.country, a.preferred_language
      from sessions s
      join accounts a on a.id = s.account_id
-     where s.token_hash = $1 and s.expires_at > now()`,
+     where s.token_hash = $1 and s.expires_at > now() and a.status not in ('suspended', 'closed')`,
     [hashToken(token)],
   );
   if (!row) return null;
@@ -113,6 +113,13 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
  * a session that already expired) is never an error. */
 export async function revokeSession(token: string): Promise<void> {
   await query(`delete from sessions where token_hash = $1`, [hashToken(token)]);
+}
+
+/** Deletes every session for an account — what makes an admin suspending/closing an
+ * account a real action instead of a status label with no effect (see
+ * adminUsers.ts's updateAdminUserStatus()). */
+export async function revokeAccountSessions(accountId: string): Promise<void> {
+  await query(`delete from sessions where account_id = $1`, [accountId]);
 }
 
 export function readSessionToken(request: NextRequest): string | null {

@@ -269,6 +269,18 @@ test.describe("Admin", () => {
   test("actioning a moderation item writes to the audit trail", async ({
     page,
   }) => {
+    // The demo account (mara@marasolace.example) is a real, Postgres-backed admin —
+    // /admin/reviews reads a real moderation_queue table for her, which starts empty,
+    // not the mock's always-populated 7-item seed (see docs/DEVELOPMENT-PLAN.md's
+    // 2026-09-17 admin-screens entry). Seed one real item the cheapest way the app
+    // itself produces one: a comment containing a link auto-holds for review.
+    const searchRes = await page.request.get("/api/videos/?query=Saltmarsh&limit=1");
+    const { items } = (await searchRes.json()) as { items: Array<{ id: string }> };
+    const commentRes = await page.request.post(`/api/videos/${items[0].id}/comments/`, {
+      data: { body: `Playwright moderation fixture ${Date.now()} — see http://example.com` },
+    });
+    expect(commentRes.ok()).toBe(true);
+
     await page.goto("/admin/reviews");
     await dismissDevOverlay(page);
 
@@ -300,7 +312,37 @@ test.describe("Admin", () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 
-  test("organisation verification updates the timeline", async ({ page }) => {
+  test("organisation verification updates the timeline", async ({ page, request }) => {
+    // Same real-data gap as the moderation test above: /admin/organisations only lists
+    // organisations that have actually submitted real verification, and Mara's own
+    // real channel hasn't. Seed one with a throwaway business account via a separate,
+    // page-independent request context (its own cookie jar) so this never touches
+    // Mara's own session or her real channel's verification status.
+    const email = `pw-org-fixture-${Date.now()}@example.com`;
+    await request.post("/api/auth/register/", {
+      data: { name: "Playwright Org Fixture", email, password: "password123", role: "business" },
+    });
+    const me = await request.get("/api/auth/me/");
+    const { account } = (await me.json()) as { account: { channelId: string } };
+    await request.patch("/api/studio/organization/verification/", {
+      data: {
+        organizationId: account.channelId,
+        legalEntityName: "Playwright Fixture Pty Ltd",
+        abn: "51824753556",
+        contactFullName: "Fixture Contact",
+        contactEmail: "fixture@example.com",
+        authorisedPersonName: "Fixture Contact",
+        informationAccurate: true,
+        authorityConfirmed: true,
+        termsAccepted: true,
+        privacyAccepted: true,
+      },
+    });
+    const submitRes = await request.post("/api/studio/organization/verification/submit/", {
+      data: { organizationId: account.channelId },
+    });
+    expect(submitRes.ok()).toBe(true);
+
     await page.goto("/admin/organisations");
     await dismissDevOverlay(page);
 

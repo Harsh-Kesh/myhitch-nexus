@@ -9,7 +9,8 @@ import { Card, CardBody, Stat } from "@/components/ui/card";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
 import { Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
-import { useAuditLog } from "@/lib/mock-api/hooks";
+import { looksLikeRealId } from "@/lib/mock-api";
+import { useAuditLog, useCurrentUser } from "@/lib/mock-api/hooks";
 import type { AuditLogEntry } from "@/lib/mock-api/types";
 import { cn, formatDateTime, relativeTime } from "@/lib/utils";
 
@@ -21,6 +22,8 @@ const SEVERITY_TONE = {
 } as const;
 
 export default function AuditLogPage() {
+  const { data: user } = useCurrentUser();
+  const isRealAdmin = Boolean(user?.id && looksLikeRealId(user.id));
   const [query, setQuery] = React.useState("");
   const [severity, setSeverity] = React.useState("");
   const [targetType, setTargetType] = React.useState("");
@@ -188,9 +191,9 @@ export default function AuditLogPage() {
         )}
 
         <p className="text-xs leading-relaxed text-fg-subtle">
-          In production this log would be append-only and retained per the
-          platform retention policy. Here it lives in browser memory and reseeds
-          on reload.
+          {isRealAdmin
+            ? "Recorded to a real, append-only log — nothing here is cleared on reload. A dedicated retention policy still needs defining before general availability."
+            : "In production this log would be append-only and retained per the platform retention policy. Here it lives in browser memory and reseeds on reload."}
         </p>
       </PageBody>
     </>

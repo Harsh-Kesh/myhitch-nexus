@@ -47,10 +47,10 @@ export default function BusinessChannelPage() {
   const isRealChannel = looksLikeRealId(channelId);
 
   const { data: channel } = useChannel(channelId);
-  // getChannelVideos(id, true) is unconditionally mock (no authenticated "my drafts"
-  // endpoint exists yet) — a real channel asks for published-only instead, which *does*
-  // hit the real API, rather than always showing an empty mock list.
-  const { data: videos = [] } = useChannelVideos(channelId, !isRealChannel);
+  // includeUnpublished:true now hits a real, membership-gated endpoint for a real
+  // channel (see src/app/api/channels/[id]/videos/route.ts) — shows drafts/pending/
+  // scheduled videos here too, not just published ones.
+  const { data: videos = [] } = useChannelVideos(channelId, true);
   const { data: analytics } = useCreatorAnalytics(channelId, "28d");
   const { data: campaigns = [] } = useCampaigns(channelId);
   const { data: leads = [] } = useLeads(channelId);

@@ -22,10 +22,9 @@ export default function BusinessVideosPage() {
   const { data: user } = useCurrentUser();
   const channelId =
     user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
-  const isRealChannel = looksLikeRealId(channelId);
-  // getChannelVideos(id, true) is unconditionally mock — a real channel asks for
-  // published-only instead, which does hit the real API (see business/channel/page.tsx).
-  const { data: videos = [], isLoading } = useChannelVideos(channelId, !isRealChannel);
+  // includeUnpublished:true now hits a real, membership-gated endpoint for a real
+  // channel (see src/app/api/channels/[id]/videos/route.ts).
+  const { data: videos = [], isLoading } = useChannelVideos(channelId, true);
   const [query, setQuery] = React.useState("");
 
   const filtered = videos.filter((video) =>

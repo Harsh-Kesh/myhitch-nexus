@@ -13,11 +13,12 @@
 // (generateSuggestedThumbnails below) became real on 2026-09-17, once ffprobe/ffmpeg
 // were already wired up for upload validation.
 import "server-only";
-import { queryOne, withTransaction } from "./db";
+import { query, queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
 import { probeMasterAsset } from "./videoValidation";
 import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
 import { seriesBelongsToChannel } from "./series";
+import { flagForReview } from "./moderation";
 import { pickGradient } from "../utils";
 
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
@@ -283,5 +284,105 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return id;
   });
 
+  // The moderation-queue counterpart of the needsReview override above — a video routed
+  // to 'pending' is otherwise invisible to /admin/reviews, which reads this table, not
+  // videos.status directly (docs/DEVELOPMENT-PLAN.md's admin-screens entry).
+  if (status === "pending") {
+    await flagForReview({
+      kind: "content",
+      targetId: videoId,
+      title: input.title.trim().slice(0, 200),
+      channelId: input.channelId,
+      queue: "pending-review",
+      notes: input.pricing.sponsored
+        ? "Routed to review: paid partnership declared."
+        : "Routed to review: an 18+ rating or a content label is present.",
+    });
+  }
+
   return { outcome: "success", id: videoId, slug, status };
+}
+
+const CREATOR_SETTABLE_STATUSES = ["draft", "private", "unlisted", "published", "archived"];
+
+export type UpdateVideoStatusResult =
+  | { outcome: "success"; status: string }
+  | { outcome: "not_channel_member" }
+  | { outcome: "not_found" }
+  | { outcome: "invalid"; reason: string };
+
+/** Real counterpart of the mock's updateVideoStatus() — post-creation status changes
+ * from Studio's content list. Re-derives the same needsReview gate publishVideo() itself
+ * enforces (a bypass attempt via this route, not just at creation, must still fail —
+ * same AC-3 spirit) rather than trusting the caller's requested status outright. */
+export async function updateVideoStatus(
+  accountId: string,
+  videoId: string,
+  status: string,
+): Promise<UpdateVideoStatusResult> {
+  const video = await queryOne<{ channel_id: string; title: string }>(
+    `select channel_id, title from videos where id = $1`,
+    [videoId],
+  );
+  if (!video) return { outcome: "not_found" };
+  if (!(await isChannelMember(accountId, video.channel_id))) {
+    return { outcome: "not_channel_member" };
+  }
+  if (!CREATOR_SETTABLE_STATUSES.includes(status)) {
+    return { outcome: "invalid", reason: "That status can't be set directly." };
+  }
+
+  let effectiveStatus = status;
+  if (status === "published") {
+    const [rights, pricing] = await Promise.all([
+      queryOne<{ age_rating: string; content_labels: string[] }>(
+        `select age_rating, content_labels from video_rights where video_id = $1`,
+        [videoId],
+      ),
+      queryOne<{ sponsored: boolean }>(`select sponsored from video_pricing where video_id = $1`, [videoId]),
+    ]);
+    const needsReview = Boolean(pricing?.sponsored) || rights?.age_rating === "18" || (rights?.content_labels.length ?? 0) > 0;
+    if (needsReview) effectiveStatus = "pending";
+  }
+
+  await query(
+    `update videos set status = $2, published_at = case when $2 = 'published' then coalesce(published_at, now()) else published_at end
+     where id = $1`,
+    [videoId, effectiveStatus],
+  );
+
+  if (effectiveStatus === "pending") {
+    await flagForReview({
+      kind: "content",
+      targetId: videoId,
+      title: video.title,
+      channelId: video.channel_id,
+      queue: "pending-review",
+      notes: "Routed to review: sponsored content, an 18+ rating, or a content label is present.",
+    });
+  } else {
+    // The creator moved it somewhere else themselves (e.g. pulled it back to draft, or
+    // archived it) — whatever triggered an earlier review is moot now, so don't leave a
+    // phantom "open" queue item for an admin to act on (same reasoning as
+    // moderateComment()'s own dismissal in engagement.ts).
+    await query(
+      `update moderation_queue set status = 'dismissed' where kind = 'content' and target_id = $1 and status = 'open'`,
+      [videoId],
+    );
+  }
+
+  return { outcome: "success", status: effectiveStatus };
+}
+
+/** Flips any video whose scheduled_for has arrived to published — a pull-based
+ * activation run on read (see catalogue.ts's getChannelVideos()/getVideoById()) rather
+ * than a cron worker, since no job-scheduling infrastructure exists yet and this is
+ * correct at the read-heavy scale this app runs at today: a single cheap, indexed
+ * UPDATE, never a wasted one (the WHERE clause matches nothing outside the exact window
+ * a scheduled video needs it). */
+export async function activateScheduledVideos(): Promise<void> {
+  await query(
+    `update videos set status = 'published', published_at = coalesce(published_at, now())
+     where status = 'scheduled' and scheduled_for is not null and scheduled_for <= now()`,
+  );
 }

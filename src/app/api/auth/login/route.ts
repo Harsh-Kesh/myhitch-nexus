@@ -3,6 +3,7 @@
 // verifyAuth0Password() from auth0Sync.ts (same three-outcome shape, plus an
 // mfa_required branch to wire up) — see src/lib/server/localPassword.ts's header.
 import { NextResponse, type NextRequest } from "next/server";
+import { queryOne } from "@/lib/server/db";
 import { toMockRoles } from "@/lib/server/rbac";
 import { verifyLocalPassword } from "@/lib/server/localPassword";
 import { createSession, getSessionAccount, setSessionCookie } from "@/lib/server/session";
@@ -37,6 +38,16 @@ export async function POST(request: NextRequest) {
   }
   if (result.outcome === "invalid_credentials") {
     return NextResponse.json({ error: "That email or password is not correct." }, { status: 401 });
+  }
+
+  const accountStatus = await queryOne<{ status: string }>(`select status from accounts where id = $1`, [
+    result.accountId,
+  ]);
+  if (accountStatus?.status === "suspended" || accountStatus?.status === "closed") {
+    return NextResponse.json(
+      { error: "This account has been suspended. Contact support if you think this is a mistake." },
+      { status: 403 },
+    );
   }
 
   const session = await createSession(result.accountId, {

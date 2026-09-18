@@ -14,9 +14,18 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { useAdminSummary } from "@/lib/mock-api/hooks";
+import { useAdminSummary, useCurrentUser } from "@/lib/mock-api/hooks";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
+  // Every admin data function (getModerationQueue, getAdminUsers, ...) branches
+  // real/mock on store.user.id, which only gets hydrated to the real signed-in
+  // account once useCurrentUser() resolves and calls applyRealAccount() — see
+  // mock-api/index.ts's header comment on that function. Without gating children on
+  // it, a page's own queries (e.g. useModerationQueue() in /admin/reviews) fire in
+  // the same render pass as this shell, before that hydration has happened, and
+  // permanently cache the wrong (mock) branch's result — found by actually logging
+  // in as a real admin and seeing the seeded mock queue instead of the real one.
+  const { isLoading: isUserLoading } = useCurrentUser();
   const { data: summary } = useAdminSummary();
 
   const reviewCount =
@@ -80,7 +89,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         },
       ]}
     >
-      {children}
+      {isUserLoading ? null : children}
     </WorkspaceShell>
   );
 }

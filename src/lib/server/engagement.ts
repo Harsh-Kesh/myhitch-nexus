@@ -7,6 +7,7 @@
 import "server-only";
 import { pickGradient, slugify } from "@/lib/utils";
 import { query, queryOne } from "./db";
+import { flagForReview, recordAudit } from "./moderation";
 
 /* ------------------------------ Watchlist -------------------------------- */
 
@@ -148,11 +149,16 @@ const COMMENT_COLUMNS = `
 const COMMENT_JOIN = `join accounts a on a.id = c.account_id`;
 
 export async function getComments(videoId: string): Promise<EngagementComment[]> {
+  // 'held' is deliberately excluded here too, not just 'removed' — a held comment is
+  // awaiting moderation and shouldn't be publicly visible yet (the real gap the
+  // comment-hold-rules slice of docs/DEVELOPMENT-PLAN.md's P2 entry closes: this
+  // previously only excluded 'removed', so a real held comment was shown to every viewer
+  // anyway, same as if it had never been held at all).
   const rows = await query<CommentRow>(
     `select ${COMMENT_COLUMNS}
      from video_comments c
      ${COMMENT_JOIN}
-     where c.video_id = $1 and c.status != 'removed'
+     where c.video_id = $1 and c.status = 'published'
      order by c.created_at asc`,
     [videoId],
   );
@@ -171,19 +177,52 @@ export async function getComments(videoId: string): Promise<EngagementComment[]>
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.likes - a.likes);
 }
 
+// A free, zero-vendor comment-hold rule (docs/DEVELOPMENT-PLAN.md's P2 entry): any link
+// is auto-held for the channel to review before it's shown, the same "hold anything with
+// a URL" heuristic most platforms ship before ever paying for a real spam/abuse
+// classifier (that's the AWS Rekognition/Sightengine vendor decision already deferred on
+// cost — see the moderation-direction dev-plan entry). Deliberately simple: it costs
+// nothing, catches the single most common spam pattern, and never blocks a comment
+// outright — a channel owner can always publish it from Studio.
+const LINK_PATTERN = /https?:\/\/|www\./i;
+
 export async function postComment(
   author: EngagementAuthor,
   videoId: string,
   body: string,
 ): Promise<EngagementComment> {
+  const autoHold = LINK_PATTERN.test(body);
+  const status = autoHold ? "held" : "published";
+  const heldReason = autoHold ? "Contains a link — awaiting channel review." : null;
+
   const row = await queryOne<{ id: string; created_at: string }>(
-    `insert into video_comments (video_id, account_id, body)
-     values ($1, $2, $3)
+    `insert into video_comments (video_id, account_id, body, status, held_reason)
+     values ($1, $2, $3, $4, $5)
      returning id, created_at`,
-    [videoId, author.id, body],
+    [videoId, author.id, body, status, heldReason],
   );
   if (!row) throw new Error("Insert into video_comments returned no row.");
+  // Deliberately incremented even for a held comment — comment_count is a "how much
+  // engagement" signal, not "how many are publicly visible right now", same distinction
+  // videos.status already draws for pending/scheduled content.
   await query(`update videos set comment_count = comment_count + 1 where id = $1`, [videoId]);
+
+  if (autoHold) {
+    const video = await queryOne<{ channel_id: string; title: string }>(
+      `select channel_id, title from videos where id = $1`,
+      [videoId],
+    );
+    if (video) {
+      await flagForReview({
+        kind: "comment",
+        targetId: row.id,
+        title: `Comment on "${video.title}"`,
+        channelId: video.channel_id,
+        queue: "pending-review",
+        notes: heldReason ?? "",
+      });
+    }
+  }
 
   return {
     id: row.id,
@@ -196,7 +235,8 @@ export async function postComment(
     likes: 0,
     pinned: false,
     heartedByCreator: false,
-    status: "published",
+    status,
+    heldReason: heldReason ?? undefined,
     replies: [],
   };
 }
@@ -233,6 +273,94 @@ export async function replyToComment(
   if (!parentRow) return null;
   const replies = rows.filter((row) => row.parent_comment_id === commentId).map(mapReplyRow);
   return { ...mapCommentRow(parentRow), replies };
+}
+
+/** Every comment on any of `channelId`'s videos, every status included — the moderation
+ * view (Studio's Comments page), unlike getComments() which is the public, published-
+ * only one. No ownership check here; the route calling this is responsible for it. */
+export async function listChannelComments(channelId: string): Promise<EngagementComment[]> {
+  const rows = await query<CommentRow>(
+    `select ${COMMENT_COLUMNS}
+     from video_comments c
+     ${COMMENT_JOIN}
+     join videos v on v.id = c.video_id
+     where v.channel_id = $1
+     order by c.created_at desc`,
+    [channelId],
+  );
+  return rows.filter((row) => !row.parent_comment_id).map((row) => ({ ...mapCommentRow(row), replies: [] }));
+}
+
+export type ModerateCommentAction = "publish" | "hold" | "remove" | "pin" | "heart";
+
+export type ModerateCommentResult =
+  | { outcome: "success"; comment: Omit<EngagementComment, "replies"> }
+  | { outcome: "not_found" }
+  | { outcome: "not_channel_member" };
+
+/** Real counterpart of the mock's moderateComment() — a channel owner acting on a
+ * comment on one of their own videos. Ownership is checked here (comment -> video ->
+ * channel -> membership), not left to the caller. */
+export async function moderateComment(
+  actor: { id: string; name: string },
+  commentId: string,
+  action: ModerateCommentAction,
+): Promise<ModerateCommentResult> {
+  const row = await queryOne<{ channel_id: string }>(
+    `select v.channel_id from video_comments c join videos v on v.id = c.video_id where c.id = $1`,
+    [commentId],
+  );
+  if (!row) return { outcome: "not_found" };
+  const membership = await queryOne(
+    `select 1 from memberships where account_id = $1 and organization_id = $2`,
+    [actor.id, row.channel_id],
+  );
+  if (!membership) return { outcome: "not_channel_member" };
+
+  if (action === "publish") {
+    await query(`update video_comments set status = 'published', held_reason = null where id = $1`, [commentId]);
+  } else if (action === "hold") {
+    await query(`update video_comments set status = 'held', held_reason = $2 where id = $1`, [
+      commentId,
+      "Held by the channel for review.",
+    ]);
+  } else if (action === "remove") {
+    await query(`update video_comments set status = 'removed' where id = $1`, [commentId]);
+  } else if (action === "pin") {
+    await query(`update video_comments set pinned = not pinned where id = $1`, [commentId]);
+  } else if (action === "heart") {
+    await query(`update video_comments set hearted_by_creator = not hearted_by_creator where id = $1`, [commentId]);
+  }
+
+  // A publish/remove decision here resolves the platform-level queue item too (if the
+  // auto-hold rule created one) — otherwise a channel owner handling their own comment
+  // directly leaves a phantom "open" entry in /admin/reviews forever, since nothing else
+  // ever closes it. Not "actioned" (that implies an admin decision) — "dismissed" is
+  // honest about who actually resolved it.
+  if (action === "publish" || action === "remove") {
+    await query(
+      `update moderation_queue set status = 'dismissed' where kind = 'comment' and target_id = $1 and status = 'open'`,
+      [commentId],
+    );
+  }
+
+  await recordAudit({
+    actorAccountId: actor.id,
+    actorName: actor.name,
+    actorRole: "creator",
+    action: `comment.${action}`,
+    targetType: "comment",
+    targetId: commentId,
+    reason: "Channel moderation action",
+    severity: action === "remove" ? "warning" : "info",
+  });
+
+  const updated = await queryOne<CommentRow>(
+    `select ${COMMENT_COLUMNS} from video_comments c ${COMMENT_JOIN} where c.id = $1`,
+    [commentId],
+  );
+  if (!updated) return { outcome: "not_found" };
+  return { outcome: "success", comment: mapCommentRow(updated) };
 }
 
 /* -------------------------------- Follows ---------------------------------- */
