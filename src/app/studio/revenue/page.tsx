@@ -185,7 +185,7 @@ export default function StudioRevenuePage() {
         title="Revenue"
         description={
           isRealChannel
-            ? "Real gross revenue from Stripe purchases and rentals. Connect a bank account below to withdraw it — commission isn't configured yet, so this is gross, not net."
+            ? "Real revenue from Stripe purchases and rentals, net of platform commission. Connect a bank account below to withdraw your available balance."
             : "Earnings, commission and payouts. All figures are simulated — no payment or settlement provider exists in this build."
         }
         actions={
