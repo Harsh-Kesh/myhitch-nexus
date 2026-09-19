@@ -111,16 +111,30 @@ export default async function VideoDetailPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       ) : null}
-      {/* No longer wrapped in <Suspense> — VideoDetailClient used to read
-          next/navigation's useSearchParams() (a "dynamic API") to catch a Stripe
-          Checkout `?checkout=` return, which is why a Suspense boundary existed here
-          at all (required by Next for a dynamic API on a statically-generated route).
-          That combination — this specific dynamic API, inside a Suspense boundary,
-          nested under this route's own loading.tsx — left the boundary permanently
-          stuck on its fallback in production builds for larger pages (rent/buy videos
-          with a paywall + full player), never reproducing in `next dev`. Fixed by
-          reading window.location.search directly in video-client.tsx instead, which
-          needs no Suspense boundary at all. */}
+      {/* This route lives under (public-video), a sibling of (public), specifically so
+          no ancestor loading.tsx wraps it in an implicit Suspense boundary — see this
+          repo's docs/DEVELOPMENT-PLAN.md ("Deep-dive: the video-page hang") for the
+          full trail. Root cause, confirmed by inspecting React's own emitted runtime:
+          any route wrapped in a loading.tsx-derived Suspense boundary ships a
+          `$RC(...)` resolution script that, on the *first* such boundary reveal on a
+          freshly loaded page, schedules the actual DOM swap via
+          requestAnimationFrame(). Browsers never fire rAF callbacks for a
+          hidden/backgrounded tab — not throttled, simply suspended — so a real user
+          whose tab isn't the visible one at that exact instant (opened in a background
+          tab, briefly alt-tabbed, etc.) gets stuck on the loading fallback forever, with
+          no retry and no timeout. This reproduced 100% of the time in this repo's own
+          headless-browser test harness, whose preview tab is always backgrounded
+          (`document.hidden === true` throughout), and was confirmed mechanistically:
+          manually registering a bare requestAnimationFrame() callback in that same tab
+          never fired either, independent of any app code. Removing video/[id] from
+          (public)'s loading.tsx-bearing segment tree (this route now has no
+          loading.tsx ancestor at all, so Next never emits a deferred boundary for it)
+          eliminates the hazard entirely rather than just reducing its odds. An earlier,
+          independent fix (reading window.location.search instead of
+          next/navigation's useSearchParams() in video-client.tsx, still in place below)
+          was a real, worthwhile simplification but — as later testing showed — did not
+          address this, since the boundary in question was always the implicit one from
+          loading.tsx, not one created by that dynamic API. */}
       <VideoDetailClient />
     </>
   );
