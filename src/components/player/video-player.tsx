@@ -114,7 +114,17 @@ export function VideoPlayer({
     if (!started) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
-      if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      // Also skips BUTTON/A/[contenteditable] — this listener is global (`window`), so
+      // without this, focusing any button elsewhere on the page (e.g. "Add to
+      // watchlist") and pressing Space to activate it — completely standard keyboard
+      // behaviour for any button — got hijacked into toggling play/pause instead, and
+      // the button never activated. Found via a manual keyboard walkthrough, not a
+      // report.
+      if (
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName) ||
+        target.isContentEditable
+      )
+        return;
       switch (event.key) {
         case " ":
         case "k":

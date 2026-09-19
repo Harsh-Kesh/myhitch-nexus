@@ -335,6 +335,8 @@ export function VideoDetailClient() {
               <Button
                 variant="secondary"
                 size="sm"
+                aria-label={`Like this video — ${compactNumber(video.likes + (liked ? 1 : 0))} likes`}
+                aria-pressed={liked}
                 onClick={() => {
                   likeVideo.mutate();
                   setLiked(true);
@@ -343,7 +345,7 @@ export function VideoDetailClient() {
                 className={cn(liked && "text-accent")}
               >
                 <IconThumbUp />
-                <span className="nx-tnum">{compactNumber(video.likes + (liked ? 1 : 0))}</span>
+                <span className="nx-tnum" aria-hidden="true">{compactNumber(video.likes + (liked ? 1 : 0))}</span>
               </Button>
 
               <Button
