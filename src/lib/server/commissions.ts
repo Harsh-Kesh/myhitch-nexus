@@ -62,6 +62,10 @@ export interface ChannelRevenueEntry {
   id: string;
   kind: RevenueEntryKind;
   title: string;
+  /** null for membership entries — a membership isn't attached to one video, unlike a
+   * purchase/rental/PPV entitlement. Added for the real analytics slice's
+   * "revenue by content" breakdown; existing consumers of this entry shape ignore it. */
+  videoId: string | null;
   createdAt: string;
   grossMinor: number;
   feeMinor: number;
@@ -87,8 +91,9 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
     currency: string;
     created_at: string;
     title: string;
+    video_id: string;
   }>(
-    `select e.id, e.kind, e.amount_minor, e.currency, e.created_at, v.title
+    `select e.id, e.kind, e.amount_minor, e.currency, e.created_at, v.title, v.id as video_id
      from entitlements e
      join videos v on v.id = e.video_id
      where v.channel_id = $1
@@ -122,6 +127,7 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
       id: row.id,
       kind: row.kind,
       title: row.title,
+      videoId: row.video_id,
       createdAt: row.created_at,
       grossMinor: row.amount_minor,
       feeMinor,
@@ -140,6 +146,7 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
       id: row.id,
       kind: "membership",
       title: "Channel membership",
+      videoId: null,
       createdAt: row.created_at,
       grossMinor: row.amount_minor,
       feeMinor,

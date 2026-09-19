@@ -14,6 +14,7 @@ import { buildAdminTrend, buildCampaignSeries, buildCreatorAnalytics, buildReven
 import { NOW, daysAhead } from "./data/videos";
 import { nextId, persistLogin, recordAudit, store } from "./store";
 import type {
+  AccessModel,
   AdminCase,
   AdminDashboardSummary,
   AdminUserRow,
@@ -1733,10 +1734,79 @@ export async function getSeriesDetail(seriesId: string): Promise<RealSeriesDetai
 
 /* ============================== Analytics ================================ */
 
+/** Real for a real channel — see src/lib/server/analytics.ts's header for exactly what's
+ * real (views/watch time/completion/retention/revenue, all derived from the existing
+ * watch_progress heartbeat and the real revenue ledger) and what stays honestly empty
+ * (traffic sources, countries, languages, devices, ad performance, subscribers lost —
+ * no real data source exists for any of them yet). Same `CreatorAnalytics` shape either
+ * way; the real branch just leaves those fields as empty arrays/zeros instead of mock
+ * numbers, and the UI shows an honest placeholder for anything empty on a real channel. */
 export async function getCreatorAnalytics(
   channelId: string,
   range: AnalyticsRange = "28d",
 ): Promise<CreatorAnalytics> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(
+      `/api/studio/analytics/?channelId=${encodeURIComponent(channelId)}&range=${encodeURIComponent(range)}`,
+    );
+    if (!res.ok) throw new Error(`GET /api/studio/analytics failed with ${res.status}`);
+    const real = (await res.json()) as {
+      channelId: string;
+      range: AnalyticsRange;
+      currency: string;
+      totals: {
+        views: number;
+        uniqueViewers: number;
+        watchTimeSeconds: number;
+        completionRate: number;
+        averageViewDuration: number;
+        subscribersGained: number;
+        revenueMinor: number;
+      };
+      deltas: { views: number; watchTime: number; revenue: number; uniqueViewers: number };
+      timeSeries: Array<{ date: string; views: number; watchHours: number; uniqueViewers: number; revenueMinor: number }>;
+      retention: Array<{ percent: number; audience: number }>;
+      topVideos: Array<{ videoId: string; title: string; views: number; watchHours: number; completionRate: number }>;
+      revenueByContent: Array<{ videoId: string; title: string; revenueMinor: number; views: number; model: string }>;
+    };
+    return {
+      channelId: real.channelId,
+      range: real.range,
+      totals: {
+        views: real.totals.views,
+        uniqueViewers: real.totals.uniqueViewers,
+        watchTimeSeconds: real.totals.watchTimeSeconds,
+        completionRate: real.totals.completionRate,
+        averageViewDuration: real.totals.averageViewDuration,
+        subscribersGained: real.totals.subscribersGained,
+        subscribersLost: 0,
+        revenue: { amount: real.totals.revenueMinor, currency: real.currency as Money["currency"] },
+      },
+      deltas: real.deltas,
+      timeSeries: real.timeSeries.map((point) => ({
+        date: point.date,
+        views: point.views,
+        watchHours: point.watchHours,
+        uniqueViewers: point.uniqueViewers,
+        revenue: point.revenueMinor,
+      })),
+      retention: real.retention,
+      trafficSources: [],
+      countries: [],
+      languages: [],
+      devices: [],
+      revenueByContent: real.revenueByContent.map((row) => ({
+        videoId: row.videoId,
+        title: row.title,
+        revenue: row.revenueMinor,
+        views: row.views,
+        model: row.model as AccessModel,
+      })),
+      adPerformance: { impressions: 0, fillRate: 0, ecpm: 0, revenue: 0 },
+      topVideos: real.topVideos,
+    };
+  }
+
   await latency();
   return buildCreatorAnalytics(channelId, range);
 }

@@ -16,7 +16,7 @@ import {
 } from "recharts";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
-import { RailSkeleton } from "@/components/ui/empty-state";
+import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/field";
 import { ProgressBar } from "@/components/ui/progress";
 import {
@@ -26,9 +26,11 @@ import {
   chartTooltip,
 } from "@/components/charts/chart-theme";
 import { RANGE_LABELS } from "@/lib/mock-api/data/analytics";
+import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useCampaigns,
   useCreatorAnalytics,
+  useCurrentUser,
   useProductLinks,
 } from "@/lib/mock-api/hooks";
 import type { AnalyticsRange } from "@/lib/mock-api/types";
@@ -40,13 +42,22 @@ import {
   formatWatchHours,
 } from "@/lib/utils";
 
-const CHANNEL_ID = "ch_helio";
+// Same fallback business/channel/page.tsx uses for a mock/demo account with no real
+// channel of its own.
+const MOCK_BUSINESS_CHANNEL = "ch_helio";
 
 export default function BusinessAnalyticsPage() {
   const [range, setRange] = React.useState<AnalyticsRange>("28d");
-  const { data, isLoading } = useCreatorAnalytics(CHANNEL_ID, range);
-  const { data: campaigns = [] } = useCampaigns(CHANNEL_ID);
-  const { data: productLinks = [] } = useProductLinks(CHANNEL_ID);
+  const { data: user } = useCurrentUser();
+  // Real bug fixed 2026-09-19: this page always analyzed the mock "ch_helio" channel
+  // regardless of who was signed in — a real business account saw someone else's data,
+  // not even a mock view of its own. Same real/mock resolution as business/channel/page.tsx.
+  const channelId =
+    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const isRealChannel = looksLikeRealId(channelId);
+  const { data, isLoading } = useCreatorAnalytics(channelId, range);
+  const { data: campaigns = [] } = useCampaigns(channelId);
+  const { data: productLinks = [] } = useProductLinks(channelId);
 
   const adTotals = campaigns.reduce(
     (acc, campaign) => ({
@@ -248,69 +259,95 @@ export default function BusinessAnalyticsPage() {
               <Card>
                 <CardHeader title="Audience by country" />
                 <CardBody>
-                  <ul className="space-y-3">
-                    {data.countries.map((slice, index) => (
-                      <li key={slice.label}>
-                        <ProgressBar
-                          value={slice.share}
-                          label={slice.label}
-                          valueLabel={`${slice.share}%`}
-                          size="sm"
-                          tone={index === 0 ? "accent" : "info"}
-                        />
-                      </li>
-                    ))}
-                  </ul>
+                  {data.countries.length === 0 ? (
+                    <EmptyState
+                      compact
+                      title={isRealChannel ? "Not tracked yet" : "No data"}
+                      description={
+                        isRealChannel
+                          ? "Real viewer location isn't captured yet — this needs real IP-based geolocation, not built in this pass."
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <ul className="space-y-3">
+                      {data.countries.map((slice, index) => (
+                        <li key={slice.label}>
+                          <ProgressBar
+                            value={slice.share}
+                            label={slice.label}
+                            valueLabel={`${slice.share}%`}
+                            size="sm"
+                            tone={index === 0 ? "accent" : "info"}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </CardBody>
               </Card>
 
               <Card>
                 <CardHeader title="Devices" />
                 <CardBody>
-                  <div className="h-56">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={data.devices}
-                          dataKey="value"
-                          nameKey="label"
-                          innerRadius="55%"
-                          outerRadius="82%"
-                          paddingAngle={2}
-                          stroke="none"
-                        >
-                          {data.devices.map((_, index) => (
-                            <Cell
-                              key={index}
-                              fill={CHART_COLORS[index % CHART_COLORS.length]}
+                  {data.devices.length === 0 ? (
+                    <EmptyState
+                      compact
+                      title={isRealChannel ? "Not tracked yet" : "No data"}
+                      description={
+                        isRealChannel
+                          ? "Real device/browser breakdown isn't captured yet — no client-side instrumentation for it exists."
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={data.devices}
+                              dataKey="value"
+                              nameKey="label"
+                              innerRadius="55%"
+                              outerRadius="82%"
+                              paddingAngle={2}
+                              stroke="none"
+                            >
+                              {data.devices.map((_, index) => (
+                                <Cell
+                                  key={index}
+                                  fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              {...chartTooltip}
+                              formatter={(value: number) => compactNumber(value)}
                             />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          {...chartTooltip}
-                          formatter={(value: number) => compactNumber(value)}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    {data.devices.map((slice, index) => (
-                      <span
-                        key={slice.label}
-                        className="flex items-center gap-1.5 text-xs text-fg-muted"
-                      >
-                        <span
-                          aria-hidden
-                          className="size-2.5 rounded-sm"
-                          style={{
-                            background: CHART_COLORS[index % CHART_COLORS.length],
-                          }}
-                        />
-                        {slice.label}
-                        <span className="text-fg-subtle nx-tnum">{slice.share}%</span>
-                      </span>
-                    ))}
-                  </div>
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {data.devices.map((slice, index) => (
+                          <span
+                            key={slice.label}
+                            className="flex items-center gap-1.5 text-xs text-fg-muted"
+                          >
+                            <span
+                              aria-hidden
+                              className="size-2.5 rounded-sm"
+                              style={{
+                                background: CHART_COLORS[index % CHART_COLORS.length],
+                              }}
+                            />
+                            {slice.label}
+                            <span className="text-fg-subtle nx-tnum">{slice.share}%</span>
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </CardBody>
               </Card>
             </div>

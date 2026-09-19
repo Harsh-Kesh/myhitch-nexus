@@ -29,7 +29,7 @@ import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
-import { RailSkeleton } from "@/components/ui/empty-state";
+import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress";
 import { Select } from "@/components/ui/field";
 import { Tabs } from "@/components/ui/tabs";
@@ -41,6 +41,7 @@ import {
   chartTooltip,
 } from "@/components/charts/chart-theme";
 import { RANGE_LABELS } from "@/lib/mock-api/data/analytics";
+import { looksLikeRealId } from "@/lib/mock-api";
 import { useCreatorAnalytics, useCurrentUser } from "@/lib/mock-api/hooks";
 import type { AnalyticsRange, BreakdownSlice } from "@/lib/mock-api/types";
 import {
@@ -55,6 +56,7 @@ import {
 export default function StudioAnalyticsPage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
+  const isRealChannel = looksLikeRealId(channelId);
   const { toast } = useToast();
 
   const [range, setRange] = React.useState<AnalyticsRange>("28d");
@@ -216,13 +218,19 @@ export default function StudioAnalyticsPage() {
                       description="Where views came from"
                     />
                     <CardBody>
-                      <BreakdownList slices={data.trafficSources} />
+                      <BreakdownList
+                        slices={data.trafficSources}
+                        emptyHint="Real referrer/source tracking isn't captured yet."
+                      />
                     </CardBody>
                   </Card>
 
                   <Card>
                     <CardHeader title="Top videos" description="By views in range" />
-                    <CardBody className="p-0">
+                    <CardBody className={data.topVideos.length === 0 ? undefined : "p-0"}>
+                      {data.topVideos.length === 0 ? (
+                        <EmptyState compact title="No views in this range yet" />
+                      ) : (
                       <ul className="divide-y divide-border">
                         {data.topVideos.map((row, index) => (
                           <li key={row.videoId} className="flex items-center gap-3 px-5 py-3">
@@ -243,6 +251,7 @@ export default function StudioAnalyticsPage() {
                           </li>
                         ))}
                       </ul>
+                      )}
                     </CardBody>
                   </Card>
                 </div>
@@ -255,62 +264,78 @@ export default function StudioAnalyticsPage() {
                 <Card>
                   <CardHeader title="Countries" />
                   <CardBody>
-                    <BreakdownList slices={data.countries} />
+                    <BreakdownList
+                      slices={data.countries}
+                      emptyHint="Real viewer location needs IP-based geolocation, not built in this pass."
+                    />
                   </CardBody>
                 </Card>
                 <Card>
                   <CardHeader title="Languages" />
                   <CardBody>
-                    <BreakdownList slices={data.languages} />
+                    <BreakdownList
+                      slices={data.languages}
+                      emptyHint="Real audience-language tracking isn't captured yet."
+                    />
                   </CardBody>
                 </Card>
                 <Card>
                   <CardHeader title="Devices" />
                   <CardBody>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={data.devices}
-                            dataKey="value"
-                            nameKey="label"
-                            innerRadius="55%"
-                            outerRadius="82%"
-                            paddingAngle={2}
-                            stroke="none"
-                          >
-                            {data.devices.map((_, index) => (
-                              <Cell
-                                key={index}
-                                fill={CHART_COLORS[index % CHART_COLORS.length]}
+                    {data.devices.length === 0 ? (
+                      <EmptyState
+                        compact
+                        title="Not tracked yet"
+                        description="Real device/browser tracking isn't captured yet."
+                      />
+                    ) : (
+                      <>
+                        <div className="h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={data.devices}
+                                dataKey="value"
+                                nameKey="label"
+                                innerRadius="55%"
+                                outerRadius="82%"
+                                paddingAngle={2}
+                                stroke="none"
+                              >
+                                {data.devices.map((_, index) => (
+                                  <Cell
+                                    key={index}
+                                    fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                  />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                {...chartTooltip}
+                                formatter={(value: number) => compactNumber(value)}
                               />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            {...chartTooltip}
-                            formatter={(value: number) => compactNumber(value)}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-3">
-                      {data.devices.map((slice, index) => (
-                        <span
-                          key={slice.label}
-                          className="flex items-center gap-1.5 text-xs text-fg-muted"
-                        >
-                          <span
-                            aria-hidden
-                            className="size-2.5 rounded-sm"
-                            style={{
-                              background: CHART_COLORS[index % CHART_COLORS.length],
-                            }}
-                          />
-                          {slice.label}
-                          <span className="text-fg-subtle nx-tnum">{slice.share}%</span>
-                        </span>
-                      ))}
-                    </div>
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          {data.devices.map((slice, index) => (
+                            <span
+                              key={slice.label}
+                              className="flex items-center gap-1.5 text-xs text-fg-muted"
+                            >
+                              <span
+                                aria-hidden
+                                className="size-2.5 rounded-sm"
+                                style={{
+                                  background: CHART_COLORS[index % CHART_COLORS.length],
+                                }}
+                              />
+                              {slice.label}
+                              <span className="text-fg-subtle nx-tnum">{slice.share}%</span>
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </CardBody>
                 </Card>
                 <Card>
@@ -325,40 +350,52 @@ export default function StudioAnalyticsPage() {
                         value={`+${compactNumber(data.totals.subscribersGained)}`}
                         className="flex-1 border-0 p-0"
                       />
-                      <Stat
-                        label="Lost"
-                        value={`−${compactNumber(data.totals.subscribersLost)}`}
-                        className="flex-1 border-0 p-0"
-                      />
-                      <Stat
-                        label="Net"
-                        value={`+${compactNumber(
-                          data.totals.subscribersGained - data.totals.subscribersLost,
-                        )}`}
-                        className="flex-1 border-0 p-0"
-                      />
-                    </div>
-                    <div className="h-40">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={data.timeSeries.slice(-14)}>
-                          <CartesianGrid {...chartGrid} />
-                          <XAxis
-                            dataKey="date"
-                            {...chartAxis}
-                            tickFormatter={(value: string) => formatDate(value, "short")}
-                            minTickGap={20}
+                      {isRealChannel ? null : (
+                        <>
+                          <Stat
+                            label="Lost"
+                            value={`−${compactNumber(data.totals.subscribersLost)}`}
+                            className="flex-1 border-0 p-0"
                           />
-                          <YAxis {...chartAxis} tickFormatter={compactNumber} width={40} />
-                          <Tooltip {...chartTooltip} />
-                          <Bar
-                            dataKey="uniqueViewers"
-                            name="Unique viewers"
-                            fill={CHART_COLORS[2]}
-                            radius={[3, 3, 0, 0]}
+                          <Stat
+                            label="Net"
+                            value={`+${compactNumber(
+                              data.totals.subscribersGained - data.totals.subscribersLost,
+                            )}`}
+                            className="flex-1 border-0 p-0"
                           />
-                        </BarChart>
-                      </ResponsiveContainer>
+                        </>
+                      )}
                     </div>
+                    {isRealChannel ? (
+                      <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
+                        &ldquo;Gained&rdquo; is real (real follows in this period).
+                        Unfollowing doesn&apos;t keep a history today, so &ldquo;Lost&rdquo;
+                        and &ldquo;Net&rdquo; aren&apos;t shown rather than assumed zero.
+                      </p>
+                    ) : (
+                      <div className="h-40">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={data.timeSeries.slice(-14)}>
+                            <CartesianGrid {...chartGrid} />
+                            <XAxis
+                              dataKey="date"
+                              {...chartAxis}
+                              tickFormatter={(value: string) => formatDate(value, "short")}
+                              minTickGap={20}
+                            />
+                            <YAxis {...chartAxis} tickFormatter={compactNumber} width={40} />
+                            <Tooltip {...chartTooltip} />
+                            <Bar
+                              dataKey="uniqueViewers"
+                              name="Unique viewers"
+                              fill={CHART_COLORS[2]}
+                              radius={[3, 3, 0, 0]}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </CardBody>
                 </Card>
               </div>
@@ -430,9 +467,12 @@ export default function StudioAnalyticsPage() {
                 <Card>
                   <CardHeader
                     title="Revenue by content"
-                    description="Gross before platform commission"
+                    description={isRealChannel ? "Net, after platform commission" : "Gross before platform commission"}
                   />
-                  <CardBody className="p-0">
+                  <CardBody className={data.revenueByContent.length === 0 ? undefined : "p-0"}>
+                    {data.revenueByContent.length === 0 ? (
+                      <EmptyState compact title="No revenue in this range yet" />
+                    ) : (
                     <ul className="divide-y divide-border">
                       {data.revenueByContent.map((row) => (
                         <li key={row.videoId} className="flex items-center gap-4 px-5 py-3">
@@ -455,6 +495,7 @@ export default function StudioAnalyticsPage() {
                         </li>
                       ))}
                     </ul>
+                    )}
                   </CardBody>
                 </Card>
 
@@ -529,9 +570,9 @@ export default function StudioAnalyticsPage() {
                         />
                       </div>
                       <p className="rounded border border-border bg-surface-2 p-3 text-xs leading-relaxed text-fg-subtle">
-                        Advertising figures are simulated. No ad server, targeting
-                        or measurement provider is contacted anywhere in this
-                        build.
+                        {isRealChannel
+                          ? "Real advertising isn't built yet — no ad server, targeting or measurement provider exists in this build, so these are honestly zero rather than estimated."
+                          : "Advertising figures are simulated. No ad server, targeting or measurement provider is contacted anywhere in this build."}
                       </p>
                     </CardBody>
                   </Card>
@@ -545,7 +586,16 @@ export default function StudioAnalyticsPage() {
   );
 }
 
-function BreakdownList({ slices }: { slices: BreakdownSlice[] }) {
+function BreakdownList({
+  slices,
+  emptyHint,
+}: {
+  slices: BreakdownSlice[];
+  emptyHint?: string;
+}) {
+  if (slices.length === 0) {
+    return <EmptyState compact title="Not tracked yet" description={emptyHint} />;
+  }
   return (
     <ul className="space-y-3">
       {slices.map((slice, index) => (
