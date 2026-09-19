@@ -616,8 +616,9 @@ export default function UploadPage() {
                         </Field>
                       </div>
 
-                      <Field label="Tags" hint="Press Enter to add. Helps search and related content.">
+                      <Field label="Tags" htmlFor="up-tags" hint="Press Enter to add. Helps search and related content.">
                         <Input
+                          id="up-tags"
                           value={tagDraft}
                           onChange={(event) => setTagDraft(event.target.value)}
                           onKeyDown={(event) => {
