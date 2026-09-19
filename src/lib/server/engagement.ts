@@ -443,11 +443,17 @@ export async function getWatchProgress(
 
 /** Same >95%-watched threshold as the mock's saveWatchProgress(). watch_progress has no
  * updated_at trigger (unlike accounts/organizations — see the Phase 0 migration), so it's
- * set explicitly here on every write, insert or update. */
+ * set explicitly here on every write, insert or update.
+ *
+ * country/deviceType/language (src/lib/server/requestMeta.ts) are real per-request
+ * signals, not always present on every single heartbeat (e.g. a header a proxy strips) —
+ * coalesced against the existing stored value on conflict so one request missing a header
+ * never erases a value a previous request on the same video already captured. */
 export async function saveWatchProgress(
   accountId: string,
   videoId: string,
   positionSeconds: number,
+  meta: { country?: string | null; deviceType?: string | null; language?: string | null } = {},
 ): Promise<EngagementProgress | null> {
   const video = await queryOne<{ duration_seconds: number }>(
     `select duration_seconds from videos where id = $1`,
@@ -459,14 +465,17 @@ export async function saveWatchProgress(
   const completed = video.duration_seconds > 0 && clampedPosition / video.duration_seconds > 0.95;
 
   const row = await queryOne<{ updated_at: string }>(
-    `insert into watch_progress (account_id, video_id, position_seconds, completed, updated_at)
-     values ($1, $2, $3, $4, now())
+    `insert into watch_progress (account_id, video_id, position_seconds, completed, updated_at, country, device_type, language)
+     values ($1, $2, $3, $4, now(), $5, $6, $7)
      on conflict (account_id, video_id) do update set
        position_seconds = excluded.position_seconds,
        completed = excluded.completed,
-       updated_at = excluded.updated_at
+       updated_at = excluded.updated_at,
+       country = coalesce(excluded.country, watch_progress.country),
+       device_type = coalesce(excluded.device_type, watch_progress.device_type),
+       language = coalesce(excluded.language, watch_progress.language)
      returning updated_at`,
-    [accountId, videoId, clampedPosition, completed],
+    [accountId, videoId, clampedPosition, completed, meta.country ?? null, meta.deviceType ?? null, meta.language ?? null],
   );
 
   return {

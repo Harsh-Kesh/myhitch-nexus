@@ -3,6 +3,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getWatchProgress, saveWatchProgress } from "@/lib/server/engagement";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { classifyDevice, countryFromHeaders, languageFromHeaders } from "@/lib/server/requestMeta";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const account = await getRequestAccount(request);
@@ -36,7 +37,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "positionSeconds must be a number." }, { status: 400 });
   }
 
-  const progress = await saveWatchProgress(account.id, id, body.positionSeconds);
+  const progress = await saveWatchProgress(account.id, id, body.positionSeconds, {
+    country: countryFromHeaders(request.headers),
+    deviceType: classifyDevice(request.headers),
+    language: languageFromHeaders(request.headers),
+  });
   if (!progress) {
     return NextResponse.json(
       { error: "This title isn't in the real catalogue yet." },

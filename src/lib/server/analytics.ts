@@ -13,10 +13,17 @@
 //   - the time series buckets by `updated_at` (last-watched date), not first-viewed date.
 //   - only signed-in accounts are counted — there's no anonymous/guest view tracking at
 //     all today.
-// Traffic sources, countries, languages, devices, ad performance and "subscribers lost"
-// have no real data source yet (no referrer/geo/device capture, and unfollowing deletes
-// the row rather than logging it) — deliberately left out rather than fabricated; see
-// the route/UI layer for how that's surfaced honestly.
+// Country/device/language are captured for real too (src/lib/server/requestMeta.ts),
+// from the Cloudflare `cf-ipcountry` header plus User-Agent/Accept-Language — free,
+// no vendor, no new client instrumentation, piggybacking on the same heartbeat write.
+// Each breakdown is suppressed (returned empty) when the range's total audience is below
+// MIN_AUDIENCE_FOR_BREAKDOWN, and any individual slice smaller than MIN_SLICE_SIZE is
+// folded into "Other / unknown" rather than shown alone — FR-6.9.6's k-anonymity
+// requirement, so a single viewer's country/device is never identifiable from the chart.
+// Traffic sources, ad performance and "subscribers lost" still have no real data source
+// (no referrer-attributed event, no ad system, and unfollowing deletes the row rather
+// than logging it) — deliberately left out rather than fabricated; see the route/UI layer
+// for how that's surfaced honestly.
 import "server-only";
 import { query, queryOne } from "./db";
 import { computeChannelNetRevenue } from "./commissions";
@@ -72,6 +79,12 @@ export interface RealRevenueByContent {
   model: string;
 }
 
+export interface RealBreakdownSlice {
+  label: string;
+  value: number;
+  share: number;
+}
+
 export interface RealCreatorAnalytics {
   channelId: string;
   range: AnalyticsRange;
@@ -82,6 +95,61 @@ export interface RealCreatorAnalytics {
   retention: RealRetentionPoint[];
   topVideos: RealVideoRow[];
   revenueByContent: RealRevenueByContent[];
+  countries: RealBreakdownSlice[];
+  devices: RealBreakdownSlice[];
+  languages: RealBreakdownSlice[];
+}
+
+// FR-6.9.6: never show a breakdown at all below this total range audience, and never
+// show an individual slice smaller than this alone — both fold into "Other / unknown"
+// instead, so no chart can single out one real viewer.
+const MIN_AUDIENCE_FOR_BREAKDOWN = 5;
+const MIN_SLICE_SIZE = 3;
+
+async function fetchAudienceCounts(
+  channelId: string,
+  column: "country" | "device_type" | "language",
+  since: Date,
+): Promise<Array<{ label: string; n: number }>> {
+  const rows = await query<{ label: string | null; n: string }>(
+    `select wp.${column} as label, count(*) as n
+     from watch_progress wp
+     join videos v on v.id = wp.video_id
+     where v.channel_id = $1 and wp.updated_at >= $2
+     group by wp.${column}`,
+    [channelId, since],
+  );
+  return rows.map((row) => ({ label: row.label ?? "Unknown", n: Number(row.n) }));
+}
+
+function buildSuppressedBreakdown(rows: Array<{ label: string; n: number }>): RealBreakdownSlice[] {
+  const total = rows.reduce((sum, row) => sum + row.n, 0);
+  if (total < MIN_AUDIENCE_FOR_BREAKDOWN) return [];
+
+  let otherCount = 0;
+  const kept: Array<{ label: string; n: number }> = [];
+  for (const row of rows) {
+    if (row.label === "Unknown" || row.n < MIN_SLICE_SIZE) {
+      otherCount += row.n;
+    } else {
+      kept.push(row);
+    }
+  }
+  kept.sort((a, b) => b.n - a.n);
+
+  const slices: RealBreakdownSlice[] = kept.map((row) => ({
+    label: row.label,
+    value: row.n,
+    share: Math.round((row.n / total) * 100),
+  }));
+  if (otherCount > 0) {
+    slices.push({
+      label: "Other / unknown",
+      value: otherCount,
+      share: Math.round((otherCount / total) * 100),
+    });
+  }
+  return slices;
 }
 
 interface VideoAggRow {
@@ -134,22 +202,23 @@ export async function getRealCreatorAnalytics(
   const since = new Date(now.getTime() - days * 86_400_000);
   const priorSince = new Date(since.getTime() - days * 86_400_000);
 
-  const [currentRows, priorRows, subscriberRow, retentionRows, seriesRows, revenue] = await Promise.all([
-    aggregateVideoStats(channelId, since, now),
-    aggregateVideoStats(channelId, priorSince, since),
-    queryOne<{ n: string }>(
-      `select count(*) as n from channel_follows where organization_id = $1 and created_at >= $2`,
-      [channelId, since],
-    ),
-    query<{ position_seconds: number; duration_seconds: number }>(
-      `select wp.position_seconds, v.duration_seconds
+  const [currentRows, priorRows, subscriberRow, retentionRows, seriesRows, revenue, countryRows, deviceRows, languageRows] =
+    await Promise.all([
+      aggregateVideoStats(channelId, since, now),
+      aggregateVideoStats(channelId, priorSince, since),
+      queryOne<{ n: string }>(
+        `select count(*) as n from channel_follows where organization_id = $1 and created_at >= $2`,
+        [channelId, since],
+      ),
+      query<{ position_seconds: number; duration_seconds: number }>(
+        `select wp.position_seconds, v.duration_seconds
        from watch_progress wp
        join videos v on v.id = wp.video_id
        where v.channel_id = $1 and wp.updated_at >= $2 and v.duration_seconds > 0`,
-      [channelId, since],
-    ),
-    query<{ day: string; views: string; watch_seconds: string }>(
-      `select date_trunc('day', wp.updated_at) as day,
+        [channelId, since],
+      ),
+      query<{ day: string; views: string; watch_seconds: string }>(
+        `select date_trunc('day', wp.updated_at) as day,
               count(*) as views,
               coalesce(sum(wp.position_seconds), 0) as watch_seconds
        from watch_progress wp
@@ -157,10 +226,13 @@ export async function getRealCreatorAnalytics(
        where v.channel_id = $1 and wp.updated_at >= $2
        group by day
        order by day`,
-      [channelId, since],
-    ),
-    computeChannelNetRevenue(channelId),
-  ]);
+        [channelId, since],
+      ),
+      computeChannelNetRevenue(channelId),
+      fetchAudienceCounts(channelId, "country", since),
+      fetchAudienceCounts(channelId, "device_type", since),
+      fetchAudienceCounts(channelId, "language", since),
+    ]);
 
   const current = sumTotals(currentRows);
   const prior = sumTotals(priorRows);
@@ -265,5 +337,8 @@ export async function getRealCreatorAnalytics(
     retention,
     topVideos,
     revenueByContent,
+    countries: buildSuppressedBreakdown(countryRows),
+    devices: buildSuppressedBreakdown(deviceRows),
+    languages: buildSuppressedBreakdown(languageRows),
   };
 }

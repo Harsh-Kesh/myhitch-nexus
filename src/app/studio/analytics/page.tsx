@@ -266,7 +266,12 @@ export default function StudioAnalyticsPage() {
                   <CardBody>
                     <BreakdownList
                       slices={data.countries}
-                      emptyHint="Real viewer location needs IP-based geolocation, not built in this pass."
+                      emptyTitle={isRealChannel ? "Not enough viewers yet" : "Not tracked yet"}
+                      emptyHint={
+                        isRealChannel
+                          ? "Real viewer location is captured, but this range doesn't have enough viewers to show a breakdown without risking identifying someone."
+                          : "Real viewer location needs IP-based geolocation, not built in this pass."
+                      }
                     />
                   </CardBody>
                 </Card>
@@ -275,7 +280,12 @@ export default function StudioAnalyticsPage() {
                   <CardBody>
                     <BreakdownList
                       slices={data.languages}
-                      emptyHint="Real audience-language tracking isn't captured yet."
+                      emptyTitle={isRealChannel ? "Not enough viewers yet" : "Not tracked yet"}
+                      emptyHint={
+                        isRealChannel
+                          ? "Real audience language is captured, but this range doesn't have enough viewers to show a breakdown without risking identifying someone."
+                          : "Real audience-language tracking isn't captured yet."
+                      }
                     />
                   </CardBody>
                 </Card>
@@ -285,8 +295,12 @@ export default function StudioAnalyticsPage() {
                     {data.devices.length === 0 ? (
                       <EmptyState
                         compact
-                        title="Not tracked yet"
-                        description="Real device/browser tracking isn't captured yet."
+                        title={isRealChannel ? "Not enough viewers yet" : "Not tracked yet"}
+                        description={
+                          isRealChannel
+                            ? "Real device tracking is captured, but this range doesn't have enough viewers to show a breakdown without risking identifying someone."
+                            : "Real device/browser tracking isn't captured yet."
+                        }
                       />
                     ) : (
                       <>
@@ -588,13 +602,15 @@ export default function StudioAnalyticsPage() {
 
 function BreakdownList({
   slices,
+  emptyTitle = "Not tracked yet",
   emptyHint,
 }: {
   slices: BreakdownSlice[];
+  emptyTitle?: string;
   emptyHint?: string;
 }) {
   if (slices.length === 0) {
-    return <EmptyState compact title="Not tracked yet" description={emptyHint} />;
+    return <EmptyState compact title={emptyTitle} description={emptyHint} />;
   }
   return (
     <ul className="space-y-3">

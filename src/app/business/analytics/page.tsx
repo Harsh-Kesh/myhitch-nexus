@@ -262,10 +262,10 @@ export default function BusinessAnalyticsPage() {
                   {data.countries.length === 0 ? (
                     <EmptyState
                       compact
-                      title={isRealChannel ? "Not tracked yet" : "No data"}
+                      title={isRealChannel ? "Not enough viewers yet" : "No data"}
                       description={
                         isRealChannel
-                          ? "Real viewer location isn't captured yet — this needs real IP-based geolocation, not built in this pass."
+                          ? "Real viewer location is captured, but this range doesn't have enough viewers to show a breakdown without risking identifying someone."
                           : undefined
                       }
                     />
@@ -293,10 +293,10 @@ export default function BusinessAnalyticsPage() {
                   {data.devices.length === 0 ? (
                     <EmptyState
                       compact
-                      title={isRealChannel ? "Not tracked yet" : "No data"}
+                      title={isRealChannel ? "Not enough viewers yet" : "No data"}
                       description={
                         isRealChannel
-                          ? "Real device/browser breakdown isn't captured yet — no client-side instrumentation for it exists."
+                          ? "Real device tracking is captured, but this range doesn't have enough viewers to show a breakdown without risking identifying someone."
                           : undefined
                       }
                     />

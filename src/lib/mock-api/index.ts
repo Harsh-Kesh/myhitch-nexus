@@ -1735,12 +1735,14 @@ export async function getSeriesDetail(seriesId: string): Promise<RealSeriesDetai
 /* ============================== Analytics ================================ */
 
 /** Real for a real channel — see src/lib/server/analytics.ts's header for exactly what's
- * real (views/watch time/completion/retention/revenue, all derived from the existing
- * watch_progress heartbeat and the real revenue ledger) and what stays honestly empty
- * (traffic sources, countries, languages, devices, ad performance, subscribers lost —
- * no real data source exists for any of them yet). Same `CreatorAnalytics` shape either
- * way; the real branch just leaves those fields as empty arrays/zeros instead of mock
- * numbers, and the UI shows an honest placeholder for anything empty on a real channel. */
+ * real (views/watch time/completion/retention/revenue/country/device/language, all
+ * derived from the existing watch_progress heartbeat, real request headers and the real
+ * revenue ledger) and what stays honestly empty (traffic sources, ad performance,
+ * subscribers lost — no real data source exists for any of them yet). Same
+ * `CreatorAnalytics` shape either way; countries/devices/languages come back as an empty
+ * array either when there's genuinely no data source (never true for a real channel) or
+ * when FR-6.9.6's privacy suppression withheld it for too small an audience — the UI
+ * distinguishes those via `isRealChannel` plus the range's view count, not this field. */
 export async function getCreatorAnalytics(
   channelId: string,
   range: AnalyticsRange = "28d",
@@ -1768,6 +1770,9 @@ export async function getCreatorAnalytics(
       retention: Array<{ percent: number; audience: number }>;
       topVideos: Array<{ videoId: string; title: string; views: number; watchHours: number; completionRate: number }>;
       revenueByContent: Array<{ videoId: string; title: string; revenueMinor: number; views: number; model: string }>;
+      countries: Array<{ label: string; value: number; share: number }>;
+      devices: Array<{ label: string; value: number; share: number }>;
+      languages: Array<{ label: string; value: number; share: number }>;
     };
     return {
       channelId: real.channelId,
@@ -1792,9 +1797,9 @@ export async function getCreatorAnalytics(
       })),
       retention: real.retention,
       trafficSources: [],
-      countries: [],
-      languages: [],
-      devices: [],
+      countries: real.countries,
+      languages: real.languages,
+      devices: real.devices,
       revenueByContent: real.revenueByContent.map((row) => ({
         videoId: row.videoId,
         title: row.title,
