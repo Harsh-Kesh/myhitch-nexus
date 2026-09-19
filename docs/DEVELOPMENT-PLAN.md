@@ -627,6 +627,16 @@ A Next.js version bisection was also tried on this basis: temporarily installed 
 
 **Confirmed working correctly**: the skip-to-content link (real, first tab stop, visible focus ring); the comment textbox/composer's real placeholder-as-label and sensible Tab order (textarea → Cancel → Comment); the video player's full control set (seek slider, back/forward 10s, mute, subtitles/audio tracks, quality/speed, cast, PiP, fullscreen) all real and clearly named; the studio sidebar nav and upload wizard's step controls, initially misread as unlabeled by the read-page tool's own summarization but confirmed via direct DOM inspection to carry real, clear text content throughout.
 
+### UJ-2 manual walkthrough completed: the rest of the creator publishing journey (AC-9, 2026-09-19)
+
+Closes out the walkthrough started earlier — that pass covered UJ-1 fully and only the start of UJ-2 (registration, the upload step). Walked the rest end to end as a real signed-in creator: metadata → thumbnails → captions → rights → publishing → monitor.
+
+**One real bug found and fixed**: the Metadata step's Tags field had a visible "Tags" label with no programmatic association to its input — every other field on that step passes a matching `htmlFor`/`id` pair, this one didn't, so it relied on placeholder text alone (gone once the creator starts typing, and not reliably announced as a label by assistive tech). Fixed to match the working pattern.
+
+**Confirmed working correctly**: the category picker (a real combobox with search, closes on Escape); the auto-transcribe/audio-description toggles (real `role="switch"` with correct `aria-checked` and labels); the rights checkbox and territory radio group (properly associated via real `<label>` wrapping); the publish-time monetisation/paid-promotion/commerce-link fields; the server-enforced required-field gating (Continue/Publish genuinely disable until Title, Categories and the rights confirmation are filled — checked programmatically, not just visually).
+
+**One false alarm worth recording, since it wasted real time before the explanation was obvious**: after publishing, the new video didn't appear on `/studio/content` — looked like a real "publish doesn't persist" bug. It wasn't: this project's mock store is a JS module singleton in browser memory (documented already in `e2e/journey.spec.ts`'s own header comment), and checking via this tool's `navigate()` forces a full page reload, which re-initializes that module and wipes it. Re-tested using a real client-side `<Link>` click instead (as a real user's in-app navigation would be) and the published video appeared correctly, with the right counts. A reminder to check a test tool's own navigation semantics against a stateful mock before trusting a "missing data" result as a real bug.
+
 ### Video-page hang: root cause found and fixed (2026-09-19)
 
 Direct continuation of the deep-dive above — the mechanism is now pinned down exactly (not just characterized), and a real fix has been verified with a controlled before/after failure-rate comparison, per this section's own repeated warning not to trust single trials here.
