@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { dismissDevOverlay, login } from "./helpers";
+import { deleteTestAccount, dismissDevOverlay, login } from "./helpers";
 
 /**
  * Covers the end-to-end journey from §13.9 of the build spec:
@@ -319,45 +319,53 @@ test.describe("Admin", () => {
     // page-independent request context (its own cookie jar) so this never touches
     // Mara's own session or her real channel's verification status.
     const email = `pw-org-fixture-${Date.now()}@example.com`;
-    await request.post("/api/auth/register/", {
-      data: { name: "Playwright Org Fixture", email, password: "password123", role: "business" },
-    });
-    const me = await request.get("/api/auth/me/");
-    const { account } = (await me.json()) as { account: { channelId: string } };
-    await request.patch("/api/studio/organization/verification/", {
-      data: {
-        organizationId: account.channelId,
-        legalEntityName: "Playwright Fixture Pty Ltd",
-        abn: "51824753556",
-        contactFullName: "Fixture Contact",
-        contactEmail: "fixture@example.com",
-        authorisedPersonName: "Fixture Contact",
-        informationAccurate: true,
-        authorityConfirmed: true,
-        termsAccepted: true,
-        privacyAccepted: true,
-      },
-    });
-    const submitRes = await request.post("/api/studio/organization/verification/submit/", {
-      data: { organizationId: account.channelId },
-    });
-    expect(submitRes.ok()).toBe(true);
+    try {
+      await request.post("/api/auth/register/", {
+        data: { name: "Playwright Org Fixture", email, password: "password123", role: "business" },
+      });
+      const me = await request.get("/api/auth/me/");
+      const { account } = (await me.json()) as { account: { channelId: string } };
+      await request.patch("/api/studio/organization/verification/", {
+        data: {
+          organizationId: account.channelId,
+          legalEntityName: "Playwright Fixture Pty Ltd",
+          abn: "51824753556",
+          contactFullName: "Fixture Contact",
+          contactEmail: "fixture@example.com",
+          authorisedPersonName: "Fixture Contact",
+          informationAccurate: true,
+          authorityConfirmed: true,
+          termsAccepted: true,
+          privacyAccepted: true,
+        },
+      });
+      const submitRes = await request.post("/api/studio/organization/verification/submit/", {
+        data: { organizationId: account.channelId },
+      });
+      expect(submitRes.ok()).toBe(true);
 
-    await page.goto("/admin/organisations");
-    await dismissDevOverlay(page);
+      await page.goto("/admin/organisations");
+      await dismissDevOverlay(page);
 
-    await page.getByRole("tab", { name: /Pending/ }).click();
-    await page.getByRole("button", { name: "Verify" }).first().click();
+      await page.getByRole("tab", { name: /Pending/ }).click();
+      await page.getByRole("button", { name: "Verify" }).first().click();
 
-    const dialog = page.getByRole("dialog");
-    await dialog
-      .getByLabel("Reason")
-      .fill("Registration confirmed against the public register.");
-    await dialog.getByRole("button", { name: "Verify" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog
+        .getByLabel("Reason")
+        .fill("Registration confirmed against the public register.");
+      await dialog.getByRole("button", { name: "Verify" }).click();
 
-    await expect(page.getByText("Organisation verified")).toBeVisible({
-      timeout: 15_000,
-    });
+      await expect(page.getByText("Organisation verified")).toBeVisible({
+        timeout: 15_000,
+      });
+    } finally {
+      // This suite runs against the same shared Postgres database as production
+      // (docs/DEVELOPMENT-PLAN.md) — without this, every run of this test leaks a
+      // real account+organization onto the live site. `finally` so a failed
+      // assertion above still cleans up.
+      await deleteTestAccount(email);
+    }
   });
 
   test("platform settings can add a category without a code change", async ({

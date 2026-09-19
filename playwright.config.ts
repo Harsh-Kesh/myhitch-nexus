@@ -1,5 +1,16 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// The webServer below already gets .env.local (see its own comment); the test *runner*
+// process is separate and doesn't load it automatically. A handful of tests connect to
+// Postgres directly for cleanup (e2e/helpers.ts's deleteTestAccount) and need
+// DATABASE_URL here too. Guarded since CI may inject env vars directly instead of via a
+// file.
+try {
+  process.loadEnvFile(".env.local");
+} catch {
+  // No .env.local (e.g. CI with env vars set directly) — fine.
+}
+
 const PORT = Number(process.env.PORT ?? 3100);
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${PORT}`;
 
