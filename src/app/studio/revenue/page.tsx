@@ -18,6 +18,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { RailSkeleton } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { CHART_COLORS, chartTooltip } from "@/components/charts/chart-theme";
+import { csvSection, downloadCsv } from "@/lib/csv";
 import { looksLikeRealId } from "@/lib/mock-api";
 import { useCurrentUser, useRevenueSummary } from "@/lib/mock-api/hooks";
 import type { RevenueSummary } from "@/lib/mock-api/types";
@@ -192,7 +193,27 @@ export default function StudioRevenuePage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => toast({ title: "CSV export isn't built yet", tone: "info" })}
+            disabled={!data}
+            onClick={() => {
+              if (!data) return;
+              const csv = csvSection(
+                "Transactions",
+                ["Date", "Description", "Type", "Gross", "Commission", "Net"],
+                data.transactions.map((txn) => [
+                  formatDate(txn.date),
+                  txn.description,
+                  txn.kind,
+                  formatCurrency(txn.gross),
+                  txn.fee ? formatCurrency(txn.fee) : "",
+                  formatCurrency(txn.net),
+                ]),
+              );
+              downloadCsv(`revenue-statement-${new Date().toISOString().slice(0, 10)}.csv`, [csv]);
+              toast({
+                title: "Statement exported",
+                description: `${data.transactions.length} transaction${data.transactions.length === 1 ? "" : "s"} downloaded.`,
+              });
+            }}
           >
             <IconDownload />
             Export statement

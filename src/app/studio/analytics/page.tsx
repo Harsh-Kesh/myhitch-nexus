@@ -40,6 +40,7 @@ import {
   chartGrid,
   chartTooltip,
 } from "@/components/charts/chart-theme";
+import { csvSection, downloadCsv } from "@/lib/csv";
 import { RANGE_LABELS } from "@/lib/mock-api/data/analytics";
 import { looksLikeRealId } from "@/lib/mock-api";
 import { useCreatorAnalytics, useCurrentUser } from "@/lib/mock-api/hooks";
@@ -87,17 +88,67 @@ export default function StudioAnalyticsPage() {
             <Button
               variant="secondary"
               size="sm"
-              onClick={() =>
-                toast({
-                  title: "Report scheduled",
-                  description:
-                    "A weekly CSV would be emailed on Mondays. Mock action — no email is sent.",
-                  tone: "info",
-                })
-              }
+              disabled={!data}
+              onClick={() => {
+                if (!data) return;
+                const sections = [
+                  csvSection(
+                    "Summary",
+                    ["Metric", "Value"],
+                    [
+                      ["Range", RANGE_LABELS[range]],
+                      ["Views", data.totals.views],
+                      ["Unique viewers", data.totals.uniqueViewers],
+                      ["Watch time (seconds)", data.totals.watchTimeSeconds],
+                      ["Completion rate (%)", data.totals.completionRate],
+                      ["Average view duration (seconds)", data.totals.averageViewDuration],
+                      ["Subscribers gained", data.totals.subscribersGained],
+                      ["Revenue", formatCurrency(data.totals.revenue.amount, data.totals.revenue.currency)],
+                    ],
+                  ),
+                  csvSection(
+                    "Time series",
+                    ["Date", "Views", "Watch hours", "Unique viewers", "Revenue"],
+                    data.timeSeries.map((point) => [
+                      point.date,
+                      point.views,
+                      point.watchHours,
+                      point.uniqueViewers,
+                      formatCurrency(point.revenue),
+                    ]),
+                  ),
+                  csvSection(
+                    "Top videos",
+                    ["Title", "Views", "Watch hours", "Completion rate (%)"],
+                    data.topVideos.map((row) => [row.title, row.views, row.watchHours, row.completionRate]),
+                  ),
+                  csvSection(
+                    "Revenue by content",
+                    ["Title", "Model", "Views", "Revenue"],
+                    data.revenueByContent.map((row) => [row.title, row.model, row.views, formatCurrency(row.revenue)]),
+                  ),
+                  csvSection(
+                    "Countries",
+                    ["Country", "Viewers", "Share (%)"],
+                    data.countries.map((row) => [row.label, row.value, row.share]),
+                  ),
+                  csvSection(
+                    "Devices",
+                    ["Device", "Viewers", "Share (%)"],
+                    data.devices.map((row) => [row.label, row.value, row.share]),
+                  ),
+                  csvSection(
+                    "Languages",
+                    ["Language", "Viewers", "Share (%)"],
+                    data.languages.map((row) => [row.label, row.value, row.share]),
+                  ),
+                ];
+                downloadCsv(`analytics-${range}-${new Date().toISOString().slice(0, 10)}.csv`, sections);
+                toast({ title: "Analytics exported", description: `${RANGE_LABELS[range]} — CSV downloaded.` });
+              }}
             >
               <IconDownload />
-              Export / schedule
+              Export CSV
             </Button>
           </>
         }
