@@ -16,6 +16,7 @@ import "server-only";
 import { query, queryOne, withTransaction } from "./db";
 import { createMasterUploadUrl, masterAssetExists, uploadThumbnail, MAX_MASTER_UPLOAD_BYTES } from "./storage";
 import { probeMasterAsset } from "./videoValidation";
+import { scanMasterAssetForMalware } from "./malwareScan";
 import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
 import { seriesBelongsToChannel } from "./series";
 import { flagForReview } from "./moderation";
@@ -131,7 +132,8 @@ export type PublishVideoResult =
   | { outcome: "not_channel_member" }
   | { outcome: "invalid"; reason: string }
   | { outcome: "asset_missing" }
-  | { outcome: "invalid_file"; reason: string };
+  | { outcome: "invalid_file"; reason: string }
+  | { outcome: "malware_detected"; signature: string };
 
 const VALID_STATUSES = ["draft", "private", "unlisted", "scheduled", "published", "archived"];
 
@@ -171,6 +173,13 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
   const probe = await probeMasterAsset(input.masterAssetPath);
   if (!probe.ok) {
     return { outcome: "invalid_file", reason: probe.reason };
+  }
+
+  // Best-effort, not a hard requirement — see malwareScan.ts's header for why an
+  // "unavailable" scanner doesn't block publishing (fails open, not closed).
+  const scan = await scanMasterAssetForMalware(input.masterAssetPath);
+  if (scan.status === "infected") {
+    return { outcome: "malware_detected", signature: scan.signature };
   }
 
   // Same review-routing rule the mock wizard already documents client-side — sponsored

@@ -11,10 +11,14 @@ cmds = ["npm install"]
 # videoValidation.ts) — free, open-source, no vendor/cost, and the same binary the
 # (currently cost-deferred) moderation frame-extraction step will need later.
 #
+# clamav (clamscan) does the same job for SEC-4's malware-scanning gap — free,
+# open-source, no vendor/cost. See malwareScan.ts for why it fails open rather than
+# blocking publishing if virus definitions aren't ready yet.
+#
 # The "..." is load-bearing, not decorative: without it this block REPLACES nixpacks'
 # auto-detected Node.js/npm setup phase instead of extending it — which is exactly what
-# broke every deploy since this was first added ("npm: command not found" during
+# broke every deploy since ffmpeg was first added ("npm: command not found" during
 # `RUN npm install`, since npm was never in the image at all). "..." tells nixpacks to
-# splice the extra package into its own detected list, not overwrite it.
+# splice the extra packages into its own detected list, not overwrite it.
 [phases.setup]
-nixPkgs = ["...", "ffmpeg"]
+nixPkgs = ["...", "ffmpeg", "clamav"]

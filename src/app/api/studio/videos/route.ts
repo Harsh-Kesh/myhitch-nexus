@@ -36,6 +36,11 @@ export async function POST(request: NextRequest) {
         );
       case "invalid_file":
         return NextResponse.json({ error: result.reason }, { status: 422 });
+      case "malware_detected":
+        return NextResponse.json(
+          { error: `This file was flagged by malware scanning (${result.signature}) and can't be published.` },
+          { status: 422 },
+        );
       case "success":
         return NextResponse.json({ id: result.id, slug: result.slug, status: result.status }, { status: 201 });
     }
