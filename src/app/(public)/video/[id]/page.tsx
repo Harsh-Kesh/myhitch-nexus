@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cache, Suspense } from "react";
+import { cache } from "react";
 import { channelById } from "@/lib/mock-api/data/channels";
 import { videos } from "@/lib/mock-api/data/videos";
 import { looksLikeRealId } from "@/lib/mock-api";
@@ -111,13 +111,17 @@ export default async function VideoDetailPage({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       ) : null}
-      {/* VideoDetailClient reads useSearchParams() (to catch a Stripe Checkout
-          `?checkout=` return) — required on a statically-generated page, and harmless
-          here since the client component's own isLoading skeleton is already the first
-          paint in every case. */}
-      <Suspense fallback={null}>
-        <VideoDetailClient />
-      </Suspense>
+      {/* No longer wrapped in <Suspense> — VideoDetailClient used to read
+          next/navigation's useSearchParams() (a "dynamic API") to catch a Stripe
+          Checkout `?checkout=` return, which is why a Suspense boundary existed here
+          at all (required by Next for a dynamic API on a statically-generated route).
+          That combination — this specific dynamic API, inside a Suspense boundary,
+          nested under this route's own loading.tsx — left the boundary permanently
+          stuck on its fallback in production builds for larger pages (rent/buy videos
+          with a paywall + full player), never reproducing in `next dev`. Fixed by
+          reading window.location.search directly in video-client.tsx instead, which
+          needs no Suspense boundary at all. */}
+      <VideoDetailClient />
     </>
   );
 }

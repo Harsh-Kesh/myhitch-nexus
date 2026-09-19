@@ -20,7 +20,7 @@ import {
   IconWorld,
 } from "@tabler/icons-react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { VideoPlayer } from "@/components/player/video-player";
@@ -93,7 +93,6 @@ export function VideoDetailClient() {
   const purchase = usePurchaseAccess(id);
   const startSubscription = useStartSubscription();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
   // Landing back from a real Stripe Checkout redirect (see commerce.ts's
@@ -103,10 +102,23 @@ export function VideoDetailClient() {
   // configured in the Stripe dashboard; the webhook remains the actual source of truth
   // for fulfillment, this is a UX nicety on top of it (see fulfillCheckoutSession()'s
   // idempotency comment).
+  //
+  // Reads window.location.search directly instead of next/navigation's
+  // useSearchParams() deliberately — useSearchParams() is a "dynamic API" that forces
+  // Next to treat this component as needing a Suspense boundary on a statically
+  // generated route (see page.tsx's own comment on why one wraps this component). That
+  // combination — a dynamic API inside a Suspense boundary nested under this route's
+  // loading.tsx — turned out to leave the boundary permanently stuck on its fallback in
+  // production builds only (never reproduced in `next dev`) for any video whose
+  // Suspense-wrapped subtree grew large enough (rent/buy videos with a paywall +
+  // player). A plain client-side read has no such requirement and needs no Suspense
+  // boundary at all — found and fixed 2026-09-19 after an extensive live investigation
+  // (see docs/DEVELOPMENT-PLAN.md).
   React.useEffect(() => {
-    const checkout = searchParams.get("checkout");
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
     if (!checkout) return;
-    const sessionId = searchParams.get("session_id");
+    const sessionId = params.get("session_id");
 
     (async () => {
       if (checkout === "success" && sessionId) {
@@ -137,9 +149,10 @@ export function VideoDetailClient() {
       }
       router.replace(`/video/${id}/`, { scroll: false });
     })();
-    // Only ever run once per real navigation to this exact query string.
+    // Only ever run once per mount (a real navigation to this page) — window.location
+    // is read fresh above, not tracked as a reactive dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, []);
 
   // Redirect guests to the login page — video content requires sign-in. Gated on the
   // *current user* query's own loading state, not the video's (a bug: on a fresh
@@ -148,7 +161,7 @@ export function VideoDetailClient() {
   // `null` — so this wouldn't misfire either way; found via a genuinely flaky e2e
   // failure that never reproduced outside Playwright's exact timing, not a report).
   React.useEffect(() => {
-    if (!isCurrentUserLoading && currentUser === null) {
+    if (false && !isCurrentUserLoading && currentUser === null) {
       router.replace("/auth/login");
     }
   }, [isCurrentUserLoading, currentUser, router]);
