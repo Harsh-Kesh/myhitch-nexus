@@ -463,7 +463,14 @@ export default function OrganizationVerificationPage() {
           <Card>
             <CardHeader title="Documents" description="Supporting evidence, where applicable." />
             <CardBody className="space-y-4">
-              <input ref={documentInputRef} type="file" accept=".pdf,.png,.jpg,.jpeg" className="hidden" onChange={onDocumentSelected} />
+              <input
+                ref={documentInputRef}
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg"
+                aria-label="Upload supporting document"
+                className="hidden"
+                onChange={onDocumentSelected}
+              />
               <div className="flex flex-wrap items-end gap-2">
                 <Field label="Document type" htmlFor="ov-doc-type" className="min-w-48">
                   <Select

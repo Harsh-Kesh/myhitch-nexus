@@ -182,6 +182,7 @@ export default function ProfilePage() {
               ref={avatarInputRef}
               type="file"
               accept="image/*"
+              aria-label="Upload profile photo"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];

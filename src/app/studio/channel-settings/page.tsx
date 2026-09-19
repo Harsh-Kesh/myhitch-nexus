@@ -240,6 +240,7 @@ export default function ChannelSettingsPage() {
               ref={bannerInputRef}
               type="file"
               accept="image/*"
+              aria-label="Upload channel banner"
               className="hidden"
               onChange={(event) => pickImage(event, "bannerUrl")}
             />
@@ -247,6 +248,7 @@ export default function ChannelSettingsPage() {
               ref={avatarInputRef}
               type="file"
               accept="image/*"
+              aria-label="Upload channel avatar"
               className="hidden"
               onChange={(event) => pickImage(event, "avatarUrl")}
             />

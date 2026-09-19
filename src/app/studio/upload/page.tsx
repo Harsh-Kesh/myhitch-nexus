@@ -525,6 +525,7 @@ export default function UploadPage() {
                           ref={fileInputRef}
                           type="file"
                           accept="video/*"
+                          aria-label="Upload video file"
                           className="sr-only"
                           onChange={(event) => {
                             const picked = event.target.files?.[0];
@@ -816,10 +817,12 @@ export default function UploadPage() {
                       <div className={cn("border-t border-border pt-5")}>
                         <Field
                           label="Upload a thumbnail"
+                          htmlFor="up-thumbnail-file"
                           hint="1920×1080 recommended, under 5 MB."
                           required={isRealChannel}
                         >
                           <input
+                            id="up-thumbnail-file"
                             type="file"
                             accept="image/*"
                             disabled={thumbnailUploading}

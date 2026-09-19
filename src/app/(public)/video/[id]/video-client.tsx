@@ -1069,7 +1069,7 @@ function RatingControl({
             aria-label={`Rate ${star} star${star === 1 ? "" : "s"}`}
             onMouseEnter={() => setHover(star)}
             onClick={() => onRate(star)}
-            className="p-0.5 transition-transform hover:scale-110"
+            className="flex size-6 items-center justify-center transition-transform hover:scale-110"
           >
             {filled ? (
               <IconStarFilled className="size-4 text-warning" />

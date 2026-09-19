@@ -51,14 +51,23 @@ export function Menu({
 
   return (
     <div ref={containerRef} className={cn("relative", className)}>
-      <div
-        onClick={() => setOpen((current) => !current)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-      >
-        {trigger}
-      </div>
+      {/* aria-haspopup/aria-expanded belong on the actual interactive trigger
+          element (always a real <button> or button-like component at every call
+          site), not this wrapper — a plain <div> has no implicit role, so those
+          attributes were invalid there (found by the real axe-core scan in
+          e2e/accessibility.spec.ts), and a div is never keyboard-operable anyway. */}
+      {React.isValidElement(trigger)
+        ? React.cloneElement(trigger as React.ReactElement<Record<string, unknown>>, {
+            onClick: () => setOpen((current) => !current),
+            "aria-haspopup": "menu",
+            "aria-expanded": open,
+            // Only override the trigger's own aria-label when Menu was given one —
+            // several call sites (e.g. a per-row "Actions" button) rely entirely on
+            // the trigger's own aria-label, and cloneElement would otherwise
+            // overwrite it with `undefined`, silently deleting its accessible name.
+            ...(label ? { "aria-label": label } : {}),
+          })
+        : trigger}
       {open ? (
         <div
           role="menu"

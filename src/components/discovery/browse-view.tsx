@@ -482,7 +482,7 @@ function FilterChip({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
         active
-          ? "border-accent bg-accent/10 font-medium text-accent"
+          ? "border-accent bg-accent/10 font-medium text-accent-hover"
           : "border-border bg-surface-2 text-fg-muted hover:border-border-strong hover:text-fg",
         disabled && "cursor-not-allowed opacity-60",
       )}

@@ -318,7 +318,7 @@ export default function AdminUsersPage() {
                       }
                       className={
                         active
-                          ? "rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs font-medium text-accent"
+                          ? "rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs font-medium text-accent-hover"
                           : "rounded-full border border-border bg-surface-2 px-3 py-1 text-xs text-fg-muted hover:border-border-strong"
                       }
                     >

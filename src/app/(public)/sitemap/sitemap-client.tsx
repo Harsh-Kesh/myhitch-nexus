@@ -254,7 +254,7 @@ export function SitemapClient() {
                           {link.description}
                         </p>
                       ) : null}
-                      <span className="mt-1 font-mono text-2xs text-fg-subtle opacity-70">
+                      <span className="mt-1 font-mono text-2xs text-fg-subtle">
                         {link.href}
                       </span>
                     </Link>

@@ -1052,6 +1052,7 @@ function DocumentUploader({
           type="file"
           multiple
           accept=".pdf,.jpg,.jpeg,.png"
+          aria-label="Upload verification documents"
           className="sr-only"
           onChange={(event) => addFiles(event.target.files)}
         />

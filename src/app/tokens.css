@@ -35,7 +35,10 @@
   /* --- Foreground ramp --- */
   --nx-fg: 18 21 27;
   --nx-fg-muted: 91 100 115;
-  --nx-fg-subtle: 130 139 154;
+  /* WCAG 2.2 AA: darkened from 130 139 154 (3.44:1 against white, fails 4.5:1) to
+     4.85:1 — found by the real axe-core scan in e2e/accessibility.spec.ts, not a
+     stylistic choice. */
+  --nx-fg-subtle: 107 114 126;
   --nx-fg-inverse: 255 255 255;
 
   /* --- Brand accent: Light mode accent carrying white text (5.8:1) --- */
@@ -46,25 +49,34 @@
   --nx-accent-soft: 227 239 255;
 
   /* --- Live: broadcast red --- */
-  --nx-live: 214 33 55;
+  /* WCAG 2.2 AA: darkened from 214 33 55 (4.24:1 against live-soft, fails 4.5:1)
+     to 5.48:1. */
+  --nx-live: 182 28 47;
   --nx-live-soft: 255 228 232;
 
   /* --- Content status palette --- */
-  --nx-status-draft: 100 110 128;
-  --nx-status-pending: 176 118 12;
-  --nx-status-published: 18 138 78;
-  --nx-status-scheduled: 12 132 142;
+  /* WCAG 2.2 AA: every one of these pairs its own color as both `text-status-*`
+     and, at 15% opacity, its badge background (StatusBadge/Badge) — six of the
+     nine failed 4.5:1 against that self-tinted background (as low as 3.23:1),
+     found by the real axe-core scan. Darkened each to clear it with a margin
+     (~4.6+); restricted and unlisted already passed and are unchanged. */
+  --nx-status-draft: 94 103 120;
+  --nx-status-pending: 139 93 9;
+  --nx-status-published: 15 117 66;
+  --nx-status-scheduled: 10 112 121;
   --nx-status-restricted: 109 74 195;
-  --nx-status-rejected: 199 42 68;
-  --nx-status-archived: 108 116 130;
-  --nx-status-private: 108 122 143;
+  --nx-status-rejected: 191 40 65;
+  --nx-status-archived: 96 103 116;
+  --nx-status-private: 92 104 122;
   --nx-status-unlisted: 82 97 118;
 
   /* --- Semantic feedback --- */
-  --nx-success: 18 138 78;
-  --nx-warning: 176 118 12;
-  --nx-danger: 199 42 68;
-  --nx-info: 12 132 142;
+  /* Aliases of the status colors above (success=published, warning=pending,
+     danger=rejected, info=scheduled) — same WCAG fix, same values. */
+  --nx-success: 15 117 66;
+  --nx-warning: 139 93 9;
+  --nx-danger: 191 40 65;
+  --nx-info: 10 112 121;
 
   /* --- Charts --- */
   --nx-chart-1: 22 104 216;
@@ -114,7 +126,9 @@
   /* --- Foreground ramp --- */
   --nx-fg: 242 244 248;
   --nx-fg-muted: 154 163 178;
-  --nx-fg-subtle: 107 116 130;
+  /* WCAG 2.2 AA: lightened from 107 116 130 (as low as 3.33:1 against surface-3,
+     fails 4.5:1) to 5.32:1 against the lightest surface this token sits on. */
+  --nx-fg-subtle: 139 151 169;
   --nx-fg-inverse: 12 14 18;
 
   /* --- Brand accent: Signal azure --- */
@@ -125,19 +139,22 @@
   --nx-accent-soft: 16 40 63;
 
   /* --- Live --- */
-  --nx-live: 240 51 74;
-  --nx-live-soft: 61 17 24;
+  /* WCAG 2.2 AA: was 240 51 74 on 61 17 24 (4.09:1, fails 4.5:1) — now 5.28:1. */
+  --nx-live: 255 64 93;
+  --nx-live-soft: 43 12 17;
 
   /* --- Content status palette --- */
+  /* WCAG 2.2 AA: archived and unlisted failed against their own 15%-tinted badge
+     background (3.36:1 / 3.39:1); the rest already passed. */
   --nx-status-draft: 138 148 166;
   --nx-status-pending: 232 163 61;
   --nx-status-published: 53 199 123;
   --nx-status-scheduled: 34 201 214;
   --nx-status-restricted: 167 128 245;
   --nx-status-rejected: 242 85 116;
-  --nx-status-archived: 107 114 128;
+  --nx-status-archived: 133 141 159;
   --nx-status-private: 148 163 184;
-  --nx-status-unlisted: 100 116 139;
+  --nx-status-unlisted: 122 142 170;
 
   /* --- Semantic feedback --- */
   --nx-success: 53 199 123;
@@ -172,11 +189,13 @@
   --nx-border-strong: 54 61 75;
   --nx-fg: 242 244 248;
   --nx-fg-muted: 154 163 178;
-  --nx-fg-subtle: 107 116 130;
+  /* WCAG 2.2 AA — same fix as [data-theme="dark"] above. */
+  --nx-fg-subtle: 139 151 169;
   --nx-accent: 77 163 255;
   --nx-accent-hover: 109 180 255;
   --nx-accent-fg: 6 18 31;
   --nx-accent-soft: 16 40 63;
-  --nx-live: 240 51 74;
-  --nx-live-soft: 61 17 24;
+  /* WCAG 2.2 AA — same fix as [data-theme="dark"] above. */
+  --nx-live: 255 64 93;
+  --nx-live-soft: 43 12 17;
 }

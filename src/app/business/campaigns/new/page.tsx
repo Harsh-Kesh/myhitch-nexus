@@ -379,7 +379,7 @@ export default function NewCampaignPage() {
                             className={cn(
                               "rounded-full border px-3 py-1 text-xs transition-colors",
                               ageBands.includes(band)
-                                ? "border-accent bg-accent/10 font-medium text-accent"
+                                ? "border-accent bg-accent/10 font-medium text-accent-hover"
                                 : "border-border bg-surface-2 text-fg-muted hover:border-border-strong",
                             )}
                           >
@@ -430,7 +430,7 @@ export default function NewCampaignPage() {
                             className={cn(
                               "rounded-full border px-3 py-1 text-xs transition-colors",
                               devices.includes(device)
-                                ? "border-accent bg-accent/10 font-medium text-accent"
+                                ? "border-accent bg-accent/10 font-medium text-accent-hover"
                                 : "border-border bg-surface-2 text-fg-muted hover:border-border-strong",
                             )}
                           >
