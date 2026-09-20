@@ -37,10 +37,21 @@ export function Modal({
   const panelRef = React.useRef<HTMLDivElement>(null);
   const titleId = React.useId();
 
+  // onClose is almost always an inline arrow function at the call site (every modal in
+  // this app does this, not just this one), so it gets a new identity on every render of
+  // whatever owns `open`'s state — typing into a field inside the modal is exactly such a
+  // render. A ref sidesteps that without asking every caller to memoize onClose: the
+  // keydown handler always reads the latest one, but doesn't need to be in a dependency
+  // array to do it. Found 2026-09-20 via a real, reported bug: typing in a modal field
+  // re-ran this effect on every keystroke, re-arming the focus-first-field timeout below
+  // and yanking focus back to the first input mid-word.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
       if (event.key !== "Tab") return;
       // Trap focus: a modal that leaks focus to the page behind it is a
       // keyboard dead end.
@@ -75,7 +86,9 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       window.clearTimeout(timer);
     };
-  }, [open, onClose]);
+    // Deliberately NOT depending on onClose — see onCloseRef above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   if (!open) return null;
 
