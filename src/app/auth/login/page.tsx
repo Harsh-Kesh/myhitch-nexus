@@ -14,7 +14,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { NexusMark } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
-import { Checkbox, Field, Input } from "@/components/ui/field";
+import { Checkbox, Field, Input, PasswordInput } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { useLogin } from "@/lib/mock-api/hooks";
 
@@ -132,9 +132,8 @@ export default function LoginPage() {
             </Link>
           }
         >
-          <Input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             leading={<IconShieldLock />}
             invalid={Boolean(errors.password)}

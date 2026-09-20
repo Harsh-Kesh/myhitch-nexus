@@ -37,23 +37,43 @@ export async function rateVideo(
   videoId: string,
   stars: 1 | 2 | 3 | 4 | 5,
 ): Promise<{ videoId: string; stars: number }> {
+  const existing = await queryOne<{ stars: number }>(
+    `select stars from video_ratings where video_id = $1 and account_id = $2`,
+    [videoId, accountId],
+  );
+
   await query(
     `insert into video_ratings (video_id, account_id, stars)
      values ($1, $2, $3)
      on conflict (video_id, account_id) do update set stars = excluded.stars`,
     [videoId, accountId, stars],
   );
-  // Recomputed from the real rows rather than incrementally adjusted (as the mock's
-  // running-average math did) — this is the point where a video's rating_average/
-  // rating_count stop being the seeded snapshot (docs/DEVELOPMENT-PLAN.md's P1 entry)
-  // and become live, for every video that gets at least one real rating.
-  await query(
-    `update videos set
-       rating_average = coalesce((select round(avg(stars)::numeric, 2) from video_ratings where video_id = $1), 0),
-       rating_count = (select count(*) from video_ratings where video_id = $1)
-     where id = $1`,
-    [videoId],
-  );
+
+  // Blends into whatever average/count the row already carries — including the
+  // marketing-seed snapshot most videos still show — rather than recomputing purely
+  // from video_ratings. Found live 2026-09-20: the previous version replaced e.g. a
+  // seeded "4.6 (7.7K)" with "4.0 (1)" the instant a single real rating came in, since
+  // video_ratings starts empty for every video regardless of its seeded snapshot. Same
+  // running-average approach the mock branch already used, including its one known
+  // imprecision: changing an existing vote adds the new stars without first backing out
+  // the old one, rather than a true re-average — accepted there already, not a new gap.
+  if (existing) {
+    await query(
+      `update videos set
+         rating_average = round(((rating_average * rating_count + $2) / greatest(rating_count, 1))::numeric, 2)
+       where id = $1`,
+      [videoId, stars],
+    );
+  } else {
+    await query(
+      `update videos set
+         rating_average = round(((rating_average * rating_count + $2) / (rating_count + 1))::numeric, 2),
+         rating_count = rating_count + 1
+       where id = $1`,
+      [videoId, stars],
+    );
+  }
+
   return { videoId, stars };
 }
 

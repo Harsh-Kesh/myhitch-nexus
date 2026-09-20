@@ -2660,6 +2660,29 @@ function applyRealAccount(account: RealAccount): void {
     }
   }
   store.user.mustChangePassword = account.mustChangePassword;
+
+  // Household viewer profiles (FR-6.2.6) have a real table but nothing reads/writes it
+  // for real yet — same "not a genuine gap, just not wired" category as the five admin
+  // config tables. Left unhandled here, every real account showed the mock seed's own
+  // household ("Mara", "Jonah", "Immy", "Kids") in the profile switcher and used
+  // whichever of them was "active" for the header avatar's name/initials — so a fresh
+  // real signed-up account saw someone else's family and someone else's initials.
+  // Found live 2026-09-20. Until real profile CRUD exists, every real account gets
+  // exactly one profile: itself — never the demo seed's fictional household, and never
+  // a real user's data pretending to be from a source it isn't.
+  const selfProfileId = `real-self-${account.id}`;
+  store.user.profiles = [
+    {
+      id: selfProfileId,
+      name: account.fullName,
+      kind: "adult",
+      avatarGradient: store.user.avatarGradient,
+      avatarUrl: account.avatarUrl ?? undefined,
+      maxAgeRating: "18",
+      language: account.preferredLanguage ?? store.user.language,
+    },
+  ];
+  store.user.activeProfileId = selfProfileId;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

@@ -28,6 +28,7 @@ import {
   Checkbox,
   Field,
   Input,
+  PasswordInput,
   RadioCard,
   Select,
   Switch,
@@ -419,9 +420,8 @@ export default function RegisterPage() {
                   : undefined
               }
             >
-              <Input
+              <PasswordInput
                 id="reg-password"
-                type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />

@@ -282,32 +282,36 @@ export function SiteHeader() {
                     <p className="truncate text-sm font-medium text-fg">{user.name}</p>
                     <p className="truncate text-xs text-fg-subtle">{user.email}</p>
                   </div>
-                  <MenuSeparator />
-                  <MenuLabel>Viewing as</MenuLabel>
-                  {user.profiles.map((profile) => (
-                    <MenuItem
-                      key={profile.id}
-                      active={profile.id === user.activeProfileId}
-                      onClick={() => switchProfile.mutate(profile.id)}
-                      icon={
-                        <Avatar
-                          name={profile.name}
-                          gradient={profile.avatarGradient}
-                          src={profile.avatarUrl}
-                          size="xs"
-                        />
-                      }
-                      trailing={
-                        profile.kind !== "adult" ? (
-                          <Badge tone="outline" size="sm">
-                            {profile.maxAgeRating}
-                          </Badge>
-                        ) : undefined
-                      }
-                    >
-                      {profile.name}
-                    </MenuItem>
-                  ))}
+                  {user.profiles.length > 1 ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuLabel>Viewing as</MenuLabel>
+                      {user.profiles.map((profile) => (
+                        <MenuItem
+                          key={profile.id}
+                          active={profile.id === user.activeProfileId}
+                          onClick={() => switchProfile.mutate(profile.id)}
+                          icon={
+                            <Avatar
+                              name={profile.name}
+                              gradient={profile.avatarGradient}
+                              src={profile.avatarUrl}
+                              size="xs"
+                            />
+                          }
+                          trailing={
+                            profile.kind !== "adult" ? (
+                              <Badge tone="outline" size="sm">
+                                {profile.maxAgeRating}
+                              </Badge>
+                            ) : undefined
+                          }
+                        >
+                          {profile.name}
+                        </MenuItem>
+                      ))}
+                    </>
+                  ) : null}
                   <MenuSeparator />
                 </>
                 <MenuItem href="/account/profile" icon={<IconUsers />}>
@@ -319,20 +323,34 @@ export function SiteHeader() {
                 <MenuItem href="/account/history" icon={<IconHistory />}>
                   Watch history
                 </MenuItem>
-                <MenuSeparator />
-                <MenuLabel>Workspaces</MenuLabel>
-                <MenuItem href="/studio/dashboard" icon={<IconLayoutGrid />}>
-                  Creator Studio
-                </MenuItem>
-                <MenuItem href="/business/channel" icon={<IconBuildingStore />}>
-                  Business Studio
-                </MenuItem>
-                <MenuItem href="/studio/live" icon={<IconBroadcast />}>
-                  Go live
-                </MenuItem>
-                <MenuItem href="/admin" icon={<IconShieldCog />}>
-                  Admin console
-                </MenuItem>
+                {user.roles.some((role) =>
+                  ["creator", "business", "advertiser", "admin"].includes(role),
+                ) ? (
+                  <>
+                    <MenuSeparator />
+                    <MenuLabel>Workspaces</MenuLabel>
+                    {user.roles.includes("creator") ? (
+                      <>
+                        <MenuItem href="/studio/dashboard" icon={<IconLayoutGrid />}>
+                          Creator Studio
+                        </MenuItem>
+                        <MenuItem href="/studio/live" icon={<IconBroadcast />}>
+                          Go live
+                        </MenuItem>
+                      </>
+                    ) : null}
+                    {user.roles.includes("business") || user.roles.includes("advertiser") ? (
+                      <MenuItem href="/business/channel" icon={<IconBuildingStore />}>
+                        Business Studio
+                      </MenuItem>
+                    ) : null}
+                    {user.roles.includes("admin") ? (
+                      <MenuItem href="/admin" icon={<IconShieldCog />}>
+                        Admin console
+                      </MenuItem>
+                    ) : null}
+                  </>
+                ) : null}
                 <MenuSeparator />
                 <MenuItem href="/account/settings" icon={<IconSettings />}>
                   Settings

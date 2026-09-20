@@ -386,8 +386,27 @@ function ControlButton({
   );
 
   if (asDiv) {
+    // Menu clones this element and injects onClick (see menu.tsx) — found live
+    // 2026-09-20: this branch destructured onClick but never attached it, so the
+    // subtitle and quality/speed buttons looked clickable (cursor, hover state,
+    // role="button") but did nothing at all. onKeyDown mirrors it for Enter/Space so a
+    // role="button" div with tabIndex is actually keyboard-operable, not just visually
+    // focusable.
     return (
-      <div role="button" tabIndex={0} aria-label={label} title={label} className={classes}>
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={label}
+        title={label}
+        className={classes}
+        onClick={onClick}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick?.();
+          }
+        }}
+      >
         {children}
       </div>
     );

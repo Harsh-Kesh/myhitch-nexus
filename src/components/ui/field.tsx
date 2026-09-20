@@ -1,5 +1,6 @@
 "use client";
 
+import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
@@ -112,6 +113,39 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     );
   },
 );
+
+/* --------------------------- Password input ------------------------------ */
+
+/** Input with a show/hide toggle — every real password-entry field (sign in, register,
+ * set a new password) should use this rather than plain `type="password"`, so someone
+ * can check what they typed before submitting. Not used for the account settings
+ * parental PIN field, which is deliberately masked-only by design ("never displayed
+ * once set") — a reveal toggle there would contradict its own stated purpose. */
+export const PasswordInput = React.forwardRef<
+  HTMLInputElement,
+  Omit<InputProps, "type" | "trailing">
+>(function PasswordInput({ leading, ...props }, ref) {
+  const [visible, setVisible] = React.useState(false);
+  return (
+    <Input
+      ref={ref}
+      type={visible ? "text" : "password"}
+      leading={leading}
+      trailing={
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => setVisible((current) => !current)}
+          aria-label={visible ? "Hide password" : "Show password"}
+          className="pointer-events-auto flex items-center rounded text-fg-subtle hover:text-fg"
+        >
+          {visible ? <IconEyeOff /> : <IconEye />}
+        </button>
+      }
+      {...props}
+    />
+  );
+});
 
 /* ----------------------------- Textarea --------------------------------- */
 

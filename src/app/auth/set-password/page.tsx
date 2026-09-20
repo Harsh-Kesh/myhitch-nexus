@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { NexusMark } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
+import { Field, PasswordInput } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { useCurrentUser, useSetPassword } from "@/lib/mock-api/hooks";
 
@@ -74,9 +74,8 @@ export default function SetPasswordPage() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4" noValidate>
         <Field label="New password" htmlFor="newPassword" error={errors.newPassword?.message} required>
-          <Input
+          <PasswordInput
             id="newPassword"
-            type="password"
             autoComplete="new-password"
             leading={<IconShieldLock />}
             invalid={Boolean(errors.newPassword)}
@@ -90,9 +89,8 @@ export default function SetPasswordPage() {
           error={errors.confirmPassword?.message}
           required
         >
-          <Input
+          <PasswordInput
             id="confirmPassword"
-            type="password"
             autoComplete="new-password"
             leading={<IconShieldLock />}
             invalid={Boolean(errors.confirmPassword)}
