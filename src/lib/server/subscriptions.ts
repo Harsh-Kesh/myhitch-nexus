@@ -243,7 +243,15 @@ export async function listRealPlanPurchases(accountId: string): Promise<PlanPurc
 
   const rows: PlanPurchaseRow[] = [];
   for (const customerId of customerIds) {
-    const invoices = await getStripe().invoices.list({ customer: customerId, limit: 100 });
+    // Best-effort per customer — one bad/non-Stripe customer id (e.g. a manually seeded
+    // demo row) shouldn't 500 the whole purchases page over its "Receipt" column.
+    let invoices: Stripe.ApiList<Stripe.Invoice>;
+    try {
+      invoices = await getStripe().invoices.list({ customer: customerId, limit: 100 });
+    } catch (err) {
+      console.error("Failed to list Stripe invoices for customer", customerId, err);
+      continue;
+    }
     for (const invoice of invoices.data) {
       if (invoice.status !== "paid") continue;
       const subscriptionRef = invoice.parent?.subscription_details?.subscription;
