@@ -180,7 +180,13 @@ export default function StudioContentPage() {
           </MenuItem>
           <MenuItem
             icon={<IconEdit />}
-            onClick={() => toast({ title: "Edit details", tone: "info" })}
+            onClick={() =>
+              toast({
+                title: "Editing isn't available yet",
+                description: "Metadata can only be set at upload time for now — re-upload to change it.",
+                tone: "info",
+              })
+            }
           >
             Edit details
           </MenuItem>
