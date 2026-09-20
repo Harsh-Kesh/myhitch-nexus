@@ -20,7 +20,6 @@ import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import { channelById } from "@/lib/mock-api/data/channels";
 import {
   useContinueWatching,
-  useCurrentUser,
   useFeaturedContent,
   useLiveEvents,
   useToggleWatchlist,
@@ -43,18 +42,12 @@ export default function HomePage() {
   const { data: liveEvents = [] } = useLiveEvents();
   const { data: watchlist = [] } = useWatchlist();
   const toggleWatchlist = useToggleWatchlist();
-  const { data: user } = useCurrentUser();
-  const isGuest = !user;
-
+  // The video page is fully viewable signed out — see video-card.tsx's link comment.
   const goToVideo = React.useCallback(
     (videoId: string) => {
-      if (isGuest) {
-        router.push("/auth/login");
-      } else {
-        router.push(`/video/${videoId}`);
-      }
+      router.push(`/video/${videoId}`);
     },
-    [isGuest, router],
+    [router],
   );
 
   const progressFor = React.useCallback(

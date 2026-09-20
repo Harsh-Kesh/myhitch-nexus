@@ -14,7 +14,6 @@ import * as React from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, LiveBadge, StatusBadge } from "@/components/ui/badge";
 import { channelById } from "@/lib/mock-api/data/channels";
-import { useCurrentUser } from "@/lib/mock-api/hooks";
 import type { Video } from "@/lib/mock-api/types";
 import {
   cn,
@@ -70,9 +69,6 @@ export function VideoCard({
   href,
   minimal,
 }: VideoCardProps) {
-  const { data: user } = useCurrentUser();
-  const isGuest = !user;
-
   // Real (Postgres) video objects — cast through as `Video` at the fetch boundary the
   // same way searchVideos()/getWatchlist() already do — carry their channel's name
   // directly (VideoSummary.channelName) rather than a mock-shaped channelId that
@@ -83,8 +79,11 @@ export function VideoCard({
   const channel = channelById(video.channelId);
   const channelDisplayName = channel?.name ?? realChannelName;
   const access = accessLabel(video);
-  // Guests are redirected to login instead of going directly to the video page.
-  const link = href ?? (isGuest ? "/auth/login" : `/video/${video.id}`);
+  // The video detail page itself is fully viewable signed out (synopsis, cast, ratings,
+  // comments) — only actually playing or buying something needs an account, and that's
+  // gated on the video page itself, not here. Sending guests to /auth/login before they've
+  // even seen what the video is was the reported bug (2026-09-20).
+  const link = href ?? `/video/${video.id}`;
   const isRow = layout === "row";
   const geoLimited =
     video.rights.blockedCountries.length > 0 ||

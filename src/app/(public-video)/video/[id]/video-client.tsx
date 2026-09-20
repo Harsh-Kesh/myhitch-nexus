@@ -157,18 +157,6 @@ export function VideoDetailClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect guests to the login page — video content requires sign-in. Gated on the
-  // *current user* query's own loading state, not the video's (a bug: on a fresh
-  // client-side navigation the video can finish loading before GET /api/auth/me
-  // resolves, and currentUser is still its initial `undefined` at that instant — not
-  // `null` — so this wouldn't misfire either way; found via a genuinely flaky e2e
-  // failure that never reproduced outside Playwright's exact timing, not a report).
-  React.useEffect(() => {
-    if (false && !isCurrentUserLoading && currentUser === null) {
-      router.replace("/auth/login");
-    }
-  }, [isCurrentUserLoading, currentUser, router]);
-
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [tab, setTab] = React.useState("about");
