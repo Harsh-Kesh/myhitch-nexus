@@ -169,6 +169,20 @@ export async function getVideo(id: string): Promise<Video | null> {
     return (await res.json()) as Video;
   }
 
+  // A slug (not a UUID) is ambiguous: the real catalogue was seeded from this same mock
+  // dataset (scripts/index-catalogue.mjs), so most mock slugs also name a real, published,
+  // purchasable video — e.g. "the-saltmarsh" is both a mock title and a real Postgres one
+  // with real Stripe pricing behind it. Found live 2026-09-20: visiting a real video's
+  // slug silently served the mock one instead, with no error, hiding an otherwise fully
+  // working real purchase flow behind a fake preview. getVideoById() already matches by
+  // slug and filters to status='published', so try the real catalogue first and only
+  // fall back to mock on a genuine miss (a purely mock-only slug, or a real video that
+  // isn't published yet).
+  const realRes = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
+  if (realRes.ok) {
+    return (await realRes.json()) as Video;
+  }
+
   await latency("fast");
   const video = store.videos.find((item) => item.id === id || item.slug === id);
   return video ? clone(video) : null;
@@ -243,6 +257,15 @@ export async function getChannel(id: string): Promise<Channel | null> {
       throw new Error(`GET /api/channels/${id} failed with ${res.status}`);
     }
     return (await res.json()) as Channel;
+  }
+
+  // Same reasoning as getVideo() above — the real organisations table was seeded from
+  // this same mock channel list, so all 10 mock handles also name a real channel (e.g.
+  // "heliomotors"). Try the real one first so a real, verified channel isn't silently
+  // shadowed by its same-handle mock counterpart.
+  const realRes = await fetch(`/api/channels/${encodeURIComponent(id)}/`);
+  if (realRes.ok) {
+    return (await realRes.json()) as Channel;
   }
 
   await latency("fast");

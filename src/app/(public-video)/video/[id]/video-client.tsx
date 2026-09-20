@@ -74,23 +74,30 @@ export function VideoDetailClient() {
   const { toast } = useToast();
 
   const { data: video, isLoading } = useVideo(id);
+  // The URL can be a slug, and the real catalogue was seeded from this same mock
+  // dataset (see getVideo()'s own comment in mock-api/index.ts) — so a slug alone is
+  // ambiguous between a mock video and a same-named real one. Every action below needs
+  // to agree with whatever getVideo() actually resolved, not re-derive its own guess
+  // from the raw URL param, or a real video's actions (rate, comment, buy, watchlist)
+  // silently no-op or hit the wrong backend once the page itself is showing correctly.
+  const videoId = video?.id ?? id;
   const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
-  const { data: entitlement } = useEntitlement(id, currentUser?.id, !isCurrentUserLoading);
+  const { data: entitlement } = useEntitlement(videoId, currentUser?.id, !isCurrentUserLoading);
   const { data: channel } = useChannel(video?.channelId ?? "");
-  const { data: related = [], isLoading: isRelatedLoading } = useRelatedVideos(id);
-  const { data: comments = [] } = useComments(id);
-  const { data: progress } = useWatchProgress(id);
+  const { data: related = [], isLoading: isRelatedLoading } = useRelatedVideos(videoId);
+  const { data: comments = [] } = useComments(videoId);
+  const { data: progress } = useWatchProgress(videoId);
   const { data: watchlist = [] } = useWatchlist();
-  const { data: myRating } = useMyRating(id);
+  const { data: myRating } = useMyRating(videoId);
   const { data: following } = useIsFollowing(video?.channelId ?? "");
 
   const toggleWatchlist = useToggleWatchlist();
   const toggleFollow = useToggleFollow();
-  const likeVideo = useLikeVideo(id);
-  const rateVideo = useRateVideo(id);
-  const postComment = usePostComment(id);
-  const replyToComment = useReplyToComment(id);
-  const purchase = usePurchaseAccess(id);
+  const likeVideo = useLikeVideo(videoId);
+  const rateVideo = useRateVideo(videoId);
+  const postComment = usePostComment(videoId);
+  const replyToComment = useReplyToComment(videoId);
+  const purchase = usePurchaseAccess(videoId);
   const startSubscription = useStartSubscription();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -141,7 +148,7 @@ export function VideoDetailClient() {
             tone: "info",
           });
         }
-        queryClient.invalidateQueries({ queryKey: qk.entitlement(id) });
+        queryClient.invalidateQueries({ queryKey: qk.entitlement(videoId) });
         queryClient.invalidateQueries({ queryKey: qk.purchases });
         queryClient.invalidateQueries({ queryKey: qk.subscriptions });
       } else if (checkout === "cancelled") {
