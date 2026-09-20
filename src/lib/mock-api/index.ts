@@ -958,6 +958,10 @@ export async function toggleWatchlist(videoId: string): Promise<boolean> {
   }
 
   await latency("fast");
+  // Guests have no per-viewer watchlist state in the mock layer (store.watchlist is a
+  // single shared seed, not per-session) — treat every guest toggle as a no-op, same as
+  // toggleFollow above, rather than silently mutating the signed-in demo user's list.
+  if (!store.loggedIn) return false;
   const index = store.watchlist.indexOf(videoId);
   if (index >= 0) {
     store.watchlist.splice(index, 1);
@@ -980,6 +984,9 @@ export async function getWatchlist(): Promise<Video[]> {
       .catch(() => [] as Video[]),
     (async () => {
       await latency("fast");
+      // Same guest guard as isFollowing/toggleWatchlist above — store.watchlist is the
+      // signed-in demo user's seeded list, not a per-session guest list.
+      if (!store.loggedIn) return [] as Video[];
       return clone(
         store.watchlist
           .filter((id) => !looksLikeRealId(id))

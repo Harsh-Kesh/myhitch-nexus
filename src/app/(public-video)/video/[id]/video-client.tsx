@@ -77,7 +77,7 @@ export function VideoDetailClient() {
   const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
   const { data: entitlement } = useEntitlement(id, currentUser?.id, !isCurrentUserLoading);
   const { data: channel } = useChannel(video?.channelId ?? "");
-  const { data: related = [] } = useRelatedVideos(id);
+  const { data: related = [], isLoading: isRelatedLoading } = useRelatedVideos(id);
   const { data: comments = [] } = useComments(id);
   const { data: progress } = useWatchProgress(id);
   const { data: watchlist = [] } = useWatchlist();
@@ -744,8 +744,10 @@ export function VideoDetailClient() {
           <h2 className="mb-3 font-display text-base font-semibold text-fg">
             Related
           </h2>
-          {related.length === 0 ? (
+          {isRelatedLoading ? (
             <RailSkeleton count={4} />
+          ) : related.length === 0 ? (
+            <EmptyState compact title="No related videos yet" />
           ) : (
             <ul className="space-y-4">
               {related.slice(0, 10).map((item) => (
