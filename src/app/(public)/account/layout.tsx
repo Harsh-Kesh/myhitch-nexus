@@ -8,7 +8,6 @@ import {
   IconHistory,
   IconReceipt,
   IconSettings,
-  IconClock,
   IconUser,
 } from "@tabler/icons-react";
 import { AuthGuard } from "@/components/layout/auth-guard";
@@ -18,8 +17,7 @@ const TABS = [
   { href: "/account/profile", label: "Profile", icon: <IconUser /> },
   { href: "/account/watchlist", label: "Watchlist", icon: <IconBookmark /> },
   { href: "/account/history", label: "History", icon: <IconHistory /> },
-  { href: "/account/purchases", label: "Purchases", icon: <IconReceipt /> },
-  { href: "/account/rentals", label: "Rentals", icon: <IconClock /> },
+  { href: "/account/billing", label: "Billing", icon: <IconReceipt /> },
   { href: "/account/subscriptions", label: "Subscriptions", icon: <IconCreditCard /> },
   { href: "/account/copyright", label: "Copyright", icon: <IconGavel /> },
   { href: "/account/notifications", label: "Notifications", icon: <IconBell /> },
@@ -38,7 +36,7 @@ export default function AccountLayout({
           Your account
         </h1>
         <p className="mt-1.5 text-sm text-fg-muted">
-          Profiles, viewing activity, purchases and preferences.
+          Profiles, viewing activity, billing and preferences.
         </p>
         <NavTabs items={TABS} className="mt-5" />
         <div className="py-6">{children}</div>

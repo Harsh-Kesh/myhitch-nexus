@@ -217,19 +217,6 @@ export function useSetRequestCountry() {
   });
 }
 
-export function usePurchaseAccess(videoId: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (kind: "buy" | "rent" | "ppv" | "ticket") =>
-      api.purchaseAccess(videoId, kind),
-    onSuccess: () => {
-      client.invalidateQueries({ queryKey: qk.entitlement(videoId) });
-      client.invalidateQueries({ queryKey: qk.purchases });
-      client.invalidateQueries({ queryKey: qk.notifications });
-    },
-  });
-}
-
 export function useStartSubscription() {
   const client = useQueryClient();
   return useMutation({

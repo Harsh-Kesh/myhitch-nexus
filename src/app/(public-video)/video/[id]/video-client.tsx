@@ -63,6 +63,7 @@ import {
   formatDuration,
   formatRuntime,
   relativeTime,
+  SITE_URL,
 } from "@/lib/utils";
 
 export function VideoDetailClient() {
@@ -1215,7 +1216,7 @@ function ShareModal({
   video: Video;
 }) {
   const { toast } = useToast();
-  const url = `https://nexus.example/video/${video.id}`;
+  const url = `${SITE_URL}/video/${video.id}/`;
 
   return (
     <Modal open={open} onClose={onClose} title="Share" size="sm">
@@ -1230,7 +1231,7 @@ function ShareModal({
         />
         <div className="bg-surface-2 p-3">
           <p className="text-2xs uppercase tracking-wide text-fg-subtle">
-            nexus.example
+            myhitchnexus.com.au
           </p>
           <p className="mt-0.5 truncate text-sm font-medium text-fg">{video.title}</p>
           <p className="mt-0.5 nx-clamp-2 text-xs text-fg-muted">{video.synopsis}</p>

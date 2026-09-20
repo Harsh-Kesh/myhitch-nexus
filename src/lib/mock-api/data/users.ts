@@ -391,11 +391,11 @@ export const notifications: AppNotification[] = [
   {
     id: "ntf_07",
     event: "purchase-receipt",
-    title: "Receipt: The Saltmarsh (48-hour rental)",
-    body: "Invoice NX-2026-041882 — £4.49",
+    title: "Receipt: Nexus Premium",
+    body: "Invoice NX-2026-041882 — £9.99",
     createdAt: daysAgo(1),
     read: true,
-    href: "/account/purchases",
+    href: "/account/billing",
   },
 ];
 

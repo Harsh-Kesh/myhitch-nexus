@@ -113,13 +113,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.5,
     },
     {
-      url: `${baseUrl}/account/purchases`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.5,
-    },
-    {
-      url: `${baseUrl}/account/rentals`,
+      url: `${baseUrl}/account/billing`,
       lastModified: now,
       changeFrequency: "weekly",
       priority: 0.5,

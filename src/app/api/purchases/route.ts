@@ -1,5 +1,5 @@
 // GET /api/purchases — real counterpart of the mock's getPurchases(), for
-// /account/purchases. Real accounts only.
+// /account/billing. Real accounts only.
 import { NextResponse, type NextRequest } from "next/server";
 import { listRealPurchases } from "@/lib/server/commerce";
 import { getRequestAccount } from "@/lib/server/rbac";

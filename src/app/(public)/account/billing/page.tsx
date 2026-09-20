@@ -31,7 +31,7 @@ const STATUS_TONE: Record<
   refunded: "danger",
 };
 
-export default function PurchasesPage() {
+export default function BillingPage() {
   const { data: user } = useCurrentUser();
   const isRealAccount = Boolean(user?.id && looksLikeRealId(user.id));
   const { data: purchases = [], isLoading } = usePurchases();
@@ -78,7 +78,7 @@ export default function PurchasesPage() {
     },
     {
       key: "date",
-      header: "Purchased",
+      header: "Date",
       secondary: true,
       sortValue: (row) => row.purchasedAt,
       cell: (row) => <span className="nx-tnum">{formatDate(row.purchasedAt)}</span>,
@@ -142,7 +142,7 @@ export default function PurchasesPage() {
     return (
       <EmptyState
         icon={<IconReceipt />}
-        title="No purchases yet"
+        title="No billing history yet"
         description="Your plan billing history and receipts appear here once you subscribe."
         action={{ label: "View plans", href: "/plans" }}
       />
@@ -178,7 +178,7 @@ export default function PurchasesPage() {
         columns={columns}
         rows={purchases}
         rowKey={(row) => row.id}
-        caption="Purchase history"
+        caption="Billing history"
       />
 
       <p className="text-xs leading-relaxed text-fg-subtle">

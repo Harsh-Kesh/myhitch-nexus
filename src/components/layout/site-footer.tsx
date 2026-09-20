@@ -41,8 +41,7 @@ const COLUMNS = [
     links: [
       { label: "Profile", href: "/account/profile" },
       { label: "Watchlist", href: "/account/watchlist" },
-      { label: "Purchases", href: "/account/purchases" },
-      { label: "Rentals", href: "/account/rentals" },
+      { label: "Billing", href: "/account/billing" },
       { label: "Subscriptions", href: "/account/subscriptions" },
       { label: "Settings", href: "/account/settings" },
     ],

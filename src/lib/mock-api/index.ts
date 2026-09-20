@@ -542,79 +542,9 @@ export async function getEntitlement(
   };
 }
 
-/** Mock checkout for a mock video — see §12. Real videos redirect to a real Stripe
- * Checkout session instead (docs/DEVELOPMENT-PLAN.md's P3 first slice); the browser
- * navigates away, so this deliberately never resolves in that branch — there is no
- * synchronous "purchase complete" for a real payment, only a redirect back once Stripe
- * confirms it (see video-client.tsx's handling of the `?checkout=` return param). */
-export async function purchaseAccess(
-  videoId: string,
-  kind: "buy" | "rent" | "ppv" | "ticket",
-): Promise<PurchaseRecord> {
-  if (looksLikeRealId(videoId)) {
-    const res = await fetch(`/api/videos/${videoId}/checkout/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind }),
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error ?? "Could not start checkout.");
-    }
-    const { url } = (await res.json()) as { url: string };
-    window.location.href = url;
-    return new Promise<PurchaseRecord>(() => {});
-  }
-
-  await latency("slow");
-  const video = store.videos.find((item) => item.id === videoId);
-  const price =
-    kind === "buy"
-      ? video?.pricing.buyPrice
-      : kind === "rent"
-        ? video?.pricing.rentPrice
-        : video?.pricing.ppvPrice;
-
-  const windowHours = video?.pricing.rentalWindowHours ?? 48;
-  const expiresAt =
-    kind === "rent"
-      ? new Date(Date.now() + windowHours * 3_600_000).toISOString()
-      : null;
-
-  store.unlocked[videoId] = { kind, expiresAt };
-
-  const record: PurchaseRecord = {
-    id: nextId("pur"),
-    videoId,
-    kind: kind === "ticket" ? "ppv" : kind,
-    price: price ?? { amount: 0, currency: "GBP" },
-    purchasedAt: new Date().toISOString(),
-    expiresAt,
-    status: kind === "rent" ? "active" : "completed",
-    invoiceNumber: `NX-2026-${String(store.seq).padStart(6, "0")}`,
-  };
-  store.purchases = [record, ...store.purchases];
-
-  store.notifications = [
-    {
-      id: nextId("ntf"),
-      event: "purchase-receipt",
-      title: `Receipt: ${video?.title ?? "Video"}`,
-      body: `Invoice ${record.invoiceNumber}`,
-      createdAt: record.purchasedAt,
-      read: false,
-      href: "/account/purchases",
-    },
-    ...store.notifications,
-  ];
-
-  return record;
-}
-
 /** Real Nexus Premium (channelId omitted) and real channel memberships (channelId is a
  * real channel's id) both redirect to a real Stripe Checkout session; a mock channelId
- * (or a fully mock account) falls through to the simulated subscription below, same
- * "redirects away, never resolves" shape as purchaseAccess()'s real branch — a real
+ * (or a fully mock account) falls through to the simulated subscription below — a real
  * subscription signup has no synchronous "subscribed" the way the mock always did. */
 const MOCK_PLAN_PRICE: Record<"premium" | "family" | "business", { month: number; year?: number }> = {
   premium: { month: 999, year: 9900 },
