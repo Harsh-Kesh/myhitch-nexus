@@ -117,7 +117,15 @@ export function Rail({
 
       <div
         ref={scrollerRef}
-        className="nx-rail gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8"
+        // justify-start: .nx-rail's grid-auto-flow: column leaves its implicit columns
+        // at their default `auto` sizing, and CSS Grid's default justify-content
+        // ("normal") stretches auto-sized tracks to fill leftover space — so a rail with
+        // few cards (fewer than fit the viewport) spreads them apart with growing gaps
+        // instead of packing them together, while a fuller rail looks fine because
+        // there's no leftover space left to stretch into. justify-start pins tracks to
+        // their content size regardless of leftover space (2026-09-20, reported as
+        // "spacing looks different between rails").
+        className="nx-rail justify-start gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8"
       >
         {videos.map((video) => (
           <div

@@ -306,7 +306,9 @@ function LiveRail({
         </Button>
       </div>
 
-      <div className="nx-rail gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8">
+      {/* justify-start — see rail.tsx's comment on the same class for why a short rail
+          needs this to avoid CSS Grid auto-stretching its cards apart. */}
+      <div className="nx-rail justify-start gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8">
         {shown.map((event) => {
           const channel = channelById(event.channelId);
           return (
