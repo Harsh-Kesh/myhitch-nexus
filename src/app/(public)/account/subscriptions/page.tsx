@@ -62,8 +62,8 @@ export default function SubscriptionsPage() {
         <EmptyState
           icon={<IconCreditCard />}
           title="No subscriptions"
-          description="Nexus Premium removes advertising and includes a catalogue of films and series. Channel memberships support creators directly."
-          action={{ label: "Browse the catalogue", href: "/explore" }}
+          description="Premium, Family and Business plans remove advertising and unlock the full Nexus catalogue and tools."
+          action={{ label: "View plans", href: "/plans" }}
         />
       ) : null}
 

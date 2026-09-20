@@ -54,13 +54,13 @@ const ROLES: Array<{
   {
     value: "viewer",
     title: "Viewer",
-    description: "Watch, rent, buy and subscribe. Set up profiles for your household.",
+    description: "Watch for free with ads, or subscribe to a plan. Set up profiles for your household.",
     icon: <IconDeviceTv />,
   },
   {
     value: "creator",
     title: "Creator",
-    description: "Publish your own videos, go live, and earn from ads and memberships.",
+    description: "Publish your own videos, go live, and earn from ads and subscriptions.",
     icon: <IconVideo />,
   },
   {
@@ -694,7 +694,7 @@ export default function RegisterPage() {
                 value={orgAbout}
                 onChange={(event) => setOrgAbout(event.target.value)}
                 rows={3}
-                placeholder="Independent feature films and shorts, licensed for rental and purchase."
+                placeholder="Independent feature films and shorts, available to Nexus subscribers."
               />
             </Field>
 
