@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { deleteTestAccount, dismissDevOverlay, login } from "./helpers";
+import { deleteTestAccount, deleteTestCategory, dismissDevOverlay, login } from "./helpers";
 
 /**
  * Covers the end-to-end journey from §13.9 of the build spec:
@@ -377,14 +377,22 @@ test.describe("Admin", () => {
     await page.getByRole("button", { name: "New category" }).click();
 
     const name = `Smoke category ${Date.now()}`;
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Name").fill(name);
-    await dialog.getByRole("button", { name: "Add category" }).click();
+    try {
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Name").fill(name);
+      await dialog.getByRole("button", { name: "Add category" }).click();
 
-    await expect(page.getByText("Category added")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(page.getByText(name).first()).toBeVisible();
+      await expect(page.getByText("Category added")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByText(name).first()).toBeVisible();
+    } finally {
+      // This suite runs against the same shared Postgres database as production
+      // (docs/DEVELOPMENT-PLAN.md) — without this, every run leaks a real
+      // category onto the live site's category list. `finally` so a failed
+      // assertion above still cleans up.
+      await deleteTestCategory(name);
+    }
   });
 });
 

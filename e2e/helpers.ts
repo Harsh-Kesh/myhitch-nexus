@@ -68,3 +68,33 @@ export async function deleteTestAccount(email: string): Promise<void> {
     await client.end();
   }
 }
+
+/**
+ * Deletes a throwaway category created by a test, same reasoning as
+ * deleteTestAccount above — categories live in this suite's shared production
+ * database too and there's no delete API to call instead.
+ *
+ * Found and fixed 2026-09-20: the "platform settings can add a category"
+ * test below had the exact same no-cleanup bug deleteTestAccount's own
+ * doc comment describes for the org-verification test — 30 "Smoke category"
+ * rows had leaked onto the live site's category list before this was caught.
+ */
+export async function deleteTestCategory(name: string): Promise<void> {
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `select id from categories where name = $1`,
+      [name],
+    );
+    const category = rows[0];
+    if (!category) return;
+    await client.query(`delete from video_categories where category_id = $1`, [category.id]);
+    await client.query(`delete from categories where id = $1`, [category.id]);
+  } finally {
+    await client.end();
+  }
+}
