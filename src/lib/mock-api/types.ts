@@ -449,7 +449,8 @@ export interface WatchProgress {
 
 export interface PurchaseRecord {
   id: string;
-  videoId: string;
+  /** Null for a plan purchase (a subscription invoice) — nothing to link to. */
+  videoId: string | null;
   /** Only set for a real purchase — videoById() (mock-only lookup) can never resolve a
    * real video's id, so without this the purchases page would show a bare uuid instead
    * of a title. */
@@ -460,6 +461,8 @@ export interface PurchaseRecord {
   expiresAt: string | null;
   status: "completed" | "refunded" | "expired" | "active";
   invoiceNumber: string;
+  /** Stripe's own hosted receipt/invoice page — real accounts only. */
+  receiptUrl?: string | null;
 }
 
 export interface Subscription {

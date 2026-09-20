@@ -12,7 +12,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
-import { checkRealContentAccess } from "./subscriptions";
+import { checkRealContentAccess, listRealPlanPurchases } from "./subscriptions";
 import { checkRealChannelMembership } from "./channelMemberships";
 import { computeChannelNetRevenue, type RevenueEntryKind } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
@@ -241,17 +241,42 @@ export async function checkRealEntitlement(accountId: string, videoId: string): 
 
 export interface PurchaseRow {
   id: string;
-  videoId: string;
+  /** Null for a plan purchase (a subscription invoice) — nothing to link to. */
+  videoId: string | null;
   videoTitle: string;
-  kind: CheckoutKind;
+  kind: CheckoutKind | "subscription";
   amountMinor: number;
   currency: string;
   status: string;
   invoiceNumber: string;
   purchasedAt: string;
   expiresAt: string | null;
+  /** Stripe's own hosted receipt/invoice page — null where none exists (e.g. a Stripe
+   * API lookup failure shouldn't ever break the purchases list itself). */
+  receiptUrl: string | null;
 }
 
+/** Best-effort — a receipt lookup failing (rate limit, a payment intent that never got
+ * a charge) shouldn't take down the whole purchases list over one row's "Receipt"
+ * button. */
+async function getEntitlementReceiptUrl(paymentIntentId: string | null): Promise<string | null> {
+  if (!paymentIntentId) return null;
+  try {
+    const intent = await getStripe().paymentIntents.retrieve(paymentIntentId, {
+      expand: ["latest_charge"],
+    });
+    const charge = intent.latest_charge;
+    return typeof charge === "string" ? null : (charge?.receipt_url ?? null);
+  } catch (err) {
+    console.error("Failed to fetch entitlement receipt", paymentIntentId, err);
+    return null;
+  }
+}
+
+/** Merges legacy per-video entitlements (buy/rent/ppv — retired, kept for historical
+ * accuracy, see 20260920000002_pricing_plans.sql) with real plan-subscription invoices
+ * (the only purchase kind a real account can make going forward under the current
+ * pricing model), newest first. */
 export async function listRealPurchases(accountId: string): Promise<PurchaseRow[]> {
   await query(
     `update entitlements set status = 'expired'
@@ -269,27 +294,49 @@ export async function listRealPurchases(accountId: string): Promise<PurchaseRow[
     invoice_number: string;
     created_at: string;
     expires_at: string | null;
+    stripe_payment_intent_id: string | null;
   }>(
     `select e.id, e.video_id, v.title, e.kind, e.amount_minor, e.currency, e.status,
-            e.invoice_number, e.created_at, e.expires_at
+            e.invoice_number, e.created_at, e.expires_at, e.stripe_payment_intent_id
      from entitlements e
      join videos v on v.id = e.video_id
      where e.account_id = $1
      order by e.created_at desc`,
     [accountId],
   );
-  return rows.map((row) => ({
+  const entitlementRows: PurchaseRow[] = await Promise.all(
+    rows.map(async (row) => ({
+      id: row.id,
+      videoId: row.video_id,
+      videoTitle: row.title,
+      kind: row.kind,
+      amountMinor: row.amount_minor,
+      currency: row.currency,
+      status: row.status,
+      invoiceNumber: row.invoice_number,
+      purchasedAt: row.created_at,
+      expiresAt: row.expires_at,
+      receiptUrl: await getEntitlementReceiptUrl(row.stripe_payment_intent_id),
+    })),
+  );
+
+  const planRows: PurchaseRow[] = (await listRealPlanPurchases(accountId)).map((row) => ({
     id: row.id,
-    videoId: row.video_id,
-    videoTitle: row.title,
-    kind: row.kind,
-    amountMinor: row.amount_minor,
+    videoId: null,
+    videoTitle: row.planLabel,
+    kind: "subscription",
+    amountMinor: row.amountMinor,
     currency: row.currency,
-    status: row.status,
-    invoiceNumber: row.invoice_number,
-    purchasedAt: row.created_at,
-    expiresAt: row.expires_at,
+    status: "completed",
+    invoiceNumber: row.invoiceNumber,
+    purchasedAt: row.purchasedAt,
+    expiresAt: null,
+    receiptUrl: row.receiptUrl,
   }));
+
+  return [...entitlementRows, ...planRows].sort((a, b) =>
+    b.purchasedAt.localeCompare(a.purchasedAt),
+  );
 }
 
 export interface RealRevenueTransaction {

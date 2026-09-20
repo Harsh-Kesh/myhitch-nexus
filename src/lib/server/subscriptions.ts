@@ -208,6 +208,64 @@ export async function listRealSubscriptions(accountId: string): Promise<RealSubs
   }));
 }
 
+export interface PlanPurchaseRow {
+  id: string;
+  planLabel: string;
+  amountMinor: number;
+  currency: string;
+  invoiceNumber: string;
+  purchasedAt: string;
+  receiptUrl: string | null;
+}
+
+/** Real receipts for real plan billing — one row per paid Stripe invoice, not per
+ * `subscriptions` row, since a subscription renews monthly/yearly and each renewal is
+ * its own payment. Plan/interval come from our own `subscriptions` table (keyed by the
+ * invoice's underlying Stripe subscription id) rather than Stripe's line-item pricing
+ * shape, which doesn't expose the recurring interval directly. No new schema needed for
+ * the receipt itself — Stripe's own hosted invoice already has a real, downloadable
+ * receipt (`hosted_invoice_url`). */
+export async function listRealPlanPurchases(accountId: string): Promise<PlanPurchaseRow[]> {
+  const subs = await query<{
+    stripe_customer_id: string;
+    stripe_subscription_id: string;
+    plan: PlanId;
+    billing_interval: BillingInterval;
+  }>(
+    `select stripe_customer_id, stripe_subscription_id, plan, billing_interval
+     from subscriptions where account_id = $1`,
+    [accountId],
+  );
+  if (subs.length === 0) return [];
+
+  const bySubscriptionId = new Map(subs.map((row) => [row.stripe_subscription_id, row]));
+  const customerIds = [...new Set(subs.map((row) => row.stripe_customer_id))];
+
+  const rows: PlanPurchaseRow[] = [];
+  for (const customerId of customerIds) {
+    const invoices = await getStripe().invoices.list({ customer: customerId, limit: 100 });
+    for (const invoice of invoices.data) {
+      if (invoice.status !== "paid") continue;
+      const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+      const subscriptionId =
+        typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id;
+      const match = subscriptionId ? bySubscriptionId.get(subscriptionId) : undefined;
+      const plan = match?.plan ?? "premium";
+      const interval = match?.billing_interval ?? "month";
+      rows.push({
+        id: invoice.id,
+        planLabel: `${PLAN_CATALOG[plan].productName} — ${interval === "year" ? "Yearly" : "Monthly"}`,
+        amountMinor: invoice.amount_paid,
+        currency: invoice.currency.toUpperCase(),
+        invoiceNumber: invoice.number ?? invoice.id,
+        purchasedAt: new Date(invoice.created * 1000).toISOString(),
+        receiptUrl: invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
+      });
+    }
+  }
+  return rows.sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
+}
+
 // Same shape as commerce.ts's VerifyCheckoutSessionResult ({ granted } | { outcome:
 // "not_your_session" }) so the checkout-return page can handle either mode identically.
 export type VerifySubscriptionSessionResult = { granted: boolean } | { outcome: "not_your_session" };

@@ -4,13 +4,19 @@
 // roles). Business Studio and Advertising share one workspace, so either role admits —
 // matching the registration wizard, where both land on /business/channel.
 import { requireRole } from "@/lib/server/rbac";
+import { checkRealPlanActive } from "@/lib/server/subscriptions";
 import { BusinessShell } from "./business-shell";
+import { BusinessUpgradeGate } from "./business-upgrade-gate";
 
 export default async function BusinessLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  await requireRole(["business", "advertiser"]);
+  const account = await requireRole(["business", "advertiser"]);
+  const hasBusinessPlan = await checkRealPlanActive(account.id, "business");
+  if (!hasBusinessPlan) {
+    return <BusinessUpgradeGate />;
+  }
   return <BusinessShell>{children}</BusinessShell>;
 }

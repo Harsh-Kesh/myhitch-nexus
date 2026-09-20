@@ -2773,15 +2773,16 @@ export async function getPurchases(): Promise<PurchaseRecord[]> {
     const data = (await res.json()) as {
       items: Array<{
         id: string;
-        videoId: string;
+        videoId: string | null;
         videoTitle: string;
-        kind: "buy" | "rent" | "ppv";
+        kind: "buy" | "rent" | "ppv" | "subscription";
         amountMinor: number;
         currency: string;
         status: PurchaseRecord["status"];
         invoiceNumber: string;
         purchasedAt: string;
         expiresAt: string | null;
+        receiptUrl: string | null;
       }>;
     };
     return data.items.map((item) => ({
@@ -2794,6 +2795,7 @@ export async function getPurchases(): Promise<PurchaseRecord[]> {
       expiresAt: item.expiresAt,
       status: item.status,
       invoiceNumber: item.invoiceNumber,
+      receiptUrl: item.receiptUrl,
     }));
   }
 

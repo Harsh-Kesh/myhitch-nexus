@@ -56,7 +56,7 @@ export default function RentalsPage() {
         ) : (
           <ul className="space-y-3">
             {active.map((rental) => {
-              const video = videoById(rental.videoId);
+              const video = videoById(rental.videoId ?? "");
               if (!video) return null;
 
               const start = new Date(rental.purchasedAt).getTime();
@@ -126,7 +126,7 @@ export default function RentalsPage() {
           </h2>
           <ul className="space-y-2">
             {past.map((rental) => {
-              const video = videoById(rental.videoId);
+              const video = videoById(rental.videoId ?? "");
               return (
                 <li key={rental.id}>
                   <Card className="flex flex-wrap items-center gap-4 p-3">

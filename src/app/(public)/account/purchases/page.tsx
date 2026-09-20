@@ -3,7 +3,7 @@
 import { IconDownload, IconReceipt } from "@tabler/icons-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
@@ -41,9 +41,14 @@ export default function PurchasesPage() {
     {
       key: "title",
       header: "Title",
-      sortValue: (row) => row.videoTitle ?? videoById(row.videoId)?.title ?? row.videoId,
+      sortValue: (row) =>
+        row.videoTitle ?? (row.videoId ? videoById(row.videoId)?.title : undefined) ?? row.videoId ?? "",
       cell: (row) => {
-        const title = row.videoTitle ?? videoById(row.videoId)?.title ?? row.videoId;
+        const title =
+          row.videoTitle ?? (row.videoId ? videoById(row.videoId)?.title : undefined) ?? row.videoId;
+        if (!row.videoId) {
+          return <span className="font-medium text-fg">{title}</span>;
+        }
         return (
           <Link
             href={`/video/${row.videoId}`}
@@ -101,22 +106,33 @@ export default function PurchasesPage() {
       key: "actions",
       header: "",
       align: "right",
-      cell: (row) => (
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={() =>
-            toast({
-              title: "Receipt download isn't built yet",
-              description: `Your invoice number is ${row.invoiceNumber}.`,
-              tone: "info",
-            })
-          }
-        >
-          <IconDownload />
-          Receipt
-        </Button>
-      ),
+      cell: (row) =>
+        row.receiptUrl ? (
+          <a
+            href={row.receiptUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: "ghost", size: "xs" })}
+          >
+            <IconDownload />
+            Receipt
+          </a>
+        ) : (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() =>
+              toast({
+                title: "No receipt available",
+                description: `Your invoice number is ${row.invoiceNumber}.`,
+                tone: "info",
+              })
+            }
+          >
+            <IconDownload />
+            Receipt
+          </Button>
+        ),
     },
   ];
 
@@ -127,8 +143,8 @@ export default function PurchasesPage() {
       <EmptyState
         icon={<IconReceipt />}
         title="No purchases yet"
-        description="Rentals, purchases and event tickets appear here with their receipts."
-        action={{ label: "Browse films", href: "/films" }}
+        description="Your plan billing history and receipts appear here once you subscribe."
+        action={{ label: "View plans", href: "/plans" }}
       />
     );
   }
