@@ -1210,7 +1210,7 @@ function PurchaseModal({
             price="£9.99 / month"
             icon={<IconStarFilled />}
             loading={loading}
-            onSelect={onSubscribe}
+            onSelect={() => onSubscribe()}
           />
         ) : null}
 
