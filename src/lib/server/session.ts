@@ -34,6 +34,10 @@ export interface SessionAccount {
   /** The organization this account owns, if its role provisioned one at registration —
    * see channelProvisioning.ts. Null for viewer/admin-only accounts. */
   channelId: string | null;
+  /** True for an account an admin created directly (see adminUsers.ts's
+   * createAdminUser()) that hasn't set its own password yet. Checked at login and by
+   * requireRole() to force a real password change before anything else happens. */
+  mustChangePassword: boolean;
 }
 
 /**
@@ -75,8 +79,10 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
     avatar_url: string | null;
     country: string | null;
     preferred_language: string | null;
+    must_change_password: boolean;
   }>(
-    `select a.id, a.email, a.full_name, a.handle, a.avatar_url, a.country, a.preferred_language
+    `select a.id, a.email, a.full_name, a.handle, a.avatar_url, a.country, a.preferred_language,
+            a.must_change_password
      from sessions s
      join accounts a on a.id = s.account_id
      where s.token_hash = $1 and s.expires_at > now() and a.status not in ('suspended', 'closed')`,
@@ -106,6 +112,7 @@ export async function getSessionAccount(token: string): Promise<SessionAccount |
     preferredLanguage: row.preferred_language,
     roles: roleRows.map((r) => r.role),
     channelId: channelRow?.organization_id ?? null,
+    mustChangePassword: row.must_change_password,
   };
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { IconUserOff, IconUsers } from "@tabler/icons-react";
+import { IconCheck, IconCopy, IconUserOff, IconUserPlus, IconUsers } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Avatar } from "@/components/ui/avatar";
@@ -14,6 +14,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import {
   useAdminUsers,
+  useCreateAdminUser,
   useUpdateUserRole,
   useUpdateUserStatus,
 } from "@/lib/mock-api/hooks";
@@ -42,6 +43,7 @@ export default function AdminUsersPage() {
   const { data: users = [], isLoading } = useAdminUsers();
   const updateRole = useUpdateUserRole();
   const updateStatus = useUpdateUserStatus();
+  const createUser = useCreateAdminUser();
   const { toast } = useToast();
 
   const [query, setQuery] = React.useState("");
@@ -51,6 +53,21 @@ export default function AdminUsersPage() {
   const [draftRoles, setDraftRoles] = React.useState<UserRole[]>([]);
   const [draftStatus, setDraftStatus] = React.useState<User["status"]>("active");
   const [reason, setReason] = React.useState("");
+
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [newEmail, setNewEmail] = React.useState("");
+  const [newName, setNewName] = React.useState("");
+  const [newRoles, setNewRoles] = React.useState<UserRole[]>([]);
+  const [createdUser, setCreatedUser] = React.useState<{ email: string; tempPassword: string } | null>(
+    null,
+  );
+  const [copied, setCopied] = React.useState(false);
+
+  const resetAddForm = () => {
+    setNewEmail("");
+    setNewName("");
+    setNewRoles([]);
+  };
 
   const filtered = users.filter((user) => {
     if (statusFilter !== "all" && user.status !== statusFilter) return false;
@@ -103,9 +120,16 @@ export default function AdminUsersPage() {
       header: "Status",
       sortValue: (row) => row.status,
       cell: (row) => (
-        <Badge tone={STATUS_TONE[row.status]} size="sm">
-          {row.status}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge tone={STATUS_TONE[row.status]} size="sm">
+            {row.status}
+          </Badge>
+          {row.mustChangePassword ? (
+            <Badge tone="pending" size="sm">
+              Setup pending
+            </Badge>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -178,6 +202,12 @@ export default function AdminUsersPage() {
       <PageHeader
         title="Users"
         description="Search accounts, assign roles and change account status. Every change is recorded in the audit log."
+        actions={
+          <Button variant="primary" onClick={() => setAddOpen(true)}>
+            <IconUserPlus />
+            New user
+          </Button>
+        }
       />
 
       <PageBody className="space-y-5">
@@ -359,6 +389,150 @@ export default function AdminUsersPage() {
                 />
               </Field>
             ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* New user */}
+      <Modal
+        open={addOpen}
+        onClose={() => {
+          setAddOpen(false);
+          resetAddForm();
+        }}
+        title="New user"
+        description="Creates the account directly with a temporary password — no self-registration needed."
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setAddOpen(false);
+                resetAddForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!newEmail.trim() || !newName.trim() || newRoles.length === 0}
+              loading={createUser.isPending}
+              onClick={async () => {
+                try {
+                  const result = await createUser.mutateAsync({
+                    email: newEmail.trim(),
+                    fullName: newName.trim(),
+                    roles: newRoles,
+                  });
+                  if (result.outcome === "email_taken") {
+                    toast({
+                      title: "That email is already registered",
+                      tone: "error",
+                    });
+                    return;
+                  }
+                  setAddOpen(false);
+                  setCreatedUser({ email: newEmail.trim(), tempPassword: result.tempPassword });
+                  resetAddForm();
+                } catch (err) {
+                  toast({
+                    title: "Couldn't create the user",
+                    description: err instanceof Error ? err.message : undefined,
+                    tone: "error",
+                  });
+                }
+              }}
+            >
+              Create user
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Full name" htmlFor="new-user-name" required>
+            <Input id="new-user-name" value={newName} onChange={(event) => setNewName(event.target.value)} />
+          </Field>
+          <Field label="Email address" htmlFor="new-user-email" required>
+            <Input
+              id="new-user-email"
+              type="email"
+              value={newEmail}
+              onChange={(event) => setNewEmail(event.target.value)}
+            />
+          </Field>
+          <Field label="Roles" hint="Roles determine which workspaces this account can open." required>
+            <div className="flex flex-wrap gap-1.5">
+              {ALL_ROLES.map((role) => {
+                const active = newRoles.includes(role);
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() =>
+                      setNewRoles((current) =>
+                        current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
+                      )
+                    }
+                    className={
+                      active
+                        ? "rounded-full border border-accent bg-accent/10 px-3 py-1 text-xs font-medium text-accent-hover"
+                        : "rounded-full border border-border bg-surface-2 px-3 py-1 text-xs text-fg-muted hover:border-border-strong"
+                    }
+                  >
+                    {role}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        </div>
+      </Modal>
+
+      {/* Temporary password — shown exactly once */}
+      <Modal
+        open={Boolean(createdUser)}
+        onClose={() => {
+          setCreatedUser(null);
+          setCopied(false);
+        }}
+        title="User created"
+        description={createdUser ? `Send this temporary password to ${createdUser.email} yourself — Slack, in person, however you'd normally reach them.` : undefined}
+        size="sm"
+        footer={
+          <Button
+            variant="primary"
+            onClick={() => {
+              setCreatedUser(null);
+              setCopied(false);
+            }}
+          >
+            Done
+          </Button>
+        }
+      >
+        {createdUser ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 p-3">
+              <code className="font-mono text-base tracking-wide text-fg">{createdUser.tempPassword}</code>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(createdUser.tempPassword);
+                  setCopied(true);
+                  toast({ title: "Copied" });
+                }}
+              >
+                {copied ? <IconCheck /> : <IconCopy />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <p className="text-xs leading-relaxed text-fg-muted">
+              This is shown once and isn&apos;t stored anywhere retrievable — copy it now. They&apos;ll be
+              asked to set their own password the moment they sign in with it.
+            </p>
           </div>
         ) : null}
       </Modal>

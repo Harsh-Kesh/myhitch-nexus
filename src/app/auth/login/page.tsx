@@ -42,13 +42,13 @@ export default function LoginPage() {
 
   const onSubmit = async (values: FormValues) => {
     try {
-      await login.mutateAsync({
+      const user = await login.mutateAsync({
         email: values.email,
         password: values.password,
         remember: values.remember,
       });
       toast({ title: "Signed in" });
-      router.push("/");
+      router.push(user.mustChangePassword ? "/auth/set-password" : "/");
     } catch (err) {
       toast({
         title: "Couldn't sign you in",

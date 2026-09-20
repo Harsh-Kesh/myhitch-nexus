@@ -381,6 +381,9 @@ export interface User {
   mfaEnabled: boolean;
   createdAt: string;
   status: "active" | "suspended" | "pending" | "closed";
+  /** Real only — true for an account an admin created directly with a temporary
+   * password that hasn't been changed yet (see adminUsers.ts's createAdminUser()). */
+  mustChangePassword?: boolean;
   profiles: ViewerProfile[];
   activeProfileId: string;
   channelId?: string;
@@ -760,6 +763,9 @@ export interface AdminUserRow {
   lastActiveAt: string;
   channelId?: string;
   flags: number;
+  /** Real only — true until an admin-created account signs in and sets its own
+   * password. See adminUsers.ts's createAdminUser(). */
+  mustChangePassword?: boolean;
 }
 
 export interface Organisation {

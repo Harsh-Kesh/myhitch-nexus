@@ -2243,6 +2243,80 @@ export async function getAdminUsers() {
   return clone(store.adminUsers);
 }
 
+export type CreateAdminUserResult =
+  | { outcome: "success"; id: string; tempPassword: string }
+  | { outcome: "email_taken" };
+
+export async function createAdminUser(input: {
+  email: string;
+  fullName: string;
+  roles: User["roles"];
+}): Promise<CreateAdminUserResult> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/users/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (res.status === 409) return { outcome: "email_taken" };
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `POST /api/admin/users failed with ${res.status}`);
+    }
+    const data = (await res.json()) as { id: string; tempPassword: string };
+    return { outcome: "success", id: data.id, tempPassword: data.tempPassword };
+  }
+
+  await latency("fast");
+  if (store.adminUsers.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+    return { outcome: "email_taken" };
+  }
+  const id = nextId("usr");
+  store.adminUsers.unshift({
+    id,
+    name: input.fullName,
+    email: input.email,
+    roles: input.roles,
+    status: "active",
+    country: "—",
+    createdAt: new Date().toISOString(),
+    lastActiveAt: new Date().toISOString(),
+    flags: 0,
+    mustChangePassword: true,
+  });
+  recordAudit({
+    actor: store.user.name,
+    actorRole: "admin",
+    action: "user.created",
+    targetType: "user",
+    targetId: id,
+    reason: `Created directly with roles: ${input.roles.join(", ")}.`,
+    severity: "notice",
+  });
+  // Mock action — this made-up password isn't real credentials for a real login, same
+  // "mock" honesty as every other admin config-table write against a mock session.
+  return { outcome: "success", id, tempPassword: "MOCK-0000-0000-0000" };
+}
+
+export async function setPassword(newPassword: string): Promise<void> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/auth/set-password/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newPassword }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `POST /api/auth/set-password failed with ${res.status}`);
+    }
+    store.user.mustChangePassword = false;
+    return;
+  }
+
+  await latency("fast");
+  store.user.mustChangePassword = false;
+}
+
 export async function updateUserRole(
   userId: string,
   roles: User["roles"],
@@ -2562,6 +2636,7 @@ interface RealAccount {
   preferredLanguage: string | null;
   roles: string[];
   channelId: string | null;
+  mustChangePassword: boolean;
 }
 
 // Overlays the real identity fields (from Postgres, via the session cookie) onto the
@@ -2584,6 +2659,7 @@ function applyRealAccount(account: RealAccount): void {
       store.user.activeRole = store.user.roles[0];
     }
   }
+  store.user.mustChangePassword = account.mustChangePassword;
 }
 
 export async function getCurrentUser(): Promise<User | null> {

@@ -25,6 +25,25 @@ const scrypt = promisify(scryptCallback) as (
 
 const SCRYPT_KEYLEN = 64;
 
+// Four base32-ish groups (Crockford's alphabet minus visually-ambiguous characters —
+// no 0/O, 1/I/L, U) read aloud or typed by hand without the usual "is that a zero or an
+// O" friction, e.g. "K7XR-QM4T-PJ2W-9FHD" — for an admin relaying it over Slack or in
+// person, per this feature's own scope (no email/invite-link infrastructure exists yet).
+const TEMP_PASSWORD_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+export function generateTempPassword(): string {
+  const groups: string[] = [];
+  for (let g = 0; g < 4; g++) {
+    let group = "";
+    const bytes = randomBytes(4);
+    for (let i = 0; i < 4; i++) {
+      group += TEMP_PASSWORD_ALPHABET[bytes[i] % TEMP_PASSWORD_ALPHABET.length];
+    }
+    groups.push(group);
+  }
+  return groups.join("-");
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
   const derivedKey = await scrypt(password, salt, SCRYPT_KEYLEN);
@@ -171,4 +190,16 @@ export async function createLocalAccount(input: {
     [input.email.trim().toLowerCase(), input.fullName, passwordHash, input.country],
   );
   return rows[0];
+}
+
+/** Sets a new password for an already-identified account (the caller has a valid
+ * session, or — for createAdminUser's flow — is the account being created) and clears
+ * must_change_password. Not a "forgot password" flow (no reset token/email exists yet);
+ * this is the counterpart to createAdminUser's temporary password. */
+export async function setPassword(accountId: string, newPassword: string): Promise<void> {
+  const passwordHash = await hashPassword(newPassword);
+  await query(
+    `update accounts set password_hash = $2, must_change_password = false where id = $1`,
+    [accountId, passwordHash],
+  );
 }

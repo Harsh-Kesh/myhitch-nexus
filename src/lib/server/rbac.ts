@@ -78,6 +78,11 @@ export async function requireRole(roles: string | string[]): Promise<SessionAcco
   const account = await getSessionAccount(token);
   if (!account) redirect("/auth/login");
 
+  // Defense in depth alongside the login page's own redirect (see useLogin's caller in
+  // auth/login/page.tsx) — catches an admin-created account reaching a protected
+  // workspace via a bookmarked link or an already-open tab, not just fresh logins.
+  if (account.mustChangePassword) redirect("/auth/set-password");
+
   if (!account.roles.some((role) => required.includes(role))) redirect("/");
 
   return account;

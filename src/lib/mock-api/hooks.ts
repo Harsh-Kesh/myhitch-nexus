@@ -703,6 +703,26 @@ export const useAuditLog = (filters: Parameters<typeof api.getAuditLog>[0] = {})
 export const useAdminUsers = () =>
   useQuery({ queryKey: qk.adminUsers, queryFn: api.getAdminUsers });
 
+export function useCreateAdminUser() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { email: string; fullName: string; roles: User["roles"] }) =>
+      api.createAdminUser(input),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.adminUsers });
+      client.invalidateQueries({ queryKey: ["audit-log"] });
+    },
+  });
+}
+
+export function useSetPassword() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (newPassword: string) => api.setPassword(newPassword),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.user }),
+  });
+}
+
 export function useUpdateUserRole() {
   const client = useQueryClient();
   return useMutation({

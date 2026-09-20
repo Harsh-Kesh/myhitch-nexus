@@ -5,6 +5,7 @@
 // counter, so it can never drift from the queue itself.
 import "server-only";
 import { query } from "./db";
+import { emailIsRegistered, generateTempPassword, hashPassword } from "./localPassword";
 import { recordAudit } from "./moderation";
 import { toDbRole, toMockRoles } from "./rbac";
 import { revokeAccountSessions } from "./session";
@@ -20,6 +21,7 @@ export interface AdminUserRow {
   lastActiveAt: string;
   channelId?: string;
   flags: number;
+  mustChangePassword?: boolean;
 }
 
 interface AdminUserDbRow {
@@ -32,12 +34,13 @@ interface AdminUserDbRow {
   last_active_at: string;
   channel_id: string | null;
   flags: string;
+  must_change_password: boolean;
 }
 
 export async function listAdminUsers(): Promise<AdminUserRow[]> {
   const rows = await query<AdminUserDbRow>(
     `select
-       a.id, a.full_name, a.email, a.status, a.country, a.created_at,
+       a.id, a.full_name, a.email, a.status, a.country, a.created_at, a.must_change_password,
        coalesce((select max(s.created_at) from sessions s where s.account_id = a.id), a.created_at) as last_active_at,
        (select m.organization_id from memberships m where m.account_id = a.id order by m.created_at asc limit 1) as channel_id,
        coalesce((
@@ -69,6 +72,7 @@ export async function listAdminUsers(): Promise<AdminUserRow[]> {
     lastActiveAt: row.last_active_at,
     channelId: row.channel_id ?? undefined,
     flags: Number(row.flags),
+    mustChangePassword: row.must_change_password,
   }));
 }
 
@@ -95,6 +99,61 @@ export async function updateAdminUserRoles(
     reason: `Roles set to: ${mockRoles.join(", ")}.`,
     severity: "notice",
   });
+}
+
+export type CreateAdminUserResult =
+  | { outcome: "success"; id: string; tempPassword: string }
+  | { outcome: "email_taken" };
+
+/** Creates an account directly from /admin/users — no self-registration required — with
+ * a real, generated temporary password that's returned exactly once (never stored in
+ * plaintext, never logged) for the admin to relay to the person out of band. The account
+ * is flagged must_change_password so it's forced to set its own before it can reach
+ * anything (see rbac.ts's requireRole() and the login page's own redirect). Roles are
+ * inserted pre-verified — an admin creating the account directly is itself the
+ * verification, unlike the self-service registration path in api/auth/register.
+ */
+export async function createAdminUser(
+  admin: { id: string; name: string },
+  input: { email: string; fullName: string; roles: string[] },
+): Promise<CreateAdminUserResult> {
+  const email = input.email.trim().toLowerCase();
+  if (await emailIsRegistered(email)) {
+    return { outcome: "email_taken" };
+  }
+
+  const tempPassword = generateTempPassword();
+  const passwordHash = await hashPassword(tempPassword);
+
+  const rows = await query<{ id: string }>(
+    `insert into accounts (email, full_name, password_hash, must_change_password)
+     values ($1, $2, $3, true)
+     returning id`,
+    [email, input.fullName, passwordHash],
+  );
+  const accountId = rows[0].id;
+
+  const dbRoles = input.roles.map(toDbRole);
+  for (const role of dbRoles) {
+    await query(
+      `insert into account_roles (account_id, role, verified) values ($1, $2, true)
+       on conflict (account_id, role) do nothing`,
+      [accountId, role],
+    );
+  }
+
+  await recordAudit({
+    actorAccountId: admin.id,
+    actorName: admin.name,
+    actorRole: "admin",
+    action: "user.created",
+    targetType: "user",
+    targetId: accountId,
+    reason: `Created directly with roles: ${input.roles.join(", ")}.`,
+    severity: "notice",
+  });
+
+  return { outcome: "success", id: accountId, tempPassword };
 }
 
 export async function updateAdminUserStatus(
