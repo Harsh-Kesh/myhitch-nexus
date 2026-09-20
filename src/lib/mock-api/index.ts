@@ -630,7 +630,14 @@ export async function startSubscription(
   plan: "premium" | "family" | "business",
   interval: "month" | "year" = "month",
 ): Promise<Subscription> {
-  if (looksLikeRealId(store.user.id)) {
+  // store.loggedIn matters here, not just looksLikeRealId(store.user.id) alone — a
+  // signed-out visitor's store never resets store.user back off its default seeded mock
+  // identity (usr_viewer), so without this a guest could reach the mock branch below and
+  // see a real-looking "Premium activated" toast without Stripe, or any real account,
+  // ever being involved. Callers should already be gating this behind a signed-in check
+  // of their own (see video-client.tsx's/plans-client.tsx's requireSignIn/currentUser
+  // guards) — this is defense in depth, not the only check.
+  if (store.loggedIn && looksLikeRealId(store.user.id)) {
     const res = await fetch(`/api/subscriptions/checkout/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

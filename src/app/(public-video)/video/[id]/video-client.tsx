@@ -189,10 +189,29 @@ export function VideoDetailClient() {
   const inWatchlist = watchlist.some((item) => item.id === video.id);
   const { accessModels } = video.pricing;
 
+  // Every action below (rate, comment, watchlist, follow, subscribe) needs a real
+  // signed-in account server-side and 401s without one — but nothing here checked that
+  // first, so a signed-out visitor could rate/comment/watchlist and either get no
+  // feedback at all (an unhandled rejection on the comment/reply composers, which had no
+  // try/catch) or, worse, a toast falsely claiming success (Like, rating) fired
+  // unconditionally right after an unguarded `.mutate()`. Subscribing was the worst of
+  // these: startSubscription() branches on whether the mock store's *current* user id
+  // looks like a real uuid, and a signed-out session's store never gets reset off its
+  // default seeded mock identity — so a guest clicking "Unlock with a plan" would fall
+  // into the mock checkout path and see a real-looking "Premium activated" toast without
+  // Stripe, or any real account, ever being involved. Reported 2026-09-21. Same guard
+  // shape already used correctly on /plans (plans-client.tsx's handleSubscribe).
+  const requireSignIn = (message: string): boolean => {
+    if (currentUser) return true;
+    toast({ title: "Sign in required", description: message, tone: "info" });
+    return false;
+  };
+
   // Rent/buy/PPV and per-channel memberships are retired (docs/DEVELOPMENT-PLAN.md,
   // 2026-09-20 pricing-model entry) — every video is either free or requires a paid
   // plan, so the paywall only ever offers Premium/Family now, matching the plans page.
   const handleSubscribe = async (plan: "premium" | "family") => {
+    if (!requireSignIn("Sign in to subscribe to a plan.")) return;
     // A real subscription signup redirects away and never resolves this promise, but a
     // real failure (already subscribed, payments not configured) does reject it.
     try {
@@ -313,6 +332,7 @@ export function VideoDetailClient() {
                 aria-label={`Like this video — ${compactNumber(video.likes + (liked ? 1 : 0))} likes`}
                 aria-pressed={liked}
                 onClick={() => {
+                  if (!requireSignIn("Sign in to like this video.")) return;
                   likeVideo.mutate();
                   setLiked(true);
                   toast({ title: "Thanks — noted", tone: "info" });
@@ -326,7 +346,10 @@ export function VideoDetailClient() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => toggleWatchlist.mutate(video.id)}
+                onClick={() => {
+                  if (!requireSignIn("Sign in to save titles to your watchlist.")) return;
+                  toggleWatchlist.mutate(video.id);
+                }}
               >
                 {inWatchlist ? <IconBookmarkFilled /> : <IconBookmark />}
                 {inWatchlist ? "In watchlist" : "Watchlist"}
@@ -340,8 +363,17 @@ export function VideoDetailClient() {
               <RatingControl
                 value={myRating?.stars ?? 0}
                 onRate={(stars) => {
-                  rateVideo.mutate(stars);
-                  toast({ title: `Rated ${stars} star${stars === 1 ? "" : "s"}` });
+                  if (!requireSignIn("Sign in to rate this video.")) return;
+                  rateVideo.mutate(stars, {
+                    onSuccess: () =>
+                      toast({ title: `Rated ${stars} star${stars === 1 ? "" : "s"}` }),
+                    onError: (err) =>
+                      toast({
+                        title: "Couldn't save your rating",
+                        description: err instanceof Error ? err.message : undefined,
+                        tone: "error",
+                      }),
+                  });
                 }}
               />
 
@@ -391,7 +423,10 @@ export function VideoDetailClient() {
                     <Button
                       variant={following ? "secondary" : "primary"}
                       size="sm"
-                      onClick={() => toggleFollow.mutate(channel.id)}
+                      onClick={() => {
+                        if (!requireSignIn("Sign in to follow this channel.")) return;
+                        toggleFollow.mutate(channel.id);
+                      }}
                     >
                       {following ? "Following" : "Follow"}
                     </Button>
@@ -532,21 +567,30 @@ export function VideoDetailClient() {
                           disabled={!commentBody.trim()}
                           loading={postComment.isPending}
                           onClick={async () => {
-                            const posted = await postComment.mutateAsync(commentBody.trim());
-                            setCommentBody("");
-                            // A link auto-holds a comment for the channel to review (see
-                            // engagement.ts's postComment()) — it won't show up in the
-                            // list below yet, so say so rather than letting it silently
-                            // vanish with no explanation.
-                            toast(
-                              posted.status === "held"
-                                ? {
-                                    title: "Comment awaiting review",
-                                    description: "It contains a link, so it's held until the channel approves it.",
-                                    tone: "info",
-                                  }
-                                : { title: "Comment posted" },
-                            );
+                            if (!requireSignIn("Sign in to leave a comment.")) return;
+                            try {
+                              const posted = await postComment.mutateAsync(commentBody.trim());
+                              setCommentBody("");
+                              // A link auto-holds a comment for the channel to review (see
+                              // engagement.ts's postComment()) — it won't show up in the
+                              // list below yet, so say so rather than letting it silently
+                              // vanish with no explanation.
+                              toast(
+                                posted.status === "held"
+                                  ? {
+                                      title: "Comment awaiting review",
+                                      description: "It contains a link, so it's held until the channel approves it.",
+                                      tone: "info",
+                                    }
+                                  : { title: "Comment posted" },
+                              );
+                            } catch (err) {
+                              toast({
+                                title: "Couldn't post your comment",
+                                description: err instanceof Error ? err.message : undefined,
+                                tone: "error",
+                              });
+                            }
                           }}
                         >
                           Comment
@@ -630,13 +674,22 @@ export function VideoDetailClient() {
                                   size="sm"
                                   disabled={!replyBody.trim()}
                                   onClick={async () => {
-                                    await replyToComment.mutateAsync({
-                                      commentId: comment.id,
-                                      body: replyBody.trim(),
-                                    });
-                                    setReplyBody("");
-                                    setReplyTo(null);
-                                    toast({ title: "Reply posted" });
+                                    if (!requireSignIn("Sign in to reply to a comment.")) return;
+                                    try {
+                                      await replyToComment.mutateAsync({
+                                        commentId: comment.id,
+                                        body: replyBody.trim(),
+                                      });
+                                      setReplyBody("");
+                                      setReplyTo(null);
+                                      toast({ title: "Reply posted" });
+                                    } catch (err) {
+                                      toast({
+                                        title: "Couldn't post your reply",
+                                        description: err instanceof Error ? err.message : undefined,
+                                        tone: "error",
+                                      });
+                                    }
                                   }}
                                 >
                                   Reply
