@@ -26,10 +26,15 @@ const ACCESS_LABELS: Record<AccessModel, string> = {
   "ad-supported": "Ad-supported",
   rent: "Rent",
   buy: "Buy",
-  subscription: "Premium subscription",
+  subscription: "Subscription",
   ppv: "Pay-per-view",
   membership: "Channel membership",
 };
+
+// Only the access models the current pricing model actually offers (2026-09-20) — rent/
+// buy/ppv/membership are retired, but AccessModel and ACCESS_LABELS above keep every
+// historical value so old catalogue rows still render a real label instead of "undefined".
+const FILTERABLE_ACCESS_MODELS: AccessModel[] = ["free", "ad-supported", "subscription"];
 
 const AGE_RATINGS: AgeRating[] = ["U", "PG", "12", "15", "18"];
 
@@ -212,7 +217,7 @@ export function BrowseView({
       </FilterGroup>
 
       <FilterGroup label="Access & price">
-        {(Object.keys(ACCESS_LABELS) as AccessModel[]).map((model) => (
+        {FILTERABLE_ACCESS_MODELS.map((model) => (
           <FilterChip
             key={model}
             active={accessModels.includes(model)}

@@ -47,7 +47,7 @@ const rawCategories: Category[] = [
     id: "cat_feature_film",
     slug: "feature-films",
     name: "Feature films",
-    description: "Independent and studio features available to rent or buy.",
+    description: "Independent and studio features, free with ads or with a Nexus plan.",
     contentType: "film",
     featured: true,
     videoCount: 4,
