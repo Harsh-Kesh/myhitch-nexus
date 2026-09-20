@@ -5,7 +5,7 @@ Companion: [DEVELOPMENT-PLAN.md](DEVELOPMENT-PLAN.md) (how we build it) · [PROT
 
 This matrix exists so "everything in the SRS is done" is a **checkable claim**, not a judgement call. Every requirement in the document has an ID, an owner phase, an implementation approach and a verification method. Nothing in §§2–21 is omitted, including items we recommend deferring — those are marked with the phase that covers them.
 
-**Prototype column legend** — the existing Next.js prototype is **UI-only against an in-memory mock API; no requirement below is functionally complete today.** The column rates *interface coverage only*:
+**Prototype column legend** — originally written when the whole prototype was UI-only against an in-memory mock API. That's no longer true platform-wide: identity, the catalogue, entitlements, real Stripe payments (one-time purchase/rental/PPV, Nexus Premium and channel-membership subscriptions, Stripe Connect creator payouts), commissions and categories are now functionally real against Postgres/Stripe, not just interface coverage (verified live 2026-09-20 — see `docs/DEVELOPMENT-PLAN.md`'s corresponding entry). Where a row's own "Current state" column doesn't say "Live" or otherwise state a real backend, treat the mock-only caveat as still applying to that specific row. The column below otherwise still rates *interface coverage*:
 - `✅` screen(s) exist and match the requirement
 - `◐` partially covered, or covered with a known gap
 - `○` no interface exists yet
@@ -135,15 +135,15 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | ID | Model | Prototype | Build approach | Phase |
 |---|---|---|---|---|
 | MON-1 | Advertising-supported: pre/mid/post-roll + display, targeting, reporting | ◐ badges only | Ad service + VAST insertion (see FR-6.4.8, §6.8) | P6 |
-| MON-2 | Pay-per-view: one-time payment granting defined access | ✅ badges/checkout UI | Stripe Payment Intent → webhook → entitlement (idempotent) | P3 |
-| MON-3 | Rental: time-limited entitlement from purchase or first playback | ✅ "expires" pill | Entitlement with `starts_at` policy (purchase vs first-play) + `expires_at`; enforced at token mint | P3 |
-| MON-4 | Purchase: long-term access under terms and regional rights | ✅ | Perpetual entitlement, still territory-checked at playback | P3 |
-| MON-5 | Channel membership: recurring paid access, where commercially approved | ✅ UI | Stripe Billing subscription per channel tier; admin approval flag on channel | P6 |
-| MON-6 | Platform subscription: premium plan for content bundles and benefits | ✅ "Nexus Premium £9.99" | Stripe Billing plan; entitlement resolver treats plan as bundle grant | P6 |
+| MON-2 | Pay-per-view: one-time payment granting defined access | ✅ Live — same `createCheckoutSession()` path as MON-3/4 | Stripe Checkout → webhook → entitlement (idempotent); same code path verified live via MON-3, not separately re-tested | P3 |
+| MON-3 | Rental: time-limited entitlement from purchase or first playback | ✅ **Live, verified 2026-09-20** — real Stripe Checkout test purchase completed end-to-end, real "Rented · expires" entitlement granted | Entitlement with `starts_at` policy (purchase vs first-play) + `expires_at`; enforced at token mint | P3 |
+| MON-4 | Purchase: long-term access under terms and regional rights | ✅ Live — same code path as MON-3, not separately re-tested | Perpetual entitlement, still territory-checked at playback | P3 |
+| MON-5 | Channel membership: recurring paid access, where commercially approved | ✅ Live — same real Stripe Billing path as MON-6; a real UI bug (see below) meant clicking it always ran the channel-membership branch, so this specific path got exercised as a side effect, but wasn't separately verified with its own real membership tier | Stripe Billing subscription per channel tier; admin approval flag on channel | P6 |
+| MON-6 | Platform subscription: premium plan for content bundles and benefits | ✅ **Live, verified 2026-09-20** — `/api/subscriptions/checkout/` confirmed returning a real Stripe subscription Checkout session for a real account. Found and fixed the same day: the UI's "Select" button passed its click event as the subscribe handler's `channelId` argument, so it silently always ran the channel-membership branch instead — see `video-client.tsx`'s `OfferRow` usage | Stripe Billing plan; entitlement resolver treats plan as bundle grant | P6 |
 | MON-7 | Sponsored content: clearly labelled, campaign disclosures | ✅ "Paid promotion" banner | `sponsored` flag mandatory when campaign-linked; disclosure rendered non-dismissibly | P3 (label), P6 (campaign link) |
 | MON-8 | Affiliate/commerce: trackable links from videos to MYHitch products, travel, services, tickets | ✅ "Shop this video" | Product-link service + click/conversion attribution to Mart/JetNRest/Pass | P4 (Mart), P7 (rest) |
 | MON-9 | **Business hosting: paid secure hosting, private libraries, embedded players, enterprise analytics** | ○ | Private library visibility scope + signed embed player + domain allow-list + org analytics | P7 |
-| MON-10 | Creator revenue share: configurable commission, earnings, payout thresholds, statements | ✅ `/studio/revenue` (85/15, 30-day hold, £50 min) | Commission engine (admin-configurable per stream), ledger, Stripe Connect payouts, downloadable statements | P3 (ledger), P4 (payouts) |
+| MON-10 | Creator revenue share: configurable commission, earnings, payout thresholds, statements | ✅ Live — commission engine and admin config (`/admin/settings` → Commissions) confirmed real and correctly wired end-to-end 2026-09-20; Stripe Connect onboarding/withdrawal code reviewed as complete and follows the same proven real pattern as MON-2–6, but not separately live-tested today (no time-boxed test creator payout was run) — recommend a spot-check before relying on it for a live demo | Commission engine (admin-configurable per stream), ledger, Stripe Connect payouts, downloadable statements | P3 (ledger), P4 (payouts) |
 
 ### §6.8 Advertising Management
 
@@ -327,8 +327,8 @@ These are the contractual gates. Each has a named verification method and eviden
 | DEL-6 | Front-end, back-end, media pipeline, admin portal, integration components | Frontend UI only | Engineering |
 | DEL-7 | Automated tests, manual test cases, accessibility and security test results | Playwright scaffold exists (2 specs) | QA |
 | DEL-8 | Data-migration / initial content-loading tools | Bulk import (FR-6.3.9) doubles as this | Engineering |
-| DEL-9 | Administrator, creator and business user guides | Not started | Product/Docs |
-| DEL-10 | Deployment, monitoring, backup, recovery, operational documentation | Not started | DevOps |
+| DEL-9 | Administrator, creator and business user guides | Done 2026-09-20 — `docs/guides/ADMIN-GUIDE.md`, `docs/guides/CREATOR-GUIDE.md`, `docs/guides/BUSINESS-GUIDE.md` | Product/Docs |
+| DEL-10 | Deployment, monitoring, backup, recovery, operational documentation | Done 2026-09-20 — `docs/OPERATIONS.md`; the actual monitoring/backup/rollback *drills* it documents as not-yet-run remain deliberately deferred pre-launch items (AC-10), not a documentation gap | DevOps |
 | DEL-11 | Post-launch defect resolution and warranty/support period | Contractual — needs agreed terms | Commercial |
 
 ---
