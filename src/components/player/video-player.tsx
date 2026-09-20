@@ -589,9 +589,6 @@ function PaywallSurface({
   onPurchase?: () => void;
   className?: string;
 }) {
-  const { rentPrice, buyPrice, ppvPrice, accessModels, rentalWindowHours } =
-    video.pricing;
-
   return (
     <div
       data-surface="cinema"
@@ -625,37 +622,9 @@ function PaywallSurface({
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-2">
-          {accessModels.includes("rent") && rentPrice ? (
-            <Button variant="primary" onClick={onPurchase}>
-              Rent {formatCurrency(rentPrice.amount, rentPrice.currency)}
-              <span className="font-normal opacity-70">
-                · {rentalWindowHours ?? 48}h
-              </span>
-            </Button>
-          ) : null}
-          {accessModels.includes("buy") && buyPrice ? (
-            <Button
-              variant={accessModels.includes("rent") ? "secondary" : "primary"}
-              onClick={onPurchase}
-            >
-              Buy {formatCurrency(buyPrice.amount, buyPrice.currency)}
-            </Button>
-          ) : null}
-          {accessModels.includes("ppv") && ppvPrice ? (
-            <Button variant="primary" onClick={onPurchase}>
-              Buy access {formatCurrency(ppvPrice.amount, ppvPrice.currency)}
-            </Button>
-          ) : null}
-          {accessModels.includes("subscription") ? (
-            <Button variant="secondary" onClick={onPurchase}>
-              Included with Premium
-            </Button>
-          ) : null}
-          {accessModels.includes("membership") ? (
-            <Button variant="secondary" onClick={onPurchase}>
-              Join the membership
-            </Button>
-          ) : null}
+          <Button variant="primary" onClick={onPurchase}>
+            Unlock with Premium or Family
+          </Button>
         </div>
 
         {entitlement.previewSeconds ? (

@@ -1,0 +1,405 @@
+"use client";
+
+import {
+  IconBriefcase,
+  IconBuilding,
+  IconCheck,
+  IconDeviceTv,
+  IconUsers,
+  IconVideo,
+} from "@tabler/icons-react";
+import Link from "next/link";
+import * as React from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardBody } from "@/components/ui/card";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
+import { useToast } from "@/components/ui/toast";
+import { useCurrentUser, useStartSubscription } from "@/lib/mock-api/hooks";
+
+type PlanId = "premium" | "family" | "business";
+type Interval = "month" | "year";
+
+interface PlanDef {
+  id: string;
+  icon: React.ReactNode;
+  name: string;
+  tagline: string;
+  price: { month: number } | { month: number; year: number } | "free" | "custom";
+  priceNote?: string;
+  benefits: string[];
+  cta: string;
+  tone: "neutral" | "accent" | "purple" | "green" | "orange" | "dark";
+}
+
+const PLANS: PlanDef[] = [
+  {
+    id: "free",
+    icon: <IconVideo />,
+    name: "Nexus Free",
+    tagline: "Start Exploring",
+    price: "free",
+    benefits: [
+      "Watch videos & short clips",
+      "Listen to music & audio",
+      "Follow creators & channels",
+      "Like, comment & share",
+      "Create playlists & watchlists",
+      "Selected live streams",
+      "Content with ads",
+      "Basic search & recommendations",
+    ],
+    cta: "Get Started",
+    tone: "neutral",
+  },
+  {
+    id: "premium",
+    icon: <IconDeviceTv />,
+    name: "Nexus Premium",
+    tagline: "More Content. No Limits.",
+    price: { month: 999, year: 9900 },
+    priceNote: "save 17% yearly",
+    benefits: [
+      "Ad-free MYHitch content",
+      "All videos, music & live streams",
+      "Background play (audio)",
+      "Premium content bundles",
+      "Downloads (where available)",
+      "Enhanced video quality",
+      "Early access to new features",
+      "Priority support",
+    ],
+    cta: "Start Premium",
+    tone: "accent",
+  },
+  {
+    id: "family",
+    icon: <IconUsers />,
+    name: "Nexus Family",
+    tagline: "Entertainment for Everyone",
+    price: { month: 1499 },
+    priceNote: "up to 5 profiles",
+    benefits: [
+      "All Premium benefits",
+      "Up to 5 family profiles",
+      "Parental controls",
+      "Profile-based recommendations",
+      "Safe viewing settings",
+      "Family watchlists",
+      "Ad-free MYHitch content",
+      "Priority support",
+    ],
+    cta: "Start Family",
+    tone: "purple",
+  },
+  {
+    id: "creator",
+    icon: <IconVideo />,
+    name: "Nexus Creator",
+    tagline: "Create. Share. Earn.",
+    price: "free",
+    priceNote: "to start",
+    benefits: [
+      "Creator channel & portfolio",
+      "Upload videos, audio & live",
+      "Analytics & audience insights",
+      "Monetisation eligibility",
+      "Fan subscriptions & tips",
+      "Content management tools",
+      "Collaboration opportunities",
+      "Access to Nexus creator community",
+    ],
+    cta: "Start Creating",
+    tone: "green",
+  },
+  {
+    id: "business",
+    icon: <IconBriefcase />,
+    name: "Nexus Business",
+    tagline: "Promote. Engage. Grow.",
+    price: { month: 2900, year: 29000 },
+    priceNote: "save 17% yearly",
+    benefits: [
+      "Verified business channel",
+      "Commercial video campaigns",
+      "Product & service links",
+      "Campaign analytics",
+      "Lead generation tools",
+      "Employee access (up to 5)",
+      "Integration with MYHitch platforms",
+      "Priority business support",
+    ],
+    cta: "Grow Your Business",
+    tone: "orange",
+  },
+  {
+    id: "enterprise",
+    icon: <IconBuilding />,
+    name: "Nexus Enterprise",
+    tagline: "Custom Solutions",
+    price: "custom",
+    priceNote: "for organisations, government & large businesses",
+    benefits: [
+      "All Business features",
+      "Secure media workspace",
+      "Large file transfer & storage",
+      "Client review & approval workflow",
+      "Version control & audit trail",
+      "Multi-user & team permissions",
+      "API access & system integration",
+      "Dedicated account manager",
+      "Custom contracts & support",
+    ],
+    cta: "Contact Sales",
+    tone: "dark",
+  },
+];
+
+const TONE_CLASSES: Record<PlanDef["tone"], string> = {
+  neutral: "border-border",
+  accent: "border-accent ring-1 ring-accent/30",
+  purple: "border-[#8b5cf6]",
+  green: "border-success",
+  orange: "border-warning",
+  dark: "border-fg/30",
+};
+
+function formatGbp(minor: number): string {
+  return `£${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
+}
+
+export function PlansClient() {
+  const { data: currentUser } = useCurrentUser();
+  const startSubscription = useStartSubscription();
+  const { toast } = useToast();
+  const [interval, setIntervalValue] = React.useState<Interval>("month");
+  const [salesOpen, setSalesOpen] = React.useState(false);
+
+  const handleSubscribe = async (plan: PlanId, planInterval: Interval) => {
+    if (!currentUser) {
+      toast({
+        title: "Create an account first",
+        description: "Register (or sign in), then come back here to subscribe.",
+      });
+      return;
+    }
+    try {
+      await startSubscription.mutateAsync({ plan, interval: planInterval });
+    } catch (err) {
+      toast({
+        title: "Couldn't start checkout",
+        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+      return;
+    }
+    toast({ title: `${plan[0].toUpperCase()}${plan.slice(1)} activated` });
+  };
+
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-2xl text-center">
+        <h1 className="font-display text-3xl font-semibold text-fg sm:text-4xl">
+          One Platform. Endless Possibilities.
+        </h1>
+        <p className="mt-2 text-fg-muted">Choose the plan that&apos;s right for you.</p>
+      </div>
+
+      <div className="mt-6 flex justify-center">
+        <div className="inline-flex rounded-full border border-border bg-surface-2 p-1">
+          <button
+            type="button"
+            onClick={() => setIntervalValue("month")}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              interval === "month" ? "bg-accent text-accent-fg" : "text-fg-muted"
+            }`}
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            onClick={() => setIntervalValue("year")}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              interval === "year" ? "bg-accent text-accent-fg" : "text-fg-muted"
+            }`}
+          >
+            Yearly <span className="text-xs opacity-80">(save 17%)</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {PLANS.map((plan) => {
+          const isPaidPlan = plan.id === "premium" || plan.id === "family" || plan.id === "business";
+          const yearlyAvailable = typeof plan.price === "object" && "year" in plan.price;
+          const effectiveInterval: Interval = isPaidPlan && !yearlyAvailable ? "month" : interval;
+          const priceDisplay =
+            plan.price === "free"
+              ? "£0"
+              : plan.price === "custom"
+                ? "Custom"
+                : effectiveInterval === "year" && "year" in plan.price
+                  ? formatGbp(plan.price.year)
+                  : formatGbp(plan.price.month);
+          const priceSuffix =
+            plan.price === "free" || plan.price === "custom"
+              ? ""
+              : effectiveInterval === "year"
+                ? " / year"
+                : " / month";
+
+          return (
+            <Card key={plan.id} className={`flex flex-col ${TONE_CLASSES[plan.tone]}`}>
+              <CardBody className="flex flex-1 flex-col">
+                <span className="flex size-10 items-center justify-center rounded-full bg-surface-2 text-accent [&_svg]:size-5">
+                  {plan.icon}
+                </span>
+                <h2 className="mt-3 font-display text-lg font-semibold text-fg">{plan.name}</h2>
+                <p className="text-sm text-fg-muted">{plan.tagline}</p>
+
+                <div className="mt-4">
+                  <span className="font-display text-3xl font-semibold text-fg nx-tnum">{priceDisplay}</span>
+                  <span className="text-sm text-fg-muted">{priceSuffix}</span>
+                  {plan.priceNote ? (
+                    <p className="mt-0.5 text-xs text-fg-subtle">{plan.priceNote}</p>
+                  ) : null}
+                </div>
+
+                <ul className="mt-4 flex-1 space-y-2 text-sm text-fg-muted">
+                  {plan.benefits.map((benefit) => (
+                    <li key={benefit} className="flex items-start gap-2">
+                      <IconCheck className="mt-0.5 size-4 shrink-0 text-success" />
+                      <span>{benefit}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-5">
+                  {plan.id === "free" ? (
+                    <Button variant="secondary" block href="/auth/register">
+                      {plan.cta}
+                    </Button>
+                  ) : plan.id === "creator" ? (
+                    <Button variant="secondary" block href="/auth/register?role=creator">
+                      {plan.cta}
+                    </Button>
+                  ) : plan.id === "enterprise" ? (
+                    <Button variant="secondary" block onClick={() => setSalesOpen(true)}>
+                      {plan.cta}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      block
+                      loading={startSubscription.isPending}
+                      onClick={() => handleSubscribe(plan.id as PlanId, effectiveInterval)}
+                    >
+                      {plan.cta}
+                    </Button>
+                  )}
+                </div>
+              </CardBody>
+            </Card>
+          );
+        })}
+      </div>
+
+      <p className="mt-8 text-center text-xs text-fg-subtle">
+        Prices shown in GBP. Payments processed securely by Stripe — MYHitch Nexus never collects or stores your
+        card details. Cancel any paid plan any time from{" "}
+        <Link href="/account/subscriptions" className="text-accent hover:underline">
+          Account → Subscriptions
+        </Link>
+        .
+      </p>
+
+      <SalesInquiryModal open={salesOpen} onClose={() => setSalesOpen(false)} />
+    </div>
+  );
+}
+
+function SalesInquiryModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: currentUser } = useCurrentUser();
+  const { toast } = useToast();
+  const [fullName, setFullName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [company, setCompany] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open && currentUser) {
+      setFullName((current) => current || currentUser.name);
+      setEmail((current) => current || currentUser.email);
+    }
+  }, [open, currentUser]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/sales-inquiries/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, email, company, message }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Could not send your enquiry.");
+      }
+      toast({ title: "Thanks — our team will be in touch", description: "We've received your enquiry." });
+      onClose();
+      setFullName("");
+      setEmail("");
+      setCompany("");
+      setMessage("");
+    } catch (err) {
+      toast({
+        title: "Couldn't send your enquiry",
+        description: err instanceof Error ? err.message : undefined,
+        tone: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Talk to sales"
+      description="Tell us about your organisation and we'll be in touch about Nexus Enterprise."
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            loading={submitting}
+            disabled={!fullName.trim() || !email.trim()}
+            onClick={submit}
+          >
+            Send enquiry
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Field label="Full name" htmlFor="sales-name" required>
+          <Input id="sales-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </Field>
+        <Field label="Work email" htmlFor="sales-email" required>
+          <Input id="sales-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label="Company / organisation" htmlFor="sales-company">
+          <Input id="sales-company" value={company} onChange={(e) => setCompany(e.target.value)} />
+        </Field>
+        <Field label="What are you looking for?" htmlFor="sales-message">
+          <Textarea id="sales-message" rows={3} value={message} onChange={(e) => setMessage(e.target.value)} />
+        </Field>
+      </div>
+    </Modal>
+  );
+}

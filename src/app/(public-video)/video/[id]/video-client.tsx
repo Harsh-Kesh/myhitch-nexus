@@ -7,7 +7,6 @@ import {
   IconBrandFacebook,
   IconBrandX,
   IconCheck,
-  IconClock,
   IconCopy,
   IconEar,
   IconFlag,
@@ -17,12 +16,11 @@ import {
   IconStar,
   IconStarFilled,
   IconThumbUp,
-  IconWorld,
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { VideoPlayer } from "@/components/player/video-player";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusBadge } from "@/components/ui/badge";
@@ -44,7 +42,6 @@ import {
   useLikeVideo,
   useMyRating,
   usePostComment,
-  usePurchaseAccess,
   useRateVideo,
   useRelatedVideos,
   useReplyToComment,
@@ -97,7 +94,6 @@ export function VideoDetailClient() {
   const rateVideo = useRateVideo(videoId);
   const postComment = usePostComment(videoId);
   const replyToComment = useReplyToComment(videoId);
-  const purchase = usePurchaseAccess(videoId);
   const startSubscription = useStartSubscription();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -203,17 +199,16 @@ export function VideoDetailClient() {
   }
 
   const inWatchlist = watchlist.some((item) => item.id === video.id);
-  const { rentPrice, buyPrice, ppvPrice, accessModels } = video.pricing;
+  const { accessModels } = video.pricing;
 
-  const handlePurchase = async (kind: "buy" | "rent" | "ppv") => {
-    // A real checkout redirects the browser away and never resolves this promise (see
-    // purchaseAccess()'s header comment) — everything below only ever runs for the mock
-    // path. A real failure (payments not configured, already entitled, ...) does reject
-    // it, though, and needs handling here rather than becoming an unhandled rejection —
-    // found live by actually clicking through this against a real video with no Stripe
-    // keys configured yet, not by static review.
+  // Rent/buy/PPV and per-channel memberships are retired (docs/DEVELOPMENT-PLAN.md,
+  // 2026-09-20 pricing-model entry) — every video is either free or requires a paid
+  // plan, so the paywall only ever offers Premium/Family now, matching the plans page.
+  const handleSubscribe = async (plan: "premium" | "family") => {
+    // A real subscription signup redirects away and never resolves this promise, but a
+    // real failure (already subscribed, payments not configured) does reject it.
     try {
-      await purchase.mutateAsync(kind);
+      await startSubscription.mutateAsync({ plan });
     } catch (err) {
       toast({
         title: "Couldn't start checkout",
@@ -224,36 +219,8 @@ export function VideoDetailClient() {
     }
     setPurchaseOpen(false);
     toast({
-      title:
-        kind === "rent"
-          ? "Rental started"
-          : kind === "buy"
-            ? "Purchase complete"
-            : "Access unlocked",
-      description: `You can now watch ${video.title} in full. Mock checkout — no payment provider was contacted.`,
-    });
-  };
-
-  const handleSubscribe = async (channelId?: string) => {
-    // Same reasoning as handlePurchase() above: a real subscription signup redirects
-    // away and never resolves this promise, but a real failure (already subscribed,
-    // payments not configured) does reject it.
-    try {
-      await startSubscription.mutateAsync({ name: channelId ? "Channel membership" : "Nexus Premium", channelId });
-    } catch (err) {
-      toast({
-        title: "Couldn't start checkout",
-        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
-        tone: "error",
-      });
-      return;
-    }
-    setPurchaseOpen(false);
-    toast({
-      title: channelId ? "Membership activated" : "Premium activated",
-      description: channelId
-        ? "You now have access to this channel's members-only content."
-        : "Titles included with Premium now play without a purchase.",
+      title: `${plan === "family" ? "Family" : "Premium"} activated`,
+      description: "Titles included with your plan now play without a purchase.",
     });
   };
 
@@ -470,13 +437,7 @@ export function VideoDetailClient() {
                         size="sm"
                         onClick={() => setPurchaseOpen(true)}
                       >
-                        {rentPrice
-                          ? `Rent ${formatCurrency(rentPrice.amount, rentPrice.currency)}`
-                          : buyPrice
-                            ? `Buy ${formatCurrency(buyPrice.amount, buyPrice.currency)}`
-                            : ppvPrice
-                              ? `Unlock ${formatCurrency(ppvPrice.amount, ppvPrice.currency)}`
-                              : "Get access"}
+                        Unlock with a plan
                       </Button>
                     )}
                   </div>
@@ -771,8 +732,7 @@ export function VideoDetailClient() {
         open={purchaseOpen}
         onClose={() => setPurchaseOpen(false)}
         video={video}
-        loading={purchase.isPending || startSubscription.isPending}
-        onPurchase={handlePurchase}
+        loading={startSubscription.isPending}
         onSubscribe={handleSubscribe}
       />
 
@@ -1107,54 +1067,22 @@ function RatingControl({
   );
 }
 
-/** Real membership price for a real channel — no mock counterpart to preserve a
- * signature for (the mock's own "membership" row has always shown a flat hardcoded
- * price with nothing configurable behind it), so this talks to the new API directly,
- * same as studio/revenue's usePayoutStatus(). */
-function useMembershipTier(channelId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ["membership-tier", channelId],
-    queryFn: async (): Promise<{ priceMinor: number; currency: string; isEnabled: boolean } | null> => {
-      const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/membership-tier/`);
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled,
-  });
-}
-
+// Rent/buy/PPV and per-channel memberships are retired (docs/DEVELOPMENT-PLAN.md,
+// 2026-09-20 pricing-model entry) — every video is either free or requires a paid plan,
+// so this only ever offers the two plans that include full content access.
 function PurchaseModal({
   open,
   onClose,
   video,
   loading,
-  onPurchase,
   onSubscribe,
 }: {
   open: boolean;
   onClose: () => void;
   video: Video;
   loading: boolean;
-  onPurchase: (kind: "buy" | "rent" | "ppv") => void;
-  onSubscribe: (channelId?: string) => void;
+  onSubscribe: (plan: "premium" | "family") => void;
 }) {
-  const { rentPrice, buyPrice, ppvPrice, accessModels, rentalWindowHours } =
-    video.pricing;
-  const isRealChannel = looksLikeRealId(video.channelId);
-  const { data: membershipTier } = useMembershipTier(
-    video.channelId,
-    isRealChannel && accessModels.includes("membership"),
-  );
-  // A real channel that hasn't configured (or has disabled) a real tier has nothing to
-  // sell — showing the row would only lead to an honest "not available" rejection at
-  // checkout, so it's left off entirely instead, same "don't show a broken offer"
-  // reasoning as the rest of this app's real/mock split.
-  const showMembership = accessModels.includes("membership") && (!isRealChannel || membershipTier?.isEnabled);
-  const membershipPrice =
-    isRealChannel && membershipTier
-      ? `${formatCurrency(membershipTier.priceMinor, membershipTier.currency)} / month`
-      : "From £4.00 / month";
-
   return (
     <Modal
       open={open}
@@ -1168,63 +1096,29 @@ function PurchaseModal({
       size="md"
     >
       <div className="space-y-3">
-        {accessModels.includes("rent") && rentPrice ? (
-          <OfferRow
-            title={`Rent for ${rentalWindowHours ?? 48} hours`}
-            description="Starts when you press play. Watch as many times as you like within the window."
-            price={formatCurrency(rentPrice.amount, rentPrice.currency)}
-            icon={<IconClock />}
-            loading={loading}
-            onSelect={() => onPurchase("rent")}
-          />
-        ) : null}
-
-        {accessModels.includes("buy") && buyPrice ? (
-          <OfferRow
-            title="Buy outright"
-            description="Permanent access in your library, including future remasters."
-            price={formatCurrency(buyPrice.amount, buyPrice.currency)}
-            icon={<IconBookmark />}
-            loading={loading}
-            onSelect={() => onPurchase("buy")}
-            primary
-          />
-        ) : null}
-
-        {accessModels.includes("ppv") && ppvPrice ? (
-          <OfferRow
-            title="Pay-per-view"
-            description="One-off access to this title."
-            price={formatCurrency(ppvPrice.amount, ppvPrice.currency)}
-            icon={<IconWorld />}
-            loading={loading}
-            onSelect={() => onPurchase("ppv")}
-            primary
-          />
-        ) : null}
-
-        {accessModels.includes("subscription") ? (
-          <OfferRow
-            title="Nexus Premium"
-            description="Included with a Premium subscription, along with the rest of the included catalogue."
-            price="£9.99 / month"
-            icon={<IconStarFilled />}
-            loading={loading}
-            onSelect={() => onSubscribe()}
-          />
-        ) : null}
-
-        {showMembership ? (
-          <OfferRow
-            title="Channel membership"
-            description="Supports the channel directly and unlocks members-only content."
-            price={membershipPrice}
-            icon={<IconStar />}
-            loading={loading}
-            onSelect={() => onSubscribe(video.channelId)}
-          />
-        ) : null}
+        <OfferRow
+          title="Nexus Premium"
+          description="All videos, music & live streams, ad-free, plus the rest of the included catalogue."
+          price="£9.99 / month"
+          icon={<IconStarFilled />}
+          loading={loading}
+          onSelect={() => onSubscribe("premium")}
+          primary
+        />
+        <OfferRow
+          title="Nexus Family"
+          description="All Premium benefits across up to 5 profiles, with parental controls."
+          price="£14.99 / month"
+          icon={<IconStar />}
+          loading={loading}
+          onSelect={() => onSubscribe("family")}
+        />
       </div>
+      <p className="mt-4 text-center text-xs text-fg-subtle">
+        <Link href="/plans" className="text-accent hover:underline">
+          Compare all plans, including yearly pricing →
+        </Link>
+      </p>
     </Modal>
   );
 }

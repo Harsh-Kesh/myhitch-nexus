@@ -616,30 +616,25 @@ export async function purchaseAccess(
  * (or a fully mock account) falls through to the simulated subscription below, same
  * "redirects away, never resolves" shape as purchaseAccess()'s real branch — a real
  * subscription signup has no synchronous "subscribed" the way the mock always did. */
-export async function startSubscription(
-  name: string,
-  channelId?: string,
-): Promise<Subscription> {
-  if (looksLikeRealId(store.user.id) && channelId && looksLikeRealId(channelId)) {
-    const res = await fetch(`/api/channels/${channelId}/membership/checkout/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ returnPath: window.location.pathname }),
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error ?? "Could not start checkout.");
-    }
-    const { url } = (await res.json()) as { url: string };
-    window.location.href = url;
-    return new Promise<Subscription>(() => {});
-  }
+const MOCK_PLAN_PRICE: Record<"premium" | "family" | "business", { month: number; year?: number }> = {
+  premium: { month: 999, year: 9900 },
+  family: { month: 1499 },
+  business: { month: 2900, year: 29000 },
+};
 
-  if (!channelId && looksLikeRealId(store.user.id)) {
+/** Channel memberships are retired — see subscriptions.ts's header comment — so this now
+ * only ever starts one of the three paid platform plans. `interval` defaults to monthly;
+ * Family has no yearly option in the pricing model, same restriction the real checkout
+ * route enforces. */
+export async function startSubscription(
+  plan: "premium" | "family" | "business",
+  interval: "month" | "year" = "month",
+): Promise<Subscription> {
+  if (looksLikeRealId(store.user.id)) {
     const res = await fetch(`/api/subscriptions/checkout/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ returnPath: window.location.pathname }),
+      body: JSON.stringify({ plan, interval, returnPath: window.location.pathname }),
     });
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -651,19 +646,18 @@ export async function startSubscription(
   }
 
   await latency("slow");
+  const display = PLAN_DISPLAY[plan];
+  const amount = MOCK_PLAN_PRICE[plan][interval] ?? MOCK_PLAN_PRICE[plan].month;
   const subscription: Subscription = {
     id: nextId("sub"),
-    name,
-    kind: channelId ? "channel-membership" : "platform",
-    channelId,
-    price: { amount: channelId ? 500 : 999, currency: "GBP" },
-    interval: "monthly",
+    name: display.name,
+    kind: "platform",
+    price: { amount, currency: "GBP" },
+    interval: interval === "year" ? "annual" : "monthly",
     status: "active",
-    renewsAt: daysAhead(30),
+    renewsAt: daysAhead(interval === "year" ? 365 : 30),
     startedAt: new Date().toISOString(),
-    benefits: channelId
-      ? ["Members-only content", "Early access", "Members' chat"]
-      : ["Ad-free viewing", "Included films and series", "Offline downloads"],
+    benefits: display.benefits,
   };
   store.subscriptions = [subscription, ...store.subscriptions];
   return subscription;
@@ -2814,6 +2808,48 @@ const REAL_SUBSCRIPTION_STATUS: Record<string, Subscription["status"]> = {
   incomplete: "past-due",
 };
 
+const PLAN_DISPLAY: Record<string, { name: string; benefits: string[] }> = {
+  premium: {
+    name: "Nexus Premium",
+    benefits: [
+      "Ad-free MYHitch content",
+      "All videos, music & live streams",
+      "Background play (audio)",
+      "Premium content bundles",
+      "Downloads (where available)",
+      "Enhanced video quality",
+      "Early access to new features",
+      "Priority support",
+    ],
+  },
+  family: {
+    name: "Nexus Family",
+    benefits: [
+      "All Premium benefits",
+      "Up to 5 family profiles",
+      "Parental controls",
+      "Profile-based recommendations",
+      "Safe viewing settings",
+      "Family watchlists",
+      "Ad-free MYHitch content",
+      "Priority support",
+    ],
+  },
+  business: {
+    name: "Nexus Business",
+    benefits: [
+      "Verified business channel",
+      "Commercial video campaigns",
+      "Product & service links",
+      "Campaign analytics",
+      "Lead generation tools",
+      "Employee access (up to 5)",
+      "Integration with MYHitch platforms",
+      "Priority business support",
+    ],
+  },
+};
+
 export async function getSubscriptions(): Promise<Subscription[]> {
   if (looksLikeRealId(store.user.id)) {
     const res = await fetch(`/api/subscriptions/`);
@@ -2821,29 +2857,26 @@ export async function getSubscriptions(): Promise<Subscription[]> {
     const data = (await res.json()) as {
       items: Array<{
         id: string;
+        plan: "premium" | "family" | "business";
+        billingInterval: "month" | "year";
         status: string;
         priceMinor: number;
         currency: string;
         currentPeriodEnd: string | null;
         cancelAtPeriodEnd: boolean;
         createdAt: string;
-        channelId: string | null;
-        channelName: string | null;
       }>;
     };
     return data.items.map((item) => ({
       id: item.id,
-      name: item.channelId ? `${item.channelName ?? "Channel"} membership` : "Nexus Premium",
-      kind: item.channelId ? "channel-membership" : "platform",
-      channelId: item.channelId ?? undefined,
+      name: PLAN_DISPLAY[item.plan]?.name ?? "Nexus Premium",
+      kind: "platform",
       price: { amount: item.priceMinor, currency: item.currency as Money["currency"] },
-      interval: "monthly",
+      interval: item.billingInterval === "year" ? "annual" : "monthly",
       status: REAL_SUBSCRIPTION_STATUS[item.status] ?? "active",
       renewsAt: item.currentPeriodEnd ?? "",
       startedAt: item.createdAt,
-      benefits: item.channelId
-        ? ["Members-only content", "Supports this channel directly"]
-        : ["Ad-free viewing", "Included films and series", "Offline downloads"],
+      benefits: PLAN_DISPLAY[item.plan]?.benefits ?? [],
       cancelAtPeriodEnd: item.cancelAtPeriodEnd,
     }));
   }

@@ -1,34 +1,71 @@
-// Server-only. Real Nexus Premium (platform) subscriptions. Channel memberships share
-// this same `subscriptions` table (distinguished by a non-null channel_id) and their own
-// checkout/webhook logic in channelMemberships.ts — see that file and the
-// 20260918000005_channel_memberships.sql migration comment for why memberships needed a
-// separate slice from this one. Same STRIPE_SECRET_KEY/StripeNotConfiguredError pattern
-// as commerce.ts.
+// Server-only. Real subscription plans — Nexus Premium, Family and Business — per the
+// client's pricing model (2026-09-20). Replaces the single hardcoded "Nexus Premium"
+// plan; channel memberships and per-video rent/buy/PPV are retired (see this migration's
+// own header comment, 20260920000002_pricing_plans.sql) since neither appears in that
+// model — every video is either Free or requires a paid plan. Same
+// STRIPE_SECRET_KEY/StripeNotConfiguredError pattern as commerce.ts.
 import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe } from "./stripeClient";
-import { checkRealChannelMembership } from "./channelMemberships";
 import { SITE_URL } from "@/lib/utils";
 
-const PREMIUM_PRICE_MINOR = 999;
-const PREMIUM_CURRENCY = "gbp";
-const PREMIUM_INTERVAL = "month";
+export type PlanId = "premium" | "family" | "business";
+export type BillingInterval = "month" | "year";
 
-export type CreatePremiumCheckoutResult =
+interface PlanDefinition {
+  productName: string;
+  currency: string;
+  /** Only the intervals this plan actually offers — Family is month-only in the
+   * pricing model, Premium/Business offer both with the graphic's own "save 17%". */
+  prices: Partial<Record<BillingInterval, number>>;
+}
+
+// Minor units (pence), GBP — matching the currency every other real Stripe price in this
+// app already uses (Premium's own £9.99/month predates this file's generalisation and is
+// unchanged here). The pricing graphic's $ figures are the same numbers (9.99, 99, 29,
+// 290); the client hasn't asked for a currency change, so this keeps one consistent
+// currency across the whole app rather than introducing a second one from a marketing
+// mockup alone.
+export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
+  premium: {
+    productName: "Nexus Premium",
+    currency: "gbp",
+    prices: { month: 999, year: 9900 },
+  },
+  family: {
+    productName: "Nexus Family",
+    currency: "gbp",
+    prices: { month: 1499 },
+  },
+  business: {
+    productName: "Nexus Business",
+    currency: "gbp",
+    prices: { month: 2900, year: 29000 },
+  },
+};
+
+export type CreatePlanCheckoutResult =
   | { outcome: "success"; url: string }
-  | { outcome: "already_subscribed" };
+  | { outcome: "already_subscribed" }
+  | { outcome: "invalid_interval" };
 
-/** `returnPath` is where the video/account page the request came from wants the
- * checkout to land back on (e.g. `/video/{id}/`) — Premium can be started from more
- * than one place, unlike a video purchase which always returns to that one video. */
-export async function createPremiumCheckoutSession(
+/** `returnPath` is where the page the request came from wants the checkout to land back
+ * on — a plan can be started from more than one place (a video paywall, the plans page,
+ * account settings), unlike a video purchase which always returns to that one video. */
+export async function createPlanCheckoutSession(
   accountId: string,
   accountEmail: string,
+  plan: PlanId,
+  interval: BillingInterval,
   returnPath: string,
-): Promise<CreatePremiumCheckoutResult> {
+): Promise<CreatePlanCheckoutResult> {
+  const definition = PLAN_CATALOG[plan];
+  const unitAmount = definition.prices[interval];
+  if (!unitAmount) return { outcome: "invalid_interval" };
+
   const existing = await queryOne<{ id: string }>(
-    `select id from subscriptions where account_id = $1 and channel_id is null and status in ('active', 'past_due')`,
+    `select id from subscriptions where account_id = $1 and status in ('active', 'past_due')`,
     [accountId],
   );
   if (existing) return { outcome: "already_subscribed" };
@@ -39,21 +76,21 @@ export async function createPremiumCheckoutSession(
     line_items: [
       {
         price_data: {
-          currency: PREMIUM_CURRENCY,
-          product_data: { name: "Nexus Premium" },
-          unit_amount: PREMIUM_PRICE_MINOR,
-          recurring: { interval: PREMIUM_INTERVAL },
+          currency: definition.currency,
+          product_data: { name: definition.productName },
+          unit_amount: unitAmount,
+          recurring: { interval },
         },
         quantity: 1,
       },
     ],
     // Also set on the subscription itself (not just this session) so a later
     // customer.subscription.updated/deleted webhook — which carries the Subscription
-    // object, not the Checkout Session — still has accountId to work with.
-    subscription_data: { metadata: { accountId } },
+    // object, not the Checkout Session — still has accountId/plan to work with.
+    subscription_data: { metadata: { accountId, plan } },
     success_url: `${SITE_URL}${returnPath}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${SITE_URL}${returnPath}?checkout=cancelled`,
-    metadata: { accountId },
+    metadata: { accountId, plan },
   });
   if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
   return { outcome: "success", url: session.url };
@@ -72,30 +109,30 @@ function mapStripeStatus(status: Stripe.Subscription.Status): "active" | "past_d
  * commerce.ts's fulfillCheckoutSession(). */
 export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscription): Promise<void> {
   const accountId = subscription.metadata?.accountId;
+  const plan = (subscription.metadata?.plan as PlanId | undefined) ?? "premium";
   if (!accountId) {
     console.error("Stripe subscription missing accountId metadata", subscription.id);
     return;
   }
-  // Present only for a channel membership (see channelMemberships.ts's
-  // createChannelMembershipCheckoutSession()) — absent, this is platform Premium.
-  const channelId = subscription.metadata?.channelId ?? null;
   const item = subscription.items.data[0];
-  const priceMinor = item?.price.unit_amount ?? PREMIUM_PRICE_MINOR;
-  const currency = (item?.price.currency ?? PREMIUM_CURRENCY).toUpperCase();
+  const priceMinor = item?.price.unit_amount ?? PLAN_CATALOG[plan].prices.month ?? 0;
+  const currency = (item?.price.currency ?? PLAN_CATALOG[plan].currency).toUpperCase();
+  const billingInterval: BillingInterval = item?.price.recurring?.interval === "year" ? "year" : "month";
   const periodEnd = item?.current_period_end ? new Date(item.current_period_end * 1000) : null;
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 
   await query(
     `insert into subscriptions (
-       account_id, channel_id, stripe_customer_id, stripe_subscription_id, status,
-       price_minor, currency, current_period_end, cancel_at_period_end
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       account_id, plan, billing_interval, stripe_customer_id, stripe_subscription_id,
+       status, price_minor, currency, current_period_end, cancel_at_period_end
+     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (stripe_subscription_id) do update set
-       status = $5, price_minor = $6, currency = $7, current_period_end = $8,
-       cancel_at_period_end = $9`,
+       status = $6, price_minor = $7, currency = $8, current_period_end = $9,
+       cancel_at_period_end = $10`,
     [
       accountId,
-      channelId,
+      plan,
+      billingInterval,
       customerId,
       subscription.id,
       mapStripeStatus(subscription.status),
@@ -107,56 +144,67 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
   );
 }
 
-export async function checkRealPremium(accountId: string): Promise<boolean> {
+/** Premium and Family both carry the full content-access benefit in the pricing model
+ * ("All Premium benefits" is Family's first line) — Business does not (it's about
+ * promotion/campaign tools, not content consumption), so it's deliberately excluded
+ * here despite also being a paid plan. */
+export async function checkRealContentAccess(accountId: string): Promise<boolean> {
   const row = await queryOne(
-    `select 1 from subscriptions where account_id = $1 and channel_id is null and status = 'active'`,
+    `select 1 from subscriptions where account_id = $1 and plan in ('premium', 'family') and status = 'active'`,
     [accountId],
+  );
+  return Boolean(row);
+}
+
+export async function checkRealPlanActive(accountId: string, plan: PlanId): Promise<boolean> {
+  const row = await queryOne(
+    `select 1 from subscriptions where account_id = $1 and plan = $2 and status = 'active'`,
+    [accountId, plan],
   );
   return Boolean(row);
 }
 
 export interface RealSubscriptionRow {
   id: string;
+  plan: PlanId;
+  billingInterval: BillingInterval;
   status: "active" | "past_due" | "cancelled" | "incomplete";
   priceMinor: number;
   currency: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   createdAt: string;
-  channelId: string | null;
-  channelName: string | null;
 }
 
 export async function listRealSubscriptions(accountId: string): Promise<RealSubscriptionRow[]> {
   const rows = await query<{
     id: string;
+    plan: PlanId;
+    billing_interval: BillingInterval;
     status: RealSubscriptionRow["status"];
     price_minor: number;
     currency: string;
     current_period_end: string | null;
     cancel_at_period_end: boolean;
     created_at: string;
-    channel_id: string | null;
-    channel_name: string | null;
   }>(
-    `select s.id, s.status, s.price_minor, s.currency, s.current_period_end,
-            s.cancel_at_period_end, s.created_at, s.channel_id, o.name as channel_name
-     from subscriptions s
-     left join organizations o on o.id = s.channel_id
-     where s.account_id = $1
-     order by s.created_at desc`,
+    `select id, plan, billing_interval, status, price_minor, currency, current_period_end,
+            cancel_at_period_end, created_at
+     from subscriptions
+     where account_id = $1
+     order by created_at desc`,
     [accountId],
   );
   return rows.map((row) => ({
     id: row.id,
+    plan: row.plan,
+    billingInterval: row.billing_interval,
     status: row.status,
     priceMinor: row.price_minor,
     currency: row.currency,
     currentPeriodEnd: row.current_period_end,
     cancelAtPeriodEnd: row.cancel_at_period_end,
     createdAt: row.created_at,
-    channelId: row.channel_id,
-    channelName: row.channel_name,
   }));
 }
 
@@ -178,10 +226,8 @@ export async function verifySubscriptionSession(
   if (session.subscription && typeof session.subscription !== "string") {
     await upsertSubscriptionFromStripe(session.subscription);
   }
-  const channelId = session.metadata?.channelId;
-  const granted = channelId
-    ? await checkRealChannelMembership(requestingAccountId, channelId)
-    : await checkRealPremium(requestingAccountId);
+  const plan = (session.metadata?.plan as PlanId | undefined) ?? "premium";
+  const granted = await checkRealPlanActive(requestingAccountId, plan);
   return { granted };
 }
 

@@ -157,6 +157,17 @@ export default function RegisterPage() {
 
   // Account
   const [role, setRole] = React.useState<UserRole>("viewer");
+
+  // Prefills the role from a link like /auth/register?role=creator (the Plans page's
+  // "Start Creating" card) — read directly rather than next/navigation's
+  // useSearchParams(), same "no Suspense boundary needed for a one-off client read"
+  // reasoning as video-client.tsx's own checkout-return handling.
+  React.useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("role");
+    if (requested && ROLES.some((item) => item.value === requested)) {
+      setRole(requested as UserRole);
+    }
+  }, []);
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");

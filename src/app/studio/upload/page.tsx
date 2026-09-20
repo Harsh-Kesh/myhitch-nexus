@@ -85,14 +85,13 @@ const CONTENT_LABELS = [
   "political-content", "gambling", "synthetic-media",
 ].map((value) => ({ value, label: value.replace(/-/g, " ") }));
 
+// Rent/buy/PPV and per-channel memberships are retired (docs/DEVELOPMENT-PLAN.md,
+// 2026-09-20 pricing-model entry) — a video is either free (with or without ads) or
+// requires a paid platform plan, matching the plans page exactly.
 const ACCESS_MODELS: Array<{ value: AccessModel; label: string; description: string }> = [
   { value: "free", label: "Free", description: "Anyone can watch. No advertising." },
   { value: "ad-supported", label: "Advertising-supported", description: "Free to watch, monetised with pre/mid-roll." },
-  { value: "rent", label: "Rental", description: "Time-limited access for a one-off fee." },
-  { value: "buy", label: "Purchase", description: "Permanent access, kept in the viewer's library." },
-  { value: "ppv", label: "Pay-per-view", description: "One-off access for events and premieres." },
-  { value: "subscription", label: "Platform subscription", description: "Included with Nexus Premium." },
-  { value: "membership", label: "Channel membership", description: "Included for your paying members." },
+  { value: "subscription", label: "Requires a paid plan", description: "Included with Nexus Premium or Family." },
 ];
 
 export default function UploadPage() {
@@ -271,10 +270,6 @@ export default function UploadPage() {
   const [status, setStatus] = React.useState<ContentStatus>("published");
   const [scheduledFor, setScheduledFor] = React.useState("");
   const [accessModels, setAccessModels] = React.useState<AccessModel[]>(["ad-supported"]);
-  const [rentPrice, setRentPrice] = React.useState("3.99");
-  const [buyPrice, setBuyPrice] = React.useState("9.99");
-  const [ppvPrice, setPpvPrice] = React.useState("5.99");
-  const [rentalWindow, setRentalWindow] = React.useState("48");
   const [sponsored, setSponsored] = React.useState(false);
   const [sponsorName, setSponsorName] = React.useState("");
   const [commerceProduct, setCommerceProduct] = React.useState("");
@@ -345,16 +340,6 @@ export default function UploadPage() {
       },
       pricing: {
         accessModels,
-        rentPrice: accessModels.includes("rent")
-          ? { amount: Math.round(Number(rentPrice) * 100), currency: "GBP" }
-          : undefined,
-        buyPrice: accessModels.includes("buy")
-          ? { amount: Math.round(Number(buyPrice) * 100), currency: "GBP" }
-          : undefined,
-        ppvPrice: accessModels.includes("ppv")
-          ? { amount: Math.round(Number(ppvPrice) * 100), currency: "GBP" }
-          : undefined,
-        rentalWindowHours: Number(rentalWindow) || 48,
         sponsored,
         sponsorName: sponsored ? sponsorName : undefined,
         affiliateLinks: commerceProduct
@@ -1200,52 +1185,6 @@ export default function UploadPage() {
                           ))}
                         </div>
 
-                        <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                          {accessModels.includes("rent") ? (
-                            <>
-                              <Field label="Rental price (£)" htmlFor="p-rent">
-                                <Input
-                                  id="p-rent"
-                                  value={rentPrice}
-                                  onChange={(e) => setRentPrice(e.target.value)}
-                                  sizeVariant="sm"
-                                  inputMode="decimal"
-                                />
-                              </Field>
-                              <Field label="Window (hours)" htmlFor="p-window">
-                                <Input
-                                  id="p-window"
-                                  value={rentalWindow}
-                                  onChange={(e) => setRentalWindow(e.target.value)}
-                                  sizeVariant="sm"
-                                  inputMode="numeric"
-                                />
-                              </Field>
-                            </>
-                          ) : null}
-                          {accessModels.includes("buy") ? (
-                            <Field label="Purchase price (£)" htmlFor="p-buy">
-                              <Input
-                                id="p-buy"
-                                value={buyPrice}
-                                onChange={(e) => setBuyPrice(e.target.value)}
-                                sizeVariant="sm"
-                                inputMode="decimal"
-                              />
-                            </Field>
-                          ) : null}
-                          {accessModels.includes("ppv") ? (
-                            <Field label="PPV price (£)" htmlFor="p-ppv">
-                              <Input
-                                id="p-ppv"
-                                value={ppvPrice}
-                                onChange={(e) => setPpvPrice(e.target.value)}
-                                sizeVariant="sm"
-                                inputMode="decimal"
-                              />
-                            </Field>
-                          ) : null}
-                        </div>
                       </div>
 
                       <div className="border-t border-border pt-5">

@@ -87,7 +87,6 @@ export function Modal({
       window.clearTimeout(timer);
     };
     // Deliberately NOT depending on onClose — see onCloseRef above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;

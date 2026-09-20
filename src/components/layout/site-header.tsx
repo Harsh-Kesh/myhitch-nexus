@@ -15,6 +15,7 @@ import {
   IconSearch,
   IconSettings,
   IconShieldCog,
+  IconStarFilled,
   IconSun,
   IconUsers,
   IconVideoPlus,
@@ -322,6 +323,9 @@ export function SiteHeader() {
                 </MenuItem>
                 <MenuItem href="/account/history" icon={<IconHistory />}>
                   Watch history
+                </MenuItem>
+                <MenuItem href="/plans" icon={<IconStarFilled />}>
+                  Plans &amp; pricing
                 </MenuItem>
                 {user.roles.some((role) =>
                   ["creator", "business", "advertiser", "admin"].includes(role),

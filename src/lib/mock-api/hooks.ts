@@ -233,8 +233,13 @@ export function usePurchaseAccess(videoId: string) {
 export function useStartSubscription() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, channelId }: { name: string; channelId?: string }) =>
-      api.startSubscription(name, channelId),
+    mutationFn: ({
+      plan,
+      interval,
+    }: {
+      plan: "premium" | "family" | "business";
+      interval?: "month" | "year";
+    }) => api.startSubscription(plan, interval),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: qk.subscriptions });
       client.invalidateQueries({ queryKey: ["entitlement"] });

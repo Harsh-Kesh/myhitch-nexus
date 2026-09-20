@@ -12,7 +12,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
-import { checkRealPremium } from "./subscriptions";
+import { checkRealContentAccess } from "./subscriptions";
 import { checkRealChannelMembership } from "./channelMemberships";
 import { computeChannelNetRevenue, type RevenueEntryKind } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
@@ -223,9 +223,12 @@ export async function checkRealEntitlement(accountId: string, videoId: string): 
      where p.video_id = $1`,
     [videoId],
   );
-  if (priceRow?.access_models.includes("subscription") && (await checkRealPremium(accountId))) {
+  if (priceRow?.access_models.includes("subscription") && (await checkRealContentAccess(accountId))) {
     return { granted: true, kind: "subscription" };
   }
+  // Channel memberships are retired going forward (no new checkout is offered — see
+  // subscriptions.ts's header comment) but an existing member who already paid for one
+  // keeps the access they bought; this is the only place that still checks it.
   if (
     priceRow?.access_models.includes("membership") &&
     (await checkRealChannelMembership(accountId, priceRow.channel_id))

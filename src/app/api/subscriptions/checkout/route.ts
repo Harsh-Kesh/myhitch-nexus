@@ -1,7 +1,8 @@
-// POST /api/subscriptions/checkout — creates a real Stripe Checkout session for Nexus
-// Premium. Real accounts only.
+// POST /api/subscriptions/checkout — creates a real Stripe Checkout session for a paid
+// plan (Premium/Family/Business). Real accounts only. `plan`/`interval` default to
+// Premium/monthly so an existing caller that only ever sent `returnPath` keeps working.
 import { NextResponse, type NextRequest } from "next/server";
-import { createPremiumCheckoutSession } from "@/lib/server/subscriptions";
+import { createPlanCheckoutSession, PLAN_CATALOG, type BillingInterval, type PlanId } from "@/lib/server/subscriptions";
 import { StripeNotConfiguredError } from "@/lib/server/commerce";
 import { getRequestAccount } from "@/lib/server/rbac";
 
@@ -11,7 +12,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
 
-  let body: { returnPath?: string };
+  let body: { returnPath?: string; plan?: string; interval?: string };
   try {
     body = await request.json();
   } catch {
@@ -20,11 +21,20 @@ export async function POST(request: NextRequest) {
   // Only a same-site path is ever accepted — never an absolute/external URL, so this
   // can't be used to redirect a Checkout return somewhere off-site.
   const returnPath = body.returnPath?.startsWith("/") ? body.returnPath : "/";
+  const plan = (body.plan ?? "premium") as PlanId;
+  const interval = (body.interval ?? "month") as BillingInterval;
+
+  if (!PLAN_CATALOG[plan]) {
+    return NextResponse.json({ error: "Unknown plan." }, { status: 400 });
+  }
 
   try {
-    const result = await createPremiumCheckoutSession(account.id, account.email, returnPath);
+    const result = await createPlanCheckoutSession(account.id, account.email, plan, interval, returnPath);
     if (result.outcome === "already_subscribed") {
-      return NextResponse.json({ error: "You already have an active Nexus Premium subscription." }, { status: 409 });
+      return NextResponse.json({ error: "You already have an active subscription." }, { status: 409 });
+    }
+    if (result.outcome === "invalid_interval") {
+      return NextResponse.json({ error: "That plan doesn't offer that billing interval." }, { status: 400 });
     }
     return NextResponse.json({ url: result.url });
   } catch (err) {
