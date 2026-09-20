@@ -2645,6 +2645,31 @@ interface RealAccount {
 // seeds them. See src/lib/server/session.ts and docs/DEVELOPMENT-PLAN.md §9 (blocker #2)
 // for why identity/sessions are real today but not yet Auth0-backed.
 function applyRealAccount(account: RealAccount): void {
+  // store.watchlist/store.following start life pre-populated with the demo persona's own
+  // seeded entries (data/users.ts) — fine for the mock-only demo experience, but every
+  // real account was getting those same seeded entries merged into its own real
+  // watchlist/follows (getWatchlist()/toggleFollow() below only guarded the signed-out
+  // case, not "signed in as a real account that isn't the demo persona"). Found live
+  // 2026-09-20: a real account's Watchlist page showed titles it never added. Reset both
+  // arrays the first time THIS specific real identity is applied in this store instance
+  // (not on every call — a real account's own same-session mock-video toggles, which
+  // have nowhere real to persist, should survive a later currentUser refetch).
+  if (store.user.id !== account.id) {
+    store.watchlist = [];
+    store.following = [];
+    // Same leak, worse: getContinueWatching()'s mock branch merged store.watchProgress's
+    // seeded demo entries into every account's watch history unconditionally — not even
+    // gated on store.loggedIn like watchlist/following were.
+    store.watchProgress = [];
+    // checkEntitlement() already guards store.subscriptions' always-active seeded
+    // Premium/membership against granting fake access to a *real* video (see that
+    // function's own comment on the incident this caused) — but a mock video's
+    // entitlement check has no such guard, so a real account still saw Mara's seeded
+    // channel membership unlock any mock video gated on that channel, for free, without
+    // ever joining it. Resetting here closes that the same way as the arrays above.
+    store.subscriptions = [];
+  }
+
   store.user.id = account.id;
   store.user.email = account.email;
   store.user.name = account.fullName;
