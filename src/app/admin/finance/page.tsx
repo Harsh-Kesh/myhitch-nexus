@@ -109,11 +109,13 @@ export default function AdminFinancePage() {
 
   const failed = payouts.filter((row) => row.status === "failed");
 
+  // Advertising (free tier) and Subscriptions (Premium/Family/Business) are the only two
+  // real revenue streams under the current pricing model — rentals, per-video purchases
+  // and channel memberships were retired (2026-09-20). Commerce is Business-tier product
+  // links/leads.
   const revenueMix = [
     { label: "Advertising", value: Math.round(totals.gross * 0.42) },
-    { label: "Rentals & purchases", value: Math.round(totals.gross * 0.24) },
-    { label: "Subscriptions", value: Math.round(totals.gross * 0.19) },
-    { label: "Memberships", value: Math.round(totals.gross * 0.09) },
+    { label: "Subscriptions", value: Math.round(totals.gross * 0.52) },
     { label: "Commerce", value: Math.round(totals.gross * 0.06) },
   ];
 

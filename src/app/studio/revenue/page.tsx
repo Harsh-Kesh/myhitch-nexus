@@ -186,7 +186,7 @@ export default function StudioRevenuePage() {
         title="Revenue"
         description={
           isRealChannel
-            ? "Real revenue from Stripe purchases and rentals, net of platform commission. Connect a bank account below to withdraw your available balance."
+            ? "Real revenue from legacy per-video purchases and rentals, net of platform commission — retired since the move to Nexus subscription plans, kept here for historical statements. Per-channel revenue share from subscriptions isn't built yet. Connect a bank account below to withdraw any available balance."
             : "Earnings, commission and payouts. All figures are simulated — no payment or settlement provider exists in this build."
         }
         actions={
