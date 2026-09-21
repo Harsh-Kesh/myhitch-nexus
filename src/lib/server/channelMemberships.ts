@@ -1,92 +1,15 @@
-// Server-only. Real channel memberships — the piece deliberately left out of the
-// platform-Premium subscriptions slice (see 20260918000002_subscriptions.sql's header
-// comment). One membership tier per channel: a real creator-set price replacing the
-// mock's hardcoded "From £4.00/month", and a real Stripe subscription checkout scoped
-// to that one channel via subscription_data.metadata.channelId.
+// Server-only. Channel memberships are retired (2026-09-20 pricing-model rebuild —
+// see subscriptions.ts's header comment): no creator can offer one and no viewer can
+// join one any more, so the settings UI, the tier-pricing API and the join-checkout
+// API that used to live here (and in this file, before 2026-09-21) are gone. What's
+// left is deliberately read-only: an existing member who already paid for one keeps
+// the access and the revenue they already have, via commerce.ts's checkRealEntitlement
+// and this file's own webhook handler. Both channel_membership_tiers and
+// membership_payments stay in the schema so that history stays queryable.
 import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe } from "./stripeClient";
-import { SITE_URL } from "@/lib/utils";
-
-// Same constraint as commerce.ts's own STRIPE_SUPPORTED_CURRENCIES — kept as a separate
-// copy rather than a shared import to avoid coupling this file to commerce.ts's module
-// graph for three lines of data.
-const STRIPE_SUPPORTED_CURRENCIES = new Set(["gbp", "usd", "eur"]);
-
-export interface MembershipTier {
-  channelId: string;
-  priceMinor: number;
-  currency: string;
-  benefits: string[];
-  isEnabled: boolean;
-}
-
-export async function getMembershipTier(channelId: string): Promise<MembershipTier | null> {
-  const row = await queryOne<{
-    channel_id: string;
-    price_minor: number;
-    currency: string;
-    benefits: string[];
-    is_enabled: boolean;
-  }>(
-    `select channel_id, price_minor, currency, benefits, is_enabled
-     from channel_membership_tiers where channel_id = $1`,
-    [channelId],
-  );
-  if (!row) return null;
-  return {
-    channelId: row.channel_id,
-    priceMinor: row.price_minor,
-    currency: row.currency,
-    benefits: row.benefits,
-    isEnabled: row.is_enabled,
-  };
-}
-
-export interface SetMembershipTierInput {
-  priceMinor: number;
-  currency: string;
-  benefits: string[];
-  isEnabled: boolean;
-}
-
-export type SetMembershipTierResult =
-  | { outcome: "success"; tier: MembershipTier }
-  | { outcome: "invalid_price" };
-
-export async function setMembershipTier(
-  channelId: string,
-  input: SetMembershipTierInput,
-): Promise<SetMembershipTierResult> {
-  if (!Number.isInteger(input.priceMinor) || input.priceMinor <= 0) {
-    return { outcome: "invalid_price" };
-  }
-  const row = await queryOne<{
-    channel_id: string;
-    price_minor: number;
-    currency: string;
-    benefits: string[];
-    is_enabled: boolean;
-  }>(
-    `insert into channel_membership_tiers (channel_id, price_minor, currency, benefits, is_enabled)
-     values ($1, $2, $3, $4, $5)
-     on conflict (channel_id) do update set
-       price_minor = $2, currency = $3, benefits = $4, is_enabled = $5
-     returning channel_id, price_minor, currency, benefits, is_enabled`,
-    [channelId, input.priceMinor, input.currency, input.benefits, input.isEnabled],
-  );
-  return {
-    outcome: "success",
-    tier: {
-      channelId: row!.channel_id,
-      priceMinor: row!.price_minor,
-      currency: row!.currency,
-      benefits: row!.benefits,
-      isEnabled: row!.is_enabled,
-    },
-  };
-}
 
 export async function checkRealChannelMembership(accountId: string, channelId: string): Promise<boolean> {
   const row = await queryOne(
@@ -94,63 +17,6 @@ export async function checkRealChannelMembership(accountId: string, channelId: s
     [accountId, channelId],
   );
   return Boolean(row);
-}
-
-export type CreateChannelMembershipCheckoutResult =
-  | { outcome: "success"; url: string }
-  | { outcome: "not_available" }
-  | { outcome: "own_channel" }
-  | { outcome: "already_member" }
-  | { outcome: "unsupported_currency"; currency: string };
-
-/** `returnPath` mirrors createPremiumCheckoutSession()'s own parameter — a membership
- * can be started from a video page or (once channel pages grow a "Join" entry point)
- * elsewhere, so the return destination isn't hardcoded. */
-export async function createChannelMembershipCheckoutSession(
-  accountId: string,
-  accountEmail: string,
-  channelId: string,
-  returnPath: string,
-): Promise<CreateChannelMembershipCheckoutResult> {
-  const tier = await getMembershipTier(channelId);
-  if (!tier || !tier.isEnabled) return { outcome: "not_available" };
-  if (!STRIPE_SUPPORTED_CURRENCIES.has(tier.currency.toLowerCase())) {
-    return { outcome: "unsupported_currency", currency: tier.currency };
-  }
-
-  const isOwnChannel = await queryOne(
-    `select 1 from memberships where account_id = $1 and organization_id = $2`,
-    [accountId, channelId],
-  );
-  if (isOwnChannel) return { outcome: "own_channel" };
-  if (await checkRealChannelMembership(accountId, channelId)) return { outcome: "already_member" };
-
-  const channelRow = await queryOne<{ name: string }>(`select name from organizations where id = $1`, [channelId]);
-
-  const session = await getStripe().checkout.sessions.create({
-    mode: "subscription",
-    customer_email: accountEmail,
-    line_items: [
-      {
-        price_data: {
-          currency: tier.currency.toLowerCase(),
-          product_data: { name: `${channelRow?.name ?? "Channel"} membership` },
-          unit_amount: tier.priceMinor,
-          recurring: { interval: "month" },
-        },
-        quantity: 1,
-      },
-    ],
-    // Also set on the subscription itself, same reasoning as createPremiumCheckoutSession
-    // — the invoice.paid/customer.subscription.* webhooks carry the Subscription object,
-    // not this Checkout Session, so they need accountId/channelId there too.
-    subscription_data: { metadata: { accountId, channelId } },
-    success_url: `${SITE_URL}${returnPath}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${SITE_URL}${returnPath}?checkout=cancelled`,
-    metadata: { accountId, channelId },
-  });
-  if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
-  return { outcome: "success", url: session.url };
 }
 
 /** Credits a channel's membership revenue once per Stripe invoice, called from the
