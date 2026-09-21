@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 export interface MenuProps {
@@ -14,9 +15,16 @@ export interface MenuProps {
   label?: string;
 }
 
+interface MenuPosition {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}
+
 /**
- * Lightweight popover menu. Closes on outside click, Escape and item
- * activation. Intentionally not a full roving-focus menubar — the app only
+ * Lightweight popover menu. Closes on outside click, Escape, item activation
+ * or scroll. Intentionally not a full roving-focus menubar — the app only
  * needs single-level menus.
  */
 export function Menu({
@@ -29,21 +37,64 @@ export function Menu({
   label,
 }: MenuProps) {
   const [open, setOpen] = React.useState(false);
+  const [position, setPosition] = React.useState<MenuPosition | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const panelRef = React.useRef<HTMLDivElement>(null);
+
+  // The panel portals to document.body and is positioned in fixed/viewport
+  // coordinates from the trigger's own box (containerRef wraps only the trigger,
+  // with no padding, so its rect matches the trigger's) — rendering it as a normal
+  // child here, absolutely positioned, meant it got silently clipped by any
+  // ancestor with overflow:hidden/auto, which is exactly what every DataTable
+  // wrapper sets for its own horizontal scrolling. A per-row "Actions" menu inside
+  // a table opened but was invisible (or only partly visible, "in the table")
+  // until scrolled to the one spot where the clipped viewport happened to include
+  // it. Found live 2026-09-21.
+  React.useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const gap = 8; // mt-2/mb-2's 0.5rem, matched here since spacing is now inline style too
+    setPosition(
+      side === "bottom"
+        ? {
+            top: rect.bottom + gap,
+            ...(align === "end" ? { right: window.innerWidth - rect.right } : { left: rect.left }),
+          }
+        : {
+            bottom: window.innerHeight - rect.top + gap,
+            ...(align === "end" ? { right: window.innerWidth - rect.right } : { left: rect.left }),
+          },
+    );
+  }, [open, side, align]);
 
   React.useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
+    // Closes rather than re-tracking position on scroll/resize — simpler than
+    // live-repositioning, and correct here since nothing this menu is attached to
+    // needs to stay open while its own scroll container moves.
+    const onViewportChange = () => setOpen(false);
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", onViewportChange, true);
+    window.addEventListener("resize", onViewportChange);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", onViewportChange, true);
+      window.removeEventListener("resize", onViewportChange);
     };
   }, [open]);
 
@@ -68,24 +119,28 @@ export function Menu({
             ...(label ? { "aria-label": label } : {}),
           })
         : trigger}
-      {open ? (
-        <div
-          role="menu"
-          onClick={(event) => {
-            // Any activation inside closes the menu unless it opts out.
-            const target = event.target as HTMLElement;
-            if (!target.closest("[data-menu-keep-open]")) close();
-          }}
-          className={cn(
-            "absolute z-40 min-w-52 rounded-lg border border-border bg-surface-2 p-1 shadow-lg",
-            side === "bottom" ? "top-full mt-2 animate-slide-down" : "bottom-full mb-2 animate-slide-up",
-            align === "end" ? "right-0" : "left-0",
-            panelClassName,
-          )}
-        >
-          {typeof children === "function" ? children(close) : children}
-        </div>
-      ) : null}
+      {open && position
+        ? createPortal(
+            <div
+              ref={panelRef}
+              role="menu"
+              onClick={(event) => {
+                // Any activation inside closes the menu unless it opts out.
+                const target = event.target as HTMLElement;
+                if (!target.closest("[data-menu-keep-open]")) close();
+              }}
+              style={position}
+              className={cn(
+                "fixed z-40 min-w-52 rounded-lg border border-border bg-surface-2 p-1 shadow-lg",
+                side === "bottom" ? "animate-slide-down" : "animate-slide-up",
+                panelClassName,
+              )}
+            >
+              {typeof children === "function" ? children(close) : children}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
