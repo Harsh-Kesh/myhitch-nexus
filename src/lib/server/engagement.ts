@@ -430,6 +430,10 @@ export interface EngagementProgress {
   durationSeconds: number;
   updatedAt: string;
   completed: boolean;
+  /** True exactly once per (account, video) — the moment this account's first-ever
+   * watch_progress row for it was written. Lets the client refresh the video's own
+   * cached view count only on a real increment, not on every position ping. */
+  viewCounted: boolean;
 }
 
 /** durationSeconds comes from the video row, not watch_progress (which doesn't store
@@ -458,6 +462,7 @@ export async function getWatchProgress(
     durationSeconds: row.duration_seconds,
     updatedAt: row.updated_at,
     completed: row.completed,
+    viewCounted: false,
   };
 }
 
@@ -484,7 +489,10 @@ export async function saveWatchProgress(
   const clampedPosition = Math.max(0, Math.round(positionSeconds));
   const completed = video.duration_seconds > 0 && clampedPosition / video.duration_seconds > 0.95;
 
-  const row = await queryOne<{ updated_at: string }>(
+  // xmax = 0 is the standard Postgres idiom for "did this upsert just insert a brand new
+  // row, or update an existing one" from inside the same statement — a freshly inserted
+  // row has never had a transaction ID written to its xmax, an updated one always has.
+  const row = await queryOne<{ updated_at: string; inserted: boolean }>(
     `insert into watch_progress (account_id, video_id, position_seconds, completed, updated_at, country, device_type, language)
      values ($1, $2, $3, $4, now(), $5, $6, $7)
      on conflict (account_id, video_id) do update set
@@ -494,9 +502,19 @@ export async function saveWatchProgress(
        country = coalesce(excluded.country, watch_progress.country),
        device_type = coalesce(excluded.device_type, watch_progress.device_type),
        language = coalesce(excluded.language, watch_progress.language)
-     returning updated_at`,
+     returning updated_at, (xmax = 0) as inserted`,
     [accountId, videoId, clampedPosition, completed, meta.country ?? null, meta.deviceType ?? null, meta.language ?? null],
   );
+
+  // The video page's own view count (videos.views) was never incremented anywhere —
+  // Analytics reads it live from watch_progress directly, so it always looked current,
+  // while the number shown on the video page itself was whatever the catalogue was
+  // seeded with and never changed. Counted once per (account, video), the first time this
+  // account's watch_progress row for it is created — not on every position update a
+  // playing video sends, which would inflate it every few seconds instead.
+  if (row!.inserted) {
+    await query(`update videos set views = views + 1 where id = $1`, [videoId]);
+  }
 
   return {
     videoId,
@@ -504,5 +522,6 @@ export async function saveWatchProgress(
     durationSeconds: video.duration_seconds,
     updatedAt: row!.updated_at,
     completed,
+    viewCounted: row!.inserted,
   };
 }

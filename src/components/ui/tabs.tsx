@@ -30,7 +30,13 @@ export function Tabs({
     <div
       role="tablist"
       className={cn(
-        "nx-rail items-center gap-1",
+        // nx-rail (built for horizontally-scrolling media rails) hides its own
+        // scrollbar — fine for a row of video cards, but a tab bar that silently
+        // scrolls off-screen with no visible scrollbar means a tab can exist and
+        // just never be seen, with no indication there's more to the right. Wrapping
+        // instead means every tab is always visible, at the cost of two lines on a
+        // narrow viewport instead of one — a trade worth making for a nav element.
+        "flex flex-wrap items-center gap-1",
         variant === "underline" && "border-b border-border",
         className,
       )}
@@ -92,7 +98,10 @@ export function NavTabs({
 }) {
   const pathname = usePathname();
   return (
-    <div className={cn("nx-rail items-center gap-1 border-b border-border", className)}>
+    // Same reasoning as Tabs above — wraps instead of silently scrolling off-screen
+    // with a hidden scrollbar, which is exactly how a real nav tab (e.g. account
+    // Copyright, 6th of 8) could exist and just never be visible.
+    <div className={cn("flex flex-wrap items-center gap-1 border-b border-border", className)}>
       {items.map((item) => {
         const active =
           pathname === item.href ||

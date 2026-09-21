@@ -20,6 +20,7 @@ import { scanMasterAssetForMalware } from "./malwareScan";
 import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
 import { seriesBelongsToChannel } from "./series";
 import { flagForReview } from "./moderation";
+import { syncVideoSearchIndex } from "./typesense";
 import { pickGradient } from "../utils";
 
 async function isChannelMember(accountId: string, channelId: string): Promise<boolean> {
@@ -309,6 +310,11 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     });
   }
 
+  // Postgres is the source of truth and already reflects this; Explore/search is 100%
+  // Typesense-backed and was never told about it any other way (see this function's own
+  // absence from the previously-only indexing path, scripts/index-catalogue.mjs).
+  await syncVideoSearchIndex(videoId);
+
   return { outcome: "success", id: videoId, slug, status };
 }
 
@@ -380,6 +386,8 @@ export async function updateVideoStatus(
     );
   }
 
+  await syncVideoSearchIndex(videoId);
+
   return { outcome: "success", status: effectiveStatus };
 }
 
@@ -390,8 +398,10 @@ export async function updateVideoStatus(
  * UPDATE, never a wasted one (the WHERE clause matches nothing outside the exact window
  * a scheduled video needs it). */
 export async function activateScheduledVideos(): Promise<void> {
-  await query(
+  const rows = await query<{ id: string }>(
     `update videos set status = 'published', published_at = coalesce(published_at, now())
-     where status = 'scheduled' and scheduled_for is not null and scheduled_for <= now()`,
+     where status = 'scheduled' and scheduled_for is not null and scheduled_for <= now()
+     returning id`,
   );
+  await Promise.all(rows.map((row) => syncVideoSearchIndex(row.id)));
 }

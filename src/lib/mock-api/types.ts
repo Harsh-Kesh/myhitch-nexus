@@ -445,6 +445,9 @@ export interface WatchProgress {
   durationSeconds: number;
   updatedAt: string;
   completed: boolean;
+  /** Real accounts only — true exactly once, the moment this account's watch of the
+   * video first counted toward its view total. */
+  viewCounted?: boolean;
 }
 
 export interface PurchaseRecord {

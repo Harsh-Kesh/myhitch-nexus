@@ -147,6 +147,10 @@ export default function StudioCommentsPage() {
                                       action: "publish",
                                     });
                                     toast({ title: "Comment approved" });
+                                    // Follow the comment to where it went — it just
+                                    // vanished from the current tab's filtered list
+                                    // otherwise, with only the toast saying where.
+                                    setTab("published");
                                   }}
                                 >
                                   Approve
@@ -189,6 +193,7 @@ export default function StudioCommentsPage() {
                                         action: "hold",
                                       });
                                       toast({ title: "Comment held", tone: "warning" });
+                                      setTab("held");
                                     }}
                                   >
                                     Hold
@@ -209,6 +214,7 @@ export default function StudioCommentsPage() {
                                       title: "Comment removed",
                                       tone: "warning",
                                     });
+                                    setTab("removed");
                                   }}
                                 >
                                   <IconTrash />

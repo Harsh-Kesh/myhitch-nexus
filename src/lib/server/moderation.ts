@@ -80,6 +80,57 @@ export async function flagForReview(input: {
   );
 }
 
+export type ReportVideoResult = { outcome: "success" } | { outcome: "not_found" };
+
+/** The video page's Report button used to just show a "Report submitted" toast on
+ * click — no reason, no details, nothing written anywhere real, so an admin had no way
+ * to ever see it. moderation_queue's own 'reported' queue and its report_reasons/
+ * report_count columns existed for exactly this since the table was created, unused
+ * until now. One open queue item per video accumulates repeat reports (report_count,
+ * and every distinct reason seen) rather than creating a duplicate row per report. */
+export async function reportVideo(
+  videoId: string,
+  reason: string,
+  details?: string,
+): Promise<ReportVideoResult> {
+  const video = await queryOne<{ title: string; channel_id: string }>(
+    `select title, channel_id from videos where id = $1`,
+    [videoId],
+  );
+  if (!video) return { outcome: "not_found" };
+
+  const noteLine = details?.trim()
+    ? `Reported: ${reason} — "${details.trim().slice(0, 500)}"`
+    : `Reported: ${reason}`;
+
+  const existing = await queryOne<{ id: string; report_reasons: string[] }>(
+    `select id, report_reasons from moderation_queue
+     where kind = 'content' and target_id = $1 and queue = 'reported' and status = 'open'`,
+    [videoId],
+  );
+
+  if (existing) {
+    const reasons = existing.report_reasons.includes(reason)
+      ? existing.report_reasons
+      : [...existing.report_reasons, reason];
+    await query(
+      `update moderation_queue
+       set report_count = report_count + 1, report_reasons = $2,
+           notes = notes || chr(10) || $3, updated_at = now()
+       where id = $1`,
+      [existing.id, reasons, noteLine],
+    );
+  } else {
+    await query(
+      `insert into moderation_queue (kind, target_id, title, channel_id, queue, priority, report_reasons, report_count, notes)
+       values ('content', $1, $2, $3, 'reported', $4, $5, 1, $6)`,
+      [videoId, video.title, video.channel_id, reason === "child-safety" ? "urgent" : "normal", [reason], noteLine],
+    );
+  }
+
+  return { outcome: "success" };
+}
+
 export async function listModerationQueue(queue?: ModerationQueueName): Promise<ModerationQueueItem[]> {
   const rows = await query<QueueDbRow>(
     `select * from moderation_queue

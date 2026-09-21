@@ -12,6 +12,7 @@
 // published video data.
 import "server-only";
 import { Client } from "typesense";
+import { queryOne } from "./db";
 
 export const VIDEOS_COLLECTION = "videos";
 
@@ -95,5 +96,104 @@ export async function ensureVideosCollection(): Promise<void> {
   } catch (err) {
     const status = (err as { httpStatus?: number }).httpStatus;
     if (status !== 409) throw err;
+  }
+}
+
+/** Same query/mapping as scripts/index-catalogue.mjs, for exactly one video — that script
+ * was the *only* way a real video ever reached Typesense (an explicit note that it's "run
+ * after any seed/migration that changes published video data"), so a real creator
+ * publishing through the actual app never got indexed at all: it existed in Postgres and
+ * rendered fine everywhere that reads Postgres directly (their own channel page), but
+ * never appeared in Explore/search, which is 100% Typesense-backed. Found live 2026-09-21.
+ * Called after every real status change a video can go through (publishVideo,
+ * updateVideoStatus, activateScheduledVideos) so the index self-heals in both directions —
+ * newly published videos appear, and a video pulled back to draft/archived disappears. */
+export async function syncVideoSearchIndex(videoId: string): Promise<void> {
+  try {
+    const row = await queryOne<{
+      id: string;
+      title: string;
+      synopsis: string | null;
+      content_type: string;
+      duration_seconds: number;
+      release_date: string | null;
+      language: string | null;
+      country: string | null;
+      published_at: string | null;
+      views: string;
+      rating_average: number;
+      has_subtitles: boolean;
+      channel_id: string;
+      channel_name: string;
+      access_models: string[];
+      age_rating: string;
+      category_ids: string[];
+      tags: string[];
+      status: string;
+    }>(
+      `select
+         v.id, v.title, v.synopsis, v.content_type, v.duration_seconds, v.release_date,
+         v.language, v.country, v.published_at, v.views, v.rating_average, v.status,
+         exists(select 1 from video_subtitle_tracks st where st.video_id = v.id) as has_subtitles,
+         o.id as channel_id, o.name as channel_name,
+         coalesce(p.access_models, array['free']) as access_models,
+         coalesce(r.age_rating, 'U') as age_rating,
+         coalesce(
+           (select array_agg(vc.category_id::text) from video_categories vc where vc.video_id = v.id),
+           array[]::text[]
+         ) as category_ids,
+         coalesce(
+           (select array_agg(vt.tag) from video_tags vt where vt.video_id = v.id),
+           array[]::text[]
+         ) as tags
+       from videos v
+       join organizations o on o.id = v.channel_id
+       left join video_pricing p on p.video_id = v.id
+       left join video_rights r on r.video_id = v.id
+       where v.id = $1`,
+      [videoId],
+    );
+
+    const ts = getTypesenseClient();
+    if (!row || row.status !== "published") {
+      // Not found, or no longer published — make sure it isn't searchable. A delete of a
+      // document that was never indexed 404s, which is exactly "already in the right
+      // state", not an error.
+      try {
+        await ts.collections(VIDEOS_COLLECTION).documents(videoId).delete();
+      } catch (err) {
+        const status = (err as { httpStatus?: number }).httpStatus;
+        if (status !== 404) throw err;
+      }
+      return;
+    }
+
+    const document: VideoDocument = {
+      id: row.id,
+      title: row.title,
+      synopsis: row.synopsis ?? undefined,
+      content_type: row.content_type,
+      category_ids: row.category_ids,
+      tags: row.tags,
+      language: row.language ?? undefined,
+      country: row.country ?? undefined,
+      access_models: row.access_models,
+      age_rating: row.age_rating,
+      duration_seconds: row.duration_seconds,
+      release_year: row.release_date ? new Date(row.release_date).getUTCFullYear() : undefined,
+      channel_id: row.channel_id,
+      channel_name: row.channel_name,
+      published_at_ts: row.published_at ? Math.floor(new Date(row.published_at).getTime() / 1000) : 0,
+      views: Number(row.views),
+      rating_average: Number(row.rating_average),
+      has_subtitles: row.has_subtitles,
+    };
+    await ensureVideosCollection();
+    await ts.collections(VIDEOS_COLLECTION).documents().upsert(document);
+  } catch (err) {
+    // Best-effort, same as malwareScan.ts's scanner — a Typesense hiccup (or it not being
+    // configured in a given environment) must never block a real publish/status change
+    // that already succeeded in Postgres, the actual source of truth.
+    console.error(`Failed to sync video ${videoId} to the search index`, err);
   }
 }

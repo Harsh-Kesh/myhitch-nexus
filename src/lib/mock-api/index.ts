@@ -952,6 +952,25 @@ export async function likeVideo(videoId: string) {
   return video ? clone(video) : null;
 }
 
+/** The Report button used to just show a toast on click — no reason, no details, and
+ * nothing written anywhere for a real video, ever (see moderation.ts's reportVideo()'s
+ * own header comment for the real 'reported' queue this now actually reaches). */
+export async function reportVideo(videoId: string, reason: string, details?: string): Promise<void> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/report/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason, details }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not submit your report.");
+    }
+    return;
+  }
+  await latency("fast");
+}
+
 // Live 2026-09-15 — real watchlist_items via /api/videos/{id}/watchlist, for real videos
 // only — same looksLikeRealId split as getComments()/rateVideo() above. A guest's or a
 // mock-video's toggle stays purely local, exactly as before.

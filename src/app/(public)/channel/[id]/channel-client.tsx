@@ -109,7 +109,12 @@ export function ChannelClient() {
       </div>
 
       <div className="px-4 sm:px-6 lg:px-8">
-        <div className="-mt-10 flex flex-wrap items-end gap-4 sm:-mt-12">
+        {/* The negative margin used to sit on this whole row, pulling the name/tagline/
+            follow-button text up into the banner along with the avatar instead of just
+            the avatar — the one element actually meant to overlap the banner's bottom
+            edge. Scoped to the avatar alone so the text always stays clear of the
+            banner regardless of avatar/banner size. */}
+        <div className="flex flex-wrap items-end gap-4">
           <Avatar
             name={channel.name}
             gradient={channel.avatarGradient}
@@ -117,7 +122,7 @@ export function ChannelClient() {
             size="2xl"
             verified={channel.verified}
             square
-            className="ring-4 ring-bg"
+            className="-mt-10 ring-4 ring-bg sm:-mt-12"
           />
           <div className="min-w-0 flex-1 pb-1">
             <div className="flex flex-wrap items-center gap-2">

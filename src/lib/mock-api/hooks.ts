@@ -247,6 +247,7 @@ export const useContinueWatching = () =>
   useQuery({ queryKey: qk.continueWatching, queryFn: api.getContinueWatching });
 
 export function useSaveWatchProgress() {
+  const client = useQueryClient();
   return useMutation({
     mutationFn: ({
       videoId,
@@ -257,6 +258,12 @@ export function useSaveWatchProgress() {
       position: number;
       duration: number;
     }) => api.saveWatchProgress(videoId, position, duration),
+    // Only when this ping just counted a real view (see saveWatchProgress's own
+    // comment) — not on every position update a playing video sends, which would
+    // otherwise refetch the video query every few seconds for no reason.
+    onSuccess: (data, variables) => {
+      if (data.viewCounted) client.invalidateQueries({ queryKey: qk.video(variables.videoId) });
+    },
   });
 }
 
@@ -333,6 +340,13 @@ export function useLikeVideo(videoId: string) {
   return useMutation({
     mutationFn: () => api.likeVideo(videoId),
     onSuccess: () => client.invalidateQueries({ queryKey: qk.video(videoId) }),
+  });
+}
+
+export function useReportVideo(videoId: string) {
+  return useMutation({
+    mutationFn: ({ reason, details }: { reason: string; details?: string }) =>
+      api.reportVideo(videoId, reason, details),
   });
 }
 

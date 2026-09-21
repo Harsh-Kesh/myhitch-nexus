@@ -45,6 +45,7 @@ import {
   useRateVideo,
   useRelatedVideos,
   useReplyToComment,
+  useReportVideo,
   useStartSubscription,
   useToggleFollow,
   useToggleWatchlist,
@@ -160,6 +161,7 @@ export function VideoDetailClient() {
 
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);
+  const [reportOpen, setReportOpen] = React.useState(false);
   const [tab, setTab] = React.useState("about");
   const [commentBody, setCommentBody] = React.useState("");
   const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -382,13 +384,10 @@ export function VideoDetailClient() {
                 variant="ghost"
                 size="sm"
                 className="ml-auto"
-                onClick={() =>
-                  toast({
-                    title: "Report submitted",
-                    description: "The moderation team will review this title.",
-                    tone: "info",
-                  })
-                }
+                onClick={() => {
+                  if (!requireSignIn("Sign in to report a video.")) return;
+                  setReportOpen(true);
+                }}
               >
                 <IconFlag />
                 Report
@@ -779,6 +778,7 @@ export function VideoDetailClient() {
       />
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} video={video} />
+      <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} videoId={video.id} />
     </div>
   );
 }
@@ -1276,6 +1276,127 @@ function ShareModal({
             {item.label}
           </Button>
         ))}
+      </div>
+    </Modal>
+  );
+}
+
+const REPORT_REASONS: Array<{ value: string; label: string }> = [
+  { value: "spam-misleading", label: "Spam or misleading" },
+  { value: "sexual-content", label: "Sexual content" },
+  { value: "violent-graphic", label: "Violent or graphic content" },
+  { value: "hateful-abusive", label: "Hateful or abusive content" },
+  { value: "harmful-dangerous-acts", label: "Harmful or dangerous acts" },
+  { value: "child-safety", label: "Child safety" },
+  { value: "copyright", label: "Copyright infringement" },
+  { value: "other", label: "Other" },
+];
+
+/** Used to just fire a "Report submitted" toast on click — no reason, no details, and
+ * (for a real video) nothing written anywhere an admin could ever see. Now a real report
+ * with a required reason, reaching moderation_queue's own 'reported' queue (see
+ * moderation.ts's reportVideo()). */
+function ReportModal({
+  open,
+  onClose,
+  videoId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  videoId: string;
+}) {
+  const { toast } = useToast();
+  const reportVideo = useReportVideo(videoId);
+  const [reason, setReason] = React.useState<string | null>(null);
+  const [details, setDetails] = React.useState("");
+
+  const reset = () => {
+    setReason(null);
+    setDetails("");
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={() => {
+        onClose();
+        reset();
+      }}
+      title="Report this video"
+      description="Tell us what's wrong. Reports go to the moderation team, not the creator."
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!reason}
+            loading={reportVideo.isPending}
+            onClick={() => {
+              if (!reason) return;
+              reportVideo.mutate(
+                { reason, details: details.trim() || undefined },
+                {
+                  onSuccess: () => {
+                    toast({
+                      title: "Report submitted",
+                      description: "Thanks — our moderation team will review this.",
+                    });
+                    onClose();
+                    reset();
+                  },
+                  onError: (err) =>
+                    toast({
+                      title: "Couldn't submit your report",
+                      description: err instanceof Error ? err.message : undefined,
+                      tone: "error",
+                    }),
+                },
+              );
+            }}
+          >
+            Submit report
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <fieldset className="space-y-1.5">
+          <legend className="sr-only">Reason for reporting</legend>
+          {REPORT_REASONS.map((option) => (
+            <label
+              key={option.value}
+              className={cn(
+                "flex cursor-pointer items-center gap-2.5 rounded border p-2.5 text-sm transition-colors",
+                reason === option.value
+                  ? "border-accent bg-accent/[0.07] text-fg"
+                  : "border-border bg-surface-2 text-fg-muted hover:border-border-strong",
+              )}
+            >
+              <input
+                type="radio"
+                name="report-reason"
+                checked={reason === option.value}
+                onChange={() => setReason(option.value)}
+                className="size-4 shrink-0 border border-border-strong bg-surface accent-[rgb(var(--nx-accent))]"
+              />
+              {option.label}
+            </label>
+          ))}
+        </fieldset>
+
+        <Field label="Additional details" htmlFor="report-details" hint="Optional">
+          <Textarea
+            id="report-details"
+            value={details}
+            onChange={(event) => setDetails(event.target.value)}
+            rows={3}
+            maxLength={500}
+            placeholder="Anything that helps us review this faster…"
+          />
+        </Field>
       </div>
     </Modal>
   );
