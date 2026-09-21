@@ -44,10 +44,12 @@ export interface RealAnalyticsTotals {
 }
 
 export interface RealAnalyticsDeltas {
-  views: number;
-  watchTime: number;
-  revenue: number;
-  uniqueViewers: number;
+  // null: the prior period had zero activity, so there's no real percentage to compute
+  // — see pctChange()'s own comment.
+  views: number | null;
+  watchTime: number | null;
+  revenue: number | null;
+  uniqueViewers: number | null;
 }
 
 export interface RealTimeSeriesPoint {
@@ -188,8 +190,14 @@ function sumTotals(rows: VideoAggRow[]) {
   return { views, watchSeconds, completed };
 }
 
-function pctChange(current: number, previous: number): number {
-  if (previous === 0) return current > 0 ? 100 : 0;
+/** A flat "100%" for "went from zero to something" was real data with a misleading
+ * label — mathematically that's an undefined/infinite percentage, not a doubling, and
+ * looked identical to a real "genuinely doubled" 100% change. null distinguishes "no
+ * baseline to compare against" from an actual computed number; the UI (Stat, in
+ * card.tsx) renders that as "New" instead of a percentage. Both activity periods being
+ * zero is a real, distinct 0% change (nothing happened, in either period). */
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return current > 0 ? null : 0;
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 

@@ -81,7 +81,10 @@ export function CardFooter({
 export interface StatProps {
   label: string;
   value: React.ReactNode;
-  delta?: number;
+  /** undefined: no delta for this stat at all (nothing renders). null: a delta exists
+   * conceptually but there's no prior-period baseline to compare against — renders
+   * "New" rather than a misleading "100%"/"0%". */
+  delta?: number | null;
   hint?: React.ReactNode;
   icon?: React.ReactNode;
   className?: string;
@@ -98,8 +101,9 @@ export function Stat({
   className,
   invertDelta,
 }: StatProps) {
-  const positive = delta != null && (invertDelta ? delta < 0 : delta > 0);
-  const negative = delta != null && (invertDelta ? delta > 0 : delta < 0);
+  const isNew = delta === null;
+  const positive = typeof delta === "number" && (invertDelta ? delta < 0 : delta > 0);
+  const negative = typeof delta === "number" && (invertDelta ? delta > 0 : delta < 0);
 
   return (
     <div className={cn("rounded-lg border border-border bg-surface p-4", className)}>
@@ -113,7 +117,7 @@ export function Stat({
         {value}
       </p>
       <div className="mt-1 flex items-center gap-2">
-        {delta != null ? (
+        {delta !== undefined ? (
           <span
             className={cn(
               "text-xs font-medium nx-tnum",
@@ -122,7 +126,9 @@ export function Stat({
               !positive && !negative && "text-fg-subtle",
             )}
           >
-            {delta > 0 ? "▲" : delta < 0 ? "▼" : "—"} {Math.abs(delta).toFixed(1)}%
+            {isNew
+              ? "New"
+              : `${delta > 0 ? "▲" : delta < 0 ? "▼" : "—"} ${Math.abs(delta).toFixed(1)}%`}
           </span>
         ) : null}
         {hint ? <span className="text-xs text-fg-subtle">{hint}</span> : null}

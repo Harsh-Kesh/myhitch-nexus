@@ -673,10 +673,13 @@ export interface CreatorAnalytics {
     revenue: Money;
   };
   deltas: {
-    views: number;
-    watchTime: number;
-    revenue: number;
-    uniqueViewers: number;
+    // null (real channels only): no prior-period baseline to compare against (it had
+    // zero activity) — the stat is genuinely new, not a computed percentage. See
+    // analytics.ts's pctChange() for why this is a distinct case from a real 0% change.
+    views: number | null;
+    watchTime: number | null;
+    revenue: number | null;
+    uniqueViewers: number | null;
   };
   timeSeries: TimeSeriesPoint[];
   retention: RetentionPoint[];

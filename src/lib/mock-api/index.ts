@@ -1800,7 +1800,7 @@ export async function getCreatorAnalytics(
         subscribersGained: number;
         revenueMinor: number;
       };
-      deltas: { views: number; watchTime: number; revenue: number; uniqueViewers: number };
+      deltas: { views: number | null; watchTime: number | null; revenue: number | null; uniqueViewers: number | null };
       timeSeries: Array<{ date: string; views: number; watchHours: number; uniqueViewers: number; revenueMinor: number }>;
       retention: Array<{ percent: number; audience: number }>;
       topVideos: Array<{ videoId: string; title: string; views: number; watchHours: number; completionRate: number }>;
