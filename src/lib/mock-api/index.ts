@@ -241,6 +241,61 @@ export async function getCategory(slug: string): Promise<Category | null> {
 
 /* ============================= Channels ================================= */
 
+// GET /api/channels/{id} and /api/channels both return catalogue.ts's ChannelDetail
+// shape, which is honest that handle/tagline/about/country/contactEmail/avatarUrl/
+// bannerUrl can be null (a channel that never filled them in — the common case for a
+// freshly-registered creator) — but the client Channel type declares them required
+// strings, and both call sites below used to `as Channel` the raw JSON straight through
+// with no mapping. That let a genuine null slip past the type system: rendering it (e.g.
+// channel-settings' `${tagline.length}/80` character counter) crashed the whole page
+// with "Cannot read properties of null" the moment a channel had any of these fields
+// unset. Found live 2026-09-21 on a fresh creator account's own channel settings page.
+function mapRealChannel(raw: {
+  id: string;
+  handle: string | null;
+  name: string;
+  kind: string;
+  tagline: string | null;
+  about: string | null;
+  verified: boolean;
+  country: string | null;
+  languages: string[] | null;
+  followers: number;
+  totalViews: number;
+  videoCount: number;
+  joinedAt: string;
+  bannerGradient: [string, string];
+  avatarGradient: [string, string];
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+  links: Array<{ label: string; href: string }> | null;
+  verificationStatus: Channel["verificationStatus"];
+  contactEmail: string | null;
+}): Channel {
+  return {
+    id: raw.id,
+    handle: raw.handle ?? "",
+    name: raw.name,
+    kind: raw.kind as Channel["kind"],
+    tagline: raw.tagline ?? "",
+    about: raw.about ?? "",
+    verified: raw.verified,
+    country: raw.country ?? "",
+    languages: raw.languages ?? [],
+    followers: raw.followers,
+    totalViews: raw.totalViews,
+    videoCount: raw.videoCount,
+    joinedAt: raw.joinedAt,
+    bannerGradient: raw.bannerGradient,
+    avatarGradient: raw.avatarGradient,
+    avatarUrl: raw.avatarUrl ?? undefined,
+    bannerUrl: raw.bannerUrl ?? undefined,
+    links: raw.links ?? [],
+    verificationStatus: raw.verificationStatus,
+    contactEmail: raw.contactEmail ?? "",
+  };
+}
+
 export async function getChannel(id: string): Promise<Channel | null> {
   // Live 2026-09-14 for real ids only — see looksLikeRealId's comment above. Real
   // Postgres via GET /api/channels/{id}/, matching by id or handle exactly like the
@@ -256,7 +311,7 @@ export async function getChannel(id: string): Promise<Channel | null> {
     if (!res.ok) {
       throw new Error(`GET /api/channels/${id} failed with ${res.status}`);
     }
-    return (await res.json()) as Channel;
+    return mapRealChannel(await res.json());
   }
 
   // Same reasoning as getVideo() above — the real organisations table was seeded from
@@ -265,7 +320,7 @@ export async function getChannel(id: string): Promise<Channel | null> {
   // shadowed by its same-handle mock counterpart.
   const realRes = await fetch(`/api/channels/${encodeURIComponent(id)}/`);
   if (realRes.ok) {
-    return (await realRes.json()) as Channel;
+    return mapRealChannel(await realRes.json());
   }
 
   await latency("fast");
@@ -279,8 +334,8 @@ export async function getChannels(): Promise<Channel[]> {
   if (!res.ok) {
     throw new Error(`GET /api/channels failed with ${res.status}`);
   }
-  const data = (await res.json()) as { items: Channel[] };
-  return data.items;
+  const data = (await res.json()) as { items: Parameters<typeof mapRealChannel>[0][] };
+  return data.items.map(mapRealChannel);
 }
 
 // Live 2026-09-15 for real ids — PATCH /api/channels/{id}/, restricted server-side to the
@@ -303,7 +358,7 @@ export async function updateChannel(
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `PATCH /api/channels/${id} failed with ${res.status}`);
     }
-    return (await res.json()) as Channel;
+    return mapRealChannel(await res.json());
   }
 
   await latency("fast");
