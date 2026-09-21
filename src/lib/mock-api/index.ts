@@ -2604,11 +2604,20 @@ function applyRealAccount(account: RealAccount): void {
   store.user.id = account.id;
   store.user.email = account.email;
   store.user.name = account.fullName;
-  if (account.handle) store.user.handle = account.handle;
-  if (account.avatarUrl) store.user.avatarUrl = account.avatarUrl;
+  // handle/avatarUrl/channelId must be reset, not just conditionally set — the store's
+  // baseline is the mock demo persona's own data (data/users.ts's currentUser), so any
+  // real account without its own handle/avatar/channel (the common case — most accounts
+  // never set a custom handle or upload a photo) kept showing Mara Solace's handle,
+  // avatar image and channel instead of correctly showing "none". Found live 2026-09-21:
+  // a real viewer account with no avatar showed the mock demo's own avatar file
+  // (/images/avatars/usr_viewer.svg) — its initials, not the real account's. name/email
+  // above already do this correctly (plain assignment, no `if`); this brings these three
+  // in line with that same always-authoritative pattern.
+  store.user.handle = account.handle ?? "";
+  store.user.avatarUrl = account.avatarUrl ?? undefined;
+  store.user.channelId = account.channelId ?? undefined;
   if (account.country) store.user.country = account.country;
   if (account.preferredLanguage) store.user.language = account.preferredLanguage;
-  if (account.channelId) store.user.channelId = account.channelId;
   if (account.roles.length > 0) {
     store.user.roles = account.roles as User["roles"];
     if (!store.user.roles.includes(store.user.activeRole)) {
