@@ -258,7 +258,10 @@ export default function UploadPage() {
   /* ---------------------------- Step 5: rights ----------------------------- */
   const [declaredOwner, setDeclaredOwner] = React.useState("");
   const [ownershipConfirmed, setOwnershipConfirmed] = React.useState(false);
-  const [licenceStart, setLicenceStart] = React.useState("2026-08-12");
+  // Was hardcoded to "2026-08-12" — every single upload defaulted its licence start date
+  // to that one fixed day regardless of when the video was actually uploaded. Defaults
+  // to today instead, computed once at mount.
+  const [licenceStart, setLicenceStart] = React.useState(() => new Date().toISOString().slice(0, 10));
   const [licenceEnd, setLicenceEnd] = React.useState("");
   const [territoryMode, setTerritoryMode] = React.useState<"worldwide" | "allow" | "block">("worldwide");
   const [permittedCountries, setPermittedCountries] = React.useState<string[]>([]);
@@ -1147,8 +1150,8 @@ export default function UploadPage() {
                       <div className="border-t border-border pt-5">
                         <p className="text-sm font-medium text-fg">Monetisation</p>
                         <p className="mt-1 text-xs text-fg-muted">
-                          Pick every model that applies. Prices are illustrative —
-                          no payment provider exists in this build.
+                          Choose how this video is distributed — these are mutually
+                          exclusive, not layers you can combine.
                         </p>
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
                           {ACCESS_MODELS.map((model) => (
@@ -1162,16 +1165,11 @@ export default function UploadPage() {
                               )}
                             >
                               <input
-                                type="checkbox"
+                                type="radio"
+                                name="access-model"
                                 checked={accessModels.includes(model.value)}
-                                onChange={() =>
-                                  setAccessModels((current) =>
-                                    current.includes(model.value)
-                                      ? current.filter((m) => m !== model.value)
-                                      : [...current, model.value],
-                                  )
-                                }
-                                className="mt-0.5 size-4 shrink-0 rounded-sm border border-border-strong bg-surface accent-[rgb(var(--nx-accent))]"
+                                onChange={() => setAccessModels([model.value])}
+                                className="mt-0.5 size-4 shrink-0 border border-border-strong bg-surface accent-[rgb(var(--nx-accent))]"
                               />
                               <span className="min-w-0">
                                 <span className="block text-sm font-medium text-fg">
