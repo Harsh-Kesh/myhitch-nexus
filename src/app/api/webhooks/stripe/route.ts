@@ -8,7 +8,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
-import { upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
+import { recordSubscriptionPaymentFromInvoice, upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
 import { recordMembershipPaymentFromInvoice } from "@/lib/server/channelMemberships";
 import { upsertPayoutAccountFromStripe } from "@/lib/server/payouts";
 
@@ -50,10 +50,14 @@ export async function POST(request: NextRequest) {
     ) {
       await upsertSubscriptionFromStripe(event.data.object as Stripe.Subscription);
     } else if (event.type === "invoice.paid") {
-      // Channel-membership revenue is credited here, once per invoice — a platform
-      // Premium invoice is a no-op inside recordMembershipPaymentFromInvoice() (no
-      // channelId in the subscription's metadata), so this event needs no mode check.
-      await recordMembershipPaymentFromInvoice(event.data.object as Stripe.Invoice);
+      // Channel-membership revenue and platform-plan (Premium/Family/Business) revenue
+      // are both credited here, once per invoice — each function is a no-op for the
+      // other's case (recordMembershipPaymentFromInvoice() requires a channelId in the
+      // subscription's metadata, recordSubscriptionPaymentFromInvoice() requires its
+      // absence), so this event needs no mode check and the same invoice is never
+      // recorded into both tables.
+      const invoice = event.data.object as Stripe.Invoice;
+      await Promise.all([recordMembershipPaymentFromInvoice(invoice), recordSubscriptionPaymentFromInvoice(invoice)]);
     } else if (event.type === "account.updated") {
       await upsertPayoutAccountFromStripe(event.data.object as Stripe.Account);
     }

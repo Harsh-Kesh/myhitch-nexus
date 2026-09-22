@@ -14,8 +14,18 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 const VIDEO_MASTERS_BUCKET = "video-masters";
+const AUDIO_MASTERS_BUCKET = "audio-masters";
 const THUMBNAILS_BUCKET = "thumbnails";
 const BUSINESS_DOCUMENTS_BUCKET = "business-documents";
+const AD_CREATIVES_BUCKET = "ad-creatives";
+
+// A real ad creative is a short pre-roll clip (typically 5-30s), not a camera master —
+// capped well below MAX_MASTER_UPLOAD_BYTES.
+export const MAX_AD_CREATIVE_UPLOAD_BYTES = Number(process.env.MAX_AD_CREATIVE_UPLOAD_BYTES ?? 50 * 1024 * 1024);
+
+function masterBucketFor(kind: "video" | "audio"): string {
+  return kind === "audio" ? AUDIO_MASTERS_BUCKET : VIDEO_MASTERS_BUCKET;
+}
 
 // Business registration certificates/licences/insurance are a handful of pages, not
 // camera masters — capped small mainly to stop someone uploading something unrelated.
@@ -50,6 +60,7 @@ export async function createMasterUploadUrl(
   channelId: string,
   fileName: string,
   fileSizeBytes: number,
+  kind: "video" | "audio" = "video",
 ): Promise<{ path: string; signedUrl: string; token: string }> {
   if (fileSizeBytes > MAX_MASTER_UPLOAD_BYTES) {
     throw new Error(
@@ -59,7 +70,7 @@ export async function createMasterUploadUrl(
 
   const path = `${channelId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionOf(fileName)}`;
   const client = getClient();
-  const { data, error } = await client.storage.from(VIDEO_MASTERS_BUCKET).createSignedUploadUrl(path);
+  const { data, error } = await client.storage.from(masterBucketFor(kind)).createSignedUploadUrl(path);
   if (error || !data) {
     throw new Error(`Failed to create an upload URL: ${error?.message ?? "unknown error"}`);
   }
@@ -82,9 +93,13 @@ export async function uploadThumbnail(channelId: string, fileName: string, file:
 /** A short-lived signed URL for *reading* the master file back — used by
  * videoValidation.ts to run ffprobe against it without pulling the bytes onto this
  * process ourselves (ffprobe reads HTTP(S) input natively). */
-export async function createMasterDownloadUrl(path: string, expiresInSeconds = 300): Promise<string> {
+export async function createMasterDownloadUrl(
+  path: string,
+  kind: "video" | "audio" = "video",
+  expiresInSeconds = 300,
+): Promise<string> {
   const client = getClient();
-  const { data, error } = await client.storage.from(VIDEO_MASTERS_BUCKET).createSignedUrl(path, expiresInSeconds);
+  const { data, error } = await client.storage.from(masterBucketFor(kind)).createSignedUrl(path, expiresInSeconds);
   if (error || !data) {
     throw new Error(`Failed to create a download URL: ${error?.message ?? "unknown error"}`);
   }
@@ -125,15 +140,60 @@ export async function createDocumentUrl(path: string, expiresInSeconds = 300): P
   return data.signedUrl;
 }
 
-/** Confirms a signed-upload path actually has a real object behind it before a publish
- * is allowed to reference it — part of the server-enforced publish gate, not just a
- * courtesy: a client could otherwise claim any path without ever uploading to it. */
-export async function masterAssetExists(path: string): Promise<{ exists: boolean; bytes: number | null }> {
+/** Same signed-upload-URL shape as createMasterUploadUrl(), for a real ad creative video —
+ * public bucket (the player has to serve it to every viewer), namespaced by campaign. */
+export async function createAdCreativeUploadUrl(
+  campaignId: string,
+  fileName: string,
+  fileSizeBytes: number,
+): Promise<{ path: string; signedUrl: string; token: string }> {
+  if (fileSizeBytes > MAX_AD_CREATIVE_UPLOAD_BYTES) {
+    throw new Error(
+      `File is too large for a creative (max ${Math.round(MAX_AD_CREATIVE_UPLOAD_BYTES / (1024 * 1024))}MB).`,
+    );
+  }
+  const path = `${campaignId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extensionOf(fileName)}`;
+  const client = getClient();
+  const { data, error } = await client.storage.from(AD_CREATIVES_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) {
+    throw new Error(`Failed to create an upload URL: ${error?.message ?? "unknown error"}`);
+  }
+  return { path, signedUrl: data.signedUrl, token: data.token };
+}
+
+/** Public bucket — construct directly, no signed-URL round trip needed to read it back
+ * (unlike video/audio masters, which stay private). */
+export function getAdCreativePublicUrl(path: string): string {
+  const client = getClient();
+  const { data } = client.storage.from(AD_CREATIVES_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/** Same "confirm the upload actually happened" gate as masterAssetExists(), for a
+ * creative's asset path — a client could otherwise claim any path without ever
+ * uploading to it, and the campaign-approval gate needs to know the file is real. */
+export async function adCreativeAssetExists(path: string): Promise<boolean> {
   const client = getClient();
   const segments = path.split("/");
   const fileName = segments.pop()!;
   const dir = segments.join("/");
-  const { data, error } = await client.storage.from(VIDEO_MASTERS_BUCKET).list(dir, { search: fileName });
+  const { data, error } = await client.storage.from(AD_CREATIVES_BUCKET).list(dir, { search: fileName });
+  if (error || !data?.length) return false;
+  return data.some((entry) => entry.name === fileName);
+}
+
+/** Confirms a signed-upload path actually has a real object behind it before a publish
+ * is allowed to reference it — part of the server-enforced publish gate, not just a
+ * courtesy: a client could otherwise claim any path without ever uploading to it. */
+export async function masterAssetExists(
+  path: string,
+  kind: "video" | "audio" = "video",
+): Promise<{ exists: boolean; bytes: number | null }> {
+  const client = getClient();
+  const segments = path.split("/");
+  const fileName = segments.pop()!;
+  const dir = segments.join("/");
+  const { data, error } = await client.storage.from(masterBucketFor(kind)).list(dir, { search: fileName });
   if (error || !data?.length) return { exists: false, bytes: null };
   const found = data.find((entry) => entry.name === fileName);
   return { exists: Boolean(found), bytes: found?.metadata?.size ?? null };

@@ -19,6 +19,7 @@ import { Field, Input, RadioCard, Select, Switch } from "@/components/ui/field";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeRealId, uploadCampaignCreative } from "@/lib/mock-api";
 import {
   AGE_BANDS,
   BRAND_SAFETY_LABELS,
@@ -27,9 +28,12 @@ import {
   PLACEMENT_FORMATS,
 } from "@/lib/mock-api/data/advertising";
 import { categories } from "@/lib/mock-api/data/categories";
-import { useCreateCampaign } from "@/lib/mock-api/hooks";
+import { useChannel, useCreateCampaign, useCurrentUser } from "@/lib/mock-api/hooks";
 import type { AgeRating, Campaign, CampaignCreative } from "@/lib/mock-api/types";
 import { cn, compactNumber, formatCurrency } from "@/lib/utils";
+
+const MOCK_ADVERTISER_CHANNEL = "ch_helio";
+const MOCK_ADVERTISER_NAME = "Helio Motors";
 
 const STEPS = [
   { id: "basics", title: "Basics", description: "Name, objective, dates" },
@@ -59,6 +63,10 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { toast } = useToast();
   const createCampaign = useCreateCampaign();
+  const { data: user } = useCurrentUser();
+  const advertiserId = user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_ADVERTISER_CHANNEL;
+  const { data: advertiserChannel } = useChannel(advertiserId);
+  const advertiserName = looksLikeRealId(advertiserId) ? (advertiserChannel?.name ?? "Your account") : MOCK_ADVERTISER_NAME;
 
   const [step, setStep] = React.useState(0);
   const [furthest, setFurthest] = React.useState(0);
@@ -72,7 +80,7 @@ export default function NewCampaignPage() {
   // Budget
   const [budget, setBudget] = React.useState("25000");
   const [dailyCap, setDailyCap] = React.useState("1200");
-  const [bidStrategy, setBidStrategy] = React.useState("auto");
+  const [cpm, setCpm] = React.useState("3.50");
 
   // Targeting
   const [countries, setCountries] = React.useState<string[]>(["GB"]);
@@ -98,8 +106,18 @@ export default function NewCampaignPage() {
 
   const budgetMinor = Math.round(Number(budget || 0) * 100);
   const dailyMinor = Math.round(Number(dailyCap || 0) * 100);
+  const cpmMinor = Math.round(Number(cpm || 0) * 100);
 
-  /** Rough, deliberately transparent reach model — no ad server is involved. */
+  // Real files staged for upload once the campaign has a real id — a File can't live in
+  // the CampaignCreative objects themselves (that type is sent as JSON), so it's kept
+  // alongside, keyed by the same creative id.
+  const [creativeFiles, setCreativeFiles] = React.useState<Map<string, File>>(new Map());
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  /** Rough, deliberately transparent reach model — no ad server is involved. Uses the
+   * advertiser's own set CPM (not a fabricated rate) now that the wizard collects a real
+   * one, so the estimated impressions figure is at least internally consistent with what
+   * the campaign will actually be charged. */
   const estimate = React.useMemo(() => {
     const base = 12_000_000;
     const geo = Math.max(0.15, countries.length * 0.16);
@@ -109,9 +127,8 @@ export default function NewCampaignPage() {
     const device = devices.length ? Math.max(0.4, devices.length / DEVICES.length) : 1;
     const ugc = blockUserGenerated ? 0.72 : 1;
     const reach = Math.round(base * geo * age * interest * cat * device * ugc);
-    const cpm = 320 + excludedLabels.length * 18;
-    const impressions = budgetMinor ? Math.round((budgetMinor / cpm) * 1000) : 0;
-    return { reach, impressions, cpm };
+    const impressions = budgetMinor && cpmMinor ? Math.round((budgetMinor / cpmMinor) * 1000) : 0;
+    return { reach, impressions };
   }, [
     countries.length,
     ageBands.length,
@@ -119,8 +136,8 @@ export default function NewCampaignPage() {
     categoryIds.length,
     devices.length,
     blockUserGenerated,
-    excludedLabels.length,
     budgetMinor,
+    cpmMinor,
   ]);
 
   const canContinue = (() => {
@@ -128,7 +145,7 @@ export default function NewCampaignPage() {
       case "basics":
         return name.trim().length > 2 && Boolean(startDate) && Boolean(endDate);
       case "budget":
-        return budgetMinor > 0 && dailyMinor > 0;
+        return budgetMinor > 0 && dailyMinor > 0 && cpmMinor > 0;
       case "targeting":
         return countries.length > 0 && languages.length > 0;
       case "creative":
@@ -138,30 +155,34 @@ export default function NewCampaignPage() {
     }
   })();
 
-  const addCreative = () => {
+  const addCreativeFromFile = (file: File) => {
     const index = creatives.length;
+    const id = `cre_new_${index + 1}_${Date.now()}`;
     setCreatives((current) => [
       ...current,
       {
-        id: `cre_${index + 1}`,
-        name: `Creative ${index + 1}`,
+        id,
+        name: file.name.replace(/\.[^./]+$/, ""),
         format: (placements[0] as CampaignCreative["format"]) ?? "pre-roll",
         durationSeconds: 30,
         gradient: CREATIVE_GRADIENTS[index % CREATIVE_GRADIENTS.length],
         clickThroughLabel: "Learn more",
+        clickThroughUrl: "",
         status: "pending",
       },
     ]);
+    setCreativeFiles((current) => new Map(current).set(id, file));
   };
 
   const submit = async () => {
     const campaign = await createCampaign.mutateAsync({
-      advertiserId: "ch_helio",
-      advertiserName: "Helio Motors",
+      advertiserId,
+      advertiserName,
       name: name.trim(),
       objective,
       budget: { amount: budgetMinor, currency: "GBP" },
       dailyCap: { amount: dailyMinor, currency: "GBP" },
+      cpm: { amount: cpmMinor, currency: "GBP" },
       startDate: new Date(startDate).toISOString(),
       endDate: new Date(endDate).toISOString(),
       targeting: { countries, languages, ageBands, interests, categoryIds, devices },
@@ -173,6 +194,37 @@ export default function NewCampaignPage() {
       },
       brandSafety: { excludedLabels, minAgeRating, blockUserGenerated },
     });
+
+    // Real campaigns only — a mock campaign's creatives were already fully built into
+    // the payload above (gradient and all); a real one needs its staged files actually
+    // uploaded now that there's a real campaignId to attach them to.
+    if (looksLikeRealId(campaign.id)) {
+      let uploadFailures = 0;
+      for (const creative of creatives) {
+        const file = creativeFiles.get(creative.id);
+        if (!file) continue;
+        try {
+          await uploadCampaignCreative(campaign.id, {
+            name: creative.name,
+            format: creative.format,
+            durationSeconds: creative.durationSeconds,
+            clickThroughUrl: creative.clickThroughUrl?.trim() || null,
+            file,
+          });
+        } catch {
+          uploadFailures += 1;
+        }
+      }
+      if (uploadFailures > 0) {
+        toast({
+          title: "Campaign created, but some creatives failed to upload",
+          description: `${uploadFailures} creative(s) didn't upload — add them again from the campaign before it can be approved.`,
+          tone: "warning",
+        });
+        router.push("/business/campaigns");
+        return;
+      }
+    }
 
     toast({
       title: "Campaign submitted",
@@ -301,23 +353,25 @@ export default function NewCampaignPage() {
                       </Field>
                     </div>
 
-                    <Field label="Bid strategy" htmlFor="c-bid">
-                      <Select
-                        id="c-bid"
-                        value={bidStrategy}
-                        onChange={(event) => setBidStrategy(event.target.value)}
-                      >
-                        <option value="auto">Automatic — maximise delivery</option>
-                        <option value="cpm">Target CPM</option>
-                        <option value="cpv">Target cost per completed view</option>
-                        <option value="cpc">Target cost per click</option>
-                      </Select>
+                    <Field
+                      label="CPM (£)"
+                      htmlFor="c-cpm"
+                      required
+                      hint="What you pay per 1,000 impressions delivered."
+                    >
+                      <Input
+                        id="c-cpm"
+                        value={cpm}
+                        onChange={(event) => setCpm(event.target.value)}
+                        inputMode="decimal"
+                        className="max-w-xs"
+                      />
                     </Field>
 
                     <div className="grid gap-3 sm:grid-cols-3">
                       <Stat
-                        label="Estimated CPM"
-                        value={formatCurrency(estimate.cpm)}
+                        label="Set CPM"
+                        value={formatCurrency(cpmMinor)}
                       />
                       <Stat
                         label="Estimated impressions"
@@ -486,9 +540,20 @@ export default function NewCampaignPage() {
                     </div>
 
                     <div className="border-t border-border pt-5">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="video/*,image/*"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) addCreativeFromFile(file);
+                          event.target.value = "";
+                        }}
+                      />
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-medium text-fg">Creatives</p>
-                        <Button variant="secondary" size="sm" onClick={addCreative}>
+                        <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()}>
                           <IconPlus />
                           Add creative
                         </Button>
@@ -497,9 +562,14 @@ export default function NewCampaignPage() {
                       {creatives.length === 0 ? (
                         <div className="mt-3 rounded-lg border-2 border-dashed border-border bg-surface-2 px-6 py-10 text-center">
                           <p className="text-sm text-fg-muted">
-                            No creatives yet. Add at least one to continue.
+                            No creatives yet. Upload a video or image file to continue.
                           </p>
-                          <Button variant="primary" size="sm" className="mt-3" onClick={addCreative}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => fileInputRef.current?.click()}
+                          >
                             Add your first creative
                           </Button>
                         </div>
@@ -579,17 +649,18 @@ export default function NewCampaignPage() {
                                       }
                                     />
                                   </Field>
-                                  <Field label="Call to action">
+                                  <Field label="Click-through URL" className="sm:col-span-2">
                                     <Input
-                                      value={creative.clickThroughLabel}
+                                      value={creative.clickThroughUrl ?? ""}
                                       sizeVariant="sm"
+                                      placeholder="https://example.com/landing-page"
                                       onChange={(event) =>
                                         setCreatives((current) =>
                                           current.map((item, i) =>
                                             i === index
                                               ? {
                                                   ...item,
-                                                  clickThroughLabel: event.target.value,
+                                                  clickThroughUrl: event.target.value,
                                                 }
                                               : item,
                                           ),
@@ -598,18 +669,26 @@ export default function NewCampaignPage() {
                                     />
                                   </Field>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  aria-label={`Remove ${creative.name}`}
-                                  onClick={() =>
-                                    setCreatives((current) =>
-                                      current.filter((_, i) => i !== index),
-                                    )
-                                  }
-                                >
-                                  <IconTrash />
-                                </Button>
+                                <div className="flex shrink-0 flex-col items-end gap-2">
+                                  <Badge tone={creativeFiles.has(creative.id) ? "published" : "neutral"} size="sm">
+                                    {creativeFiles.get(creative.id)?.name ?? "No file"}
+                                  </Badge>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Remove ${creative.name}`}
+                                    onClick={() => {
+                                      setCreatives((current) => current.filter((_, i) => i !== index));
+                                      setCreativeFiles((current) => {
+                                        const next = new Map(current);
+                                        next.delete(creative.id);
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <IconTrash />
+                                  </Button>
+                                </div>
                               </div>
                             </li>
                           ))}
@@ -727,7 +806,7 @@ export default function NewCampaignPage() {
                       />
                       <ReviewRow
                         label="Budget"
-                        value={`${formatCurrency(budgetMinor)} total · ${formatCurrency(dailyMinor)} / day`}
+                        value={`${formatCurrency(budgetMinor)} total · ${formatCurrency(dailyMinor)} / day · ${formatCurrency(cpmMinor)} CPM`}
                       />
                       <ReviewRow label="Countries" value={countries.join(", ")} />
                       <ReviewRow label="Languages" value={languages.join(", ")} />
@@ -848,8 +927,8 @@ export default function NewCampaignPage() {
                     </dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-fg-muted">Est. CPM</dt>
-                    <dd className="text-fg nx-tnum">{formatCurrency(estimate.cpm)}</dd>
+                    <dt className="text-fg-muted">CPM</dt>
+                    <dd className="text-fg nx-tnum">{formatCurrency(cpmMinor)}</dd>
                   </div>
                   <div className="flex justify-between gap-2">
                     <dt className="text-fg-muted">Creatives</dt>

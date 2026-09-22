@@ -35,7 +35,7 @@ const HANDLE = "marasolace";
 // all of them, matching what it always could before those layouts enforced real roles
 // server-side. A normal registered account only gets the role(s) it actually chose at
 // signup.
-const ROLES = ["viewer", "creator", "business", "advertiser", "admin"];
+const ROLES = ["viewer", "creator", "business", "advertiser", "super-admin"];
 
 async function main() {
   const pg = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
@@ -62,6 +62,15 @@ async function main() {
     );
   }
   console.log(`  roles: ${ROLES.join(", ")}`);
+
+  // Ensure active business plan so the demo account can access Business Studio
+  await pg.query(
+    `insert into subscriptions (account_id, stripe_customer_id, stripe_subscription_id, status, price_minor, currency, plan, billing_interval)
+     values ($1, 'cus_demo_mara', 'sub_demo_mara_business', 'active', 2900, 'GBP', 'business', 'month')
+     on conflict (stripe_subscription_id) do update set status = 'active'`,
+    [accountId],
+  );
+  console.log("  subscriptions: business (active)");
 
   await pg.end();
 }

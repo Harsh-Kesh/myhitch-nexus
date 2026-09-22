@@ -22,6 +22,10 @@ export const videosSchema = {
     { name: "title", type: "string" as const },
     { name: "synopsis", type: "string" as const, optional: true },
     { name: "content_type", type: "string" as const, facet: true },
+    // Asset format (video vs. audio — DEC-16) — orthogonal to content_type (genre). Every
+    // document indexed before 2026-09-22 predates this field, hence optional: a real
+    // collection already holding documents can't have a new required field added to it.
+    { name: "kind", type: "string" as const, facet: true, optional: true },
     { name: "category_ids", type: "string[]" as const, facet: true, optional: true },
     { name: "tags", type: "string[]" as const, facet: true, optional: true },
     { name: "language", type: "string" as const, facet: true, optional: true },
@@ -45,6 +49,7 @@ export interface VideoDocument {
   title: string;
   synopsis?: string;
   content_type: string;
+  kind: string;
   category_ids?: string[];
   tags?: string[];
   language?: string;
@@ -93,9 +98,22 @@ export async function ensureVideosCollection(): Promise<void> {
   const ts = getTypesenseClient();
   try {
     await ts.collections().create(videosSchema);
+    return;
   } catch (err) {
     const status = (err as { httpStatus?: number }).httpStatus;
     if (status !== 409) throw err;
+  }
+  // Collection already existed (created before the `kind` field was added) — alter it in
+  // place rather than drop/recreate, which would lose every already-indexed document.
+  // Typesense errors if the field is already there; that's "already in the right state",
+  // not a real failure, so it's swallowed like the 409 above.
+  try {
+    await ts.collections(VIDEOS_COLLECTION).update({
+      fields: [{ name: "kind", type: "string", facet: true, optional: true }],
+    });
+  } catch {
+    // Already has the field, or the alter genuinely failed — either way, non-fatal here;
+    // syncVideoSearchIndex()'s own upsert will surface a real schema mismatch loudly.
   }
 }
 
@@ -115,6 +133,7 @@ export async function syncVideoSearchIndex(videoId: string): Promise<void> {
       title: string;
       synopsis: string | null;
       content_type: string;
+      kind: string;
       duration_seconds: number;
       release_date: string | null;
       language: string | null;
@@ -132,7 +151,7 @@ export async function syncVideoSearchIndex(videoId: string): Promise<void> {
       status: string;
     }>(
       `select
-         v.id, v.title, v.synopsis, v.content_type, v.duration_seconds, v.release_date,
+         v.id, v.title, v.synopsis, v.content_type, v.kind, v.duration_seconds, v.release_date,
          v.language, v.country, v.published_at, v.views, v.rating_average, v.status,
          exists(select 1 from video_subtitle_tracks st where st.video_id = v.id) as has_subtitles,
          o.id as channel_id, o.name as channel_name,
@@ -173,6 +192,7 @@ export async function syncVideoSearchIndex(videoId: string): Promise<void> {
       title: row.title,
       synopsis: row.synopsis ?? undefined,
       content_type: row.content_type,
+      kind: row.kind,
       category_ids: row.category_ids,
       tags: row.tags,
       language: row.language ?? undefined,

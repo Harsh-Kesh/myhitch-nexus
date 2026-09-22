@@ -34,6 +34,7 @@ async function isChannelMember(accountId: string, channelId: string): Promise<bo
 export type CreateUploadUrlResult =
   | { outcome: "success"; path: string; signedUrl: string; token: string; maxBytes: number }
   | { outcome: "not_channel_member" }
+  | { outcome: "upload_restricted"; until: string }
   | { outcome: "too_large"; maxBytes: number };
 
 export async function createUploadUrl(
@@ -41,14 +42,22 @@ export async function createUploadUrl(
   channelId: string,
   fileName: string,
   fileSizeBytes: number,
+  kind: "video" | "audio" = "video",
 ): Promise<CreateUploadUrlResult> {
   if (!(await isChannelMember(accountId, channelId))) {
     return { outcome: "not_channel_member" };
   }
+  const org = await queryOne<{ upload_restricted_until: string | null }>(
+    `select upload_restricted_until from organizations where id = $1`,
+    [channelId],
+  );
+  if (org?.upload_restricted_until && new Date(org.upload_restricted_until) > new Date()) {
+    return { outcome: "upload_restricted", until: org.upload_restricted_until };
+  }
   if (fileSizeBytes > MAX_MASTER_UPLOAD_BYTES) {
     return { outcome: "too_large", maxBytes: MAX_MASTER_UPLOAD_BYTES };
   }
-  const { path, signedUrl, token } = await createMasterUploadUrl(channelId, fileName, fileSizeBytes);
+  const { path, signedUrl, token } = await createMasterUploadUrl(channelId, fileName, fileSizeBytes, kind);
   return { outcome: "success", path, signedUrl, token, maxBytes: MAX_MASTER_UPLOAD_BYTES };
 }
 
@@ -90,6 +99,7 @@ export async function generateSuggestedThumbnails(
 export interface PublishVideoInput {
   channelId: string;
   masterAssetPath: string;
+  kind: "video" | "audio";
   title: string;
   description: string;
   contentType: string;
@@ -166,19 +176,19 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return { outcome: "invalid", reason: "That series doesn't belong to this channel." };
   }
 
-  const asset = await masterAssetExists(input.masterAssetPath);
+  const asset = await masterAssetExists(input.masterAssetPath, input.kind);
   if (!asset.exists) {
     return { outcome: "asset_missing" };
   }
 
-  const probe = await probeMasterAsset(input.masterAssetPath);
+  const probe = await probeMasterAsset(input.masterAssetPath, input.kind);
   if (!probe.ok) {
     return { outcome: "invalid_file", reason: probe.reason };
   }
 
   // Best-effort, not a hard requirement — see malwareScan.ts's header for why an
   // "unavailable" scanner doesn't block publishing (fails open, not closed).
-  const scan = await scanMasterAssetForMalware(input.masterAssetPath);
+  const scan = await scanMasterAssetForMalware(input.masterAssetPath, input.kind);
   if (scan.status === "infected") {
     return { outcome: "malware_detected", signature: scan.signature };
   }
@@ -196,11 +206,11 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
   const videoId = await withTransaction(async (tx) => {
     const rows = await tx.query<{ id: string }>(
       `insert into videos (
-         slug, channel_id, title, synopsis, content_type, status, thumbnail_url,
+         slug, channel_id, title, synopsis, content_type, kind, status, thumbnail_url,
          poster_gradient, release_date, published_at, scheduled_for, language, country,
          production_company, master_asset_path, master_uploaded_at, master_bytes,
          duration_seconds, series_id, season_number, episode_number, processing_status
-       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now(), $16, $17, $18, $19, $20, 'awaiting_transcode')
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now(), $17, $18, $19, $20, $21, 'awaiting_transcode')
        returning id`,
       [
         slug,
@@ -208,6 +218,7 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
         input.title.trim().slice(0, 200),
         input.description.trim().slice(0, 5000) || null,
         input.contentType,
+        input.kind,
         status,
         input.customThumbnailUrl,
         // Same deterministic-palette approach already used for channel avatars/banners

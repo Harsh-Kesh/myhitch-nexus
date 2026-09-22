@@ -13,6 +13,7 @@ import type {
   Category,
   Channel,
   LiveEvent,
+  MediaKind,
   ModerationAction,
   ModerationItem,
   Organisation,
@@ -68,6 +69,7 @@ export const qk = {
   leads: (channelId: string) => ["leads", channelId] as const,
   productLinks: (channelId: string) => ["product-links", channelId] as const,
   adminSummary: ["admin-summary"] as const,
+  adminFinance: ["admin-finance"] as const,
   moderationQueue: (queue?: ModerationItem["queue"]) => ["moderation-queue", queue] as const,
   auditLog: (filters?: Record<string, unknown>) => ["audit-log", filters] as const,
   adminUsers: ["admin-users"] as const,
@@ -493,8 +495,17 @@ export const useBulkImport = (enabled: boolean) =>
 
 export function useCreateStudioUpload() {
   return useMutation({
-    mutationFn: ({ channelId, fileName, fileSizeBytes }: { channelId: string; fileName: string; fileSizeBytes: number }) =>
-      api.createStudioUploadUrl(channelId, fileName, fileSizeBytes),
+    mutationFn: ({
+      channelId,
+      fileName,
+      fileSizeBytes,
+      kind,
+    }: {
+      channelId: string;
+      fileName: string;
+      fileSizeBytes: number;
+      kind?: MediaKind;
+    }) => api.createStudioUploadUrl(channelId, fileName, fileSizeBytes, kind),
   });
 }
 
@@ -676,6 +687,12 @@ export function useCreateProductLink(channelId: string) {
 export const useAdminSummary = () =>
   useQuery({ queryKey: qk.adminSummary, queryFn: api.getAdminSummary });
 
+export const useAdminFinance = () =>
+  useQuery({ queryKey: qk.adminFinance, queryFn: api.getAdminFinance });
+
+export const useAdminAnalytics = (range: AnalyticsRange = "28d") =>
+  useQuery({ queryKey: ["admin-analytics", range], queryFn: () => api.getAdminAnalytics(range) });
+
 export const useModerationQueue = (queue?: ModerationItem["queue"]) =>
   useQuery({ queryKey: qk.moderationQueue(queue), queryFn: () => api.getModerationQueue(queue) });
 
@@ -732,8 +749,8 @@ export function useSetPassword() {
 export function useUpdateUserRole() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, roles }: { userId: string; roles: User["roles"] }) =>
-      api.updateUserRole(userId, roles),
+    mutationFn: ({ userId, roles, reason }: { userId: string; roles: User["roles"]; reason: string }) =>
+      api.updateUserRole(userId, roles, reason),
     onSuccess: () => {
       client.invalidateQueries({ queryKey: qk.adminUsers });
       client.invalidateQueries({ queryKey: ["audit-log"] });

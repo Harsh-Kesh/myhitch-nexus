@@ -5,6 +5,7 @@
 import "server-only";
 import { getChannelById, type ChannelDetail } from "./catalogue";
 import { query, queryOne } from "./db";
+import { recordAudit } from "./moderation";
 
 const HANDLE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/;
 
@@ -44,6 +45,7 @@ export async function isChannelMember(accountId: string, organizationId: string)
 export async function updateOrganization(
   organizationId: string,
   patch: ChannelSettingsPatch,
+  actor: { id: string; name: string },
 ): Promise<UpdateOrganizationResult> {
   const normalizedHandle = patch.handle?.trim().toLowerCase();
   if (normalizedHandle !== undefined && !HANDLE_PATTERN.test(normalizedHandle)) {
@@ -83,5 +85,21 @@ export async function updateOrganization(
 
   const channel = await getChannelById(organizationId);
   if (!channel) return { outcome: "not_found" };
+
+  if (columns.length > 0) {
+    await recordAudit({
+      actorAccountId: actor.id,
+      actorName: actor.name,
+      actorRole: "creator",
+      action: "channel.settings_updated",
+      targetType: "channel",
+      targetId: organizationId,
+      reason: `Updated ${columns.length} field(s): ${Object.keys(patch)
+        .filter((key) => patch[key as keyof ChannelSettingsPatch] !== undefined)
+        .join(", ")}.`,
+      severity: "info",
+    });
+  }
+
   return { outcome: "success", channel };
 }

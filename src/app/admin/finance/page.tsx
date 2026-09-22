@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -27,157 +28,95 @@ import {
   chartGrid,
   chartTooltip,
 } from "@/components/charts/chart-theme";
-import { buildAdminTrend } from "@/lib/mock-api/data/analytics";
-import { channels } from "@/lib/mock-api/data/channels";
-import { usePlatformConfig } from "@/lib/mock-api/hooks";
-import {
-  formatCurrency,
-  formatDate,
-  formatPercent,
-  hashString,
-  seededRandom,
-} from "@/lib/utils";
+import { csvSection, downloadCsv } from "@/lib/csv";
+import { useAdminFinance, usePlatformConfig } from "@/lib/mock-api/hooks";
+import type { OrgPayoutSummary } from "@/lib/mock-api/types";
+import { formatCurrency, formatDate } from "@/lib/utils";
 
-interface PayoutRow {
-  id: string;
-  channelId: string;
-  channelName: string;
-  gross: number;
-  commission: number;
-  tax: number;
-  net: number;
-  method: string;
-  status: "scheduled" | "processing" | "paid" | "failed";
-  dueDate: string;
+type PayoutAccountState = "not_connected" | "awaiting_verification" | "ready";
+
+function accountState(row: OrgPayoutSummary): PayoutAccountState {
+  if (!row.connected) return "not_connected";
+  if (!row.payoutsEnabled) return "awaiting_verification";
+  return "ready";
 }
 
-/** Deterministic payout ledger derived from the channel fixtures. */
-function buildPayouts(): PayoutRow[] {
-  const methods = ["Bank transfer", "International wire", "Platform wallet"];
-  const statuses: PayoutRow["status"][] = [
-    "scheduled",
-    "processing",
-    "paid",
-    "paid",
-    "failed",
-    "scheduled",
-  ];
-  return channels.map((channel, index) => {
-    const random = seededRandom(hashString(`${channel.id}:payout`));
-    const gross = Math.round(80_000 + random() * 1_400_000);
-    const commission = Math.round(gross * 0.3);
-    const tax = Math.round((gross - commission) * 0.2);
-    return {
-      id: `po_${channel.id}`,
-      channelId: channel.id,
-      channelName: channel.name,
-      gross,
-      commission,
-      tax,
-      net: gross - commission - tax,
-      method: methods[index % methods.length],
-      status: statuses[index % statuses.length],
-      dueDate: "2026-08-28",
-    };
-  });
-}
+const ACCOUNT_STATE_LABEL: Record<PayoutAccountState, string> = {
+  not_connected: "Not connected",
+  awaiting_verification: "Awaiting verification",
+  ready: "Ready",
+};
 
-const STATUS_TONE = {
-  scheduled: "scheduled",
-  processing: "pending",
-  paid: "published",
-  failed: "rejected",
+const ACCOUNT_STATE_TONE = {
+  not_connected: "archived",
+  awaiting_verification: "pending",
+  ready: "published",
 } as const;
 
 export default function AdminFinancePage() {
+  const { data, isLoading } = useAdminFinance();
   const { data: config } = usePlatformConfig();
   const { toast } = useToast();
   const [tab, setTab] = React.useState("payouts");
 
-  const payouts = React.useMemo(buildPayouts, []);
-  const trend = React.useMemo(() => buildAdminTrend(30), []);
+  const organizations = data?.organizations ?? [];
+  const trend = data?.trend ?? [];
+  const revenueByStream = data?.revenueByStream ?? [];
+  const platform = data?.platform;
 
-  const totals = payouts.reduce(
-    (acc, row) => ({
-      gross: acc.gross + row.gross,
-      commission: acc.commission + row.commission,
-      tax: acc.tax + row.tax,
-      net: acc.net + row.net,
-    }),
-    { gross: 0, commission: 0, tax: 0, net: 0 },
-  );
+  // Gross (30d) isn't returned as its own field — it's already sitting in the trend
+  // series (which covers exactly the last 30 days), so summing it client-side avoids a
+  // duplicate server-side aggregate for the same number.
+  const gross30dMinor = trend.reduce((sum, point) => sum + point.grossMinor, 0);
 
-  const failed = payouts.filter((row) => row.status === "failed");
-
-  // Advertising (free tier) and Subscriptions (Premium/Family/Business) are the only two
-  // real revenue streams under the current pricing model — rentals, per-video purchases
-  // and channel memberships were retired (2026-09-20). Commerce is Business-tier product
-  // links/leads.
-  const revenueMix = [
-    { label: "Advertising", value: Math.round(totals.gross * 0.42) },
-    { label: "Subscriptions", value: Math.round(totals.gross * 0.52) },
-    { label: "Commerce", value: Math.round(totals.gross * 0.06) },
-  ];
-
-  const columns: Array<Column<PayoutRow>> = [
+  const columns: Array<Column<OrgPayoutSummary>> = [
     {
-      key: "channel",
-      header: "Channel",
-      sortValue: (row) => row.channelName,
-      cell: (row) => <span className="font-medium text-fg">{row.channelName}</span>,
+      key: "organization",
+      header: "Organisation",
+      sortValue: (row) => row.organizationName,
+      cell: (row) => <span className="font-medium text-fg">{row.organizationName}</span>,
     },
     {
       key: "gross",
-      header: "Gross",
+      header: "Gross (all-time)",
       align: "right",
-      sortValue: (row) => row.gross,
-      cell: (row) => <span className="nx-tnum">{formatCurrency(row.gross)}</span>,
+      sortValue: (row) => row.grossMinor,
+      cell: (row) => <span className="nx-tnum">{formatCurrency(row.grossMinor)}</span>,
     },
     {
-      key: "commission",
-      header: "Commission",
+      key: "available",
+      header: "Available / due",
       align: "right",
-      secondary: true,
-      sortValue: (row) => row.commission,
-      cell: (row) => (
-        <span className="nx-tnum text-fg-subtle">−{formatCurrency(row.commission)}</span>
-      ),
+      sortValue: (row) => row.availableMinor,
+      cell: (row) => <span className="nx-tnum font-medium text-fg">{formatCurrency(row.availableMinor)}</span>,
     },
     {
-      key: "tax",
-      header: "Tax withheld",
+      key: "paid",
+      header: "Paid out (all-time)",
       align: "right",
       secondary: true,
-      sortValue: (row) => row.tax,
-      cell: (row) => (
-        <span className="nx-tnum text-fg-subtle">−{formatCurrency(row.tax)}</span>
-      ),
-    },
-    {
-      key: "net",
-      header: "Net payable",
-      align: "right",
-      sortValue: (row) => row.net,
-      cell: (row) => (
-        <span className="nx-tnum font-medium text-fg">{formatCurrency(row.net)}</span>
-      ),
-    },
-    {
-      key: "method",
-      header: "Method",
-      secondary: true,
-      sortValue: (row) => row.method,
-      cell: (row) => <span className="text-xs">{row.method}</span>,
+      sortValue: (row) => row.paidMinor,
+      cell: (row) => <span className="nx-tnum text-fg-subtle">{formatCurrency(row.paidMinor)}</span>,
     },
     {
       key: "status",
-      header: "Status",
-      sortValue: (row) => row.status,
-      cell: (row) => (
-        <Badge tone={STATUS_TONE[row.status]} size="sm">
-          {row.status}
-        </Badge>
-      ),
+      header: "Payout account",
+      sortValue: (row) => accountState(row),
+      cell: (row) => {
+        const state = accountState(row);
+        return (
+          <Badge tone={ACCOUNT_STATE_TONE[state]} size="sm">
+            {ACCOUNT_STATE_LABEL[state]}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "lastPayout",
+      header: "Last payout",
+      secondary: true,
+      sortValue: (row) => row.lastPayoutAt ?? "",
+      cell: (row) => <span className="text-xs">{row.lastPayoutAt ? formatDate(row.lastPayoutAt) : "Never"}</span>,
     },
   ];
 
@@ -185,18 +124,32 @@ export default function AdminFinancePage() {
     <>
       <PageHeader
         title="Finance"
-        description="Platform revenue, commission and the creator payout run. Figures are simulated — no settlement, tax or payout provider is integrated."
+        description="Real platform revenue and creator payout status — Stripe Checkout and Stripe Connect, live."
         actions={
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
+            disabled={!data || organizations.length === 0}
+            onClick={() => {
+              if (!data) return;
+              const csv = csvSection(
+                "Organisation payouts",
+                ["Organisation", "Gross (all-time)", "Available / due", "Paid out (all-time)", "Payout account", "Last payout"],
+                organizations.map((row) => [
+                  row.organizationName,
+                  formatCurrency(row.grossMinor),
+                  formatCurrency(row.availableMinor),
+                  formatCurrency(row.paidMinor),
+                  ACCOUNT_STATE_LABEL[accountState(row)],
+                  row.lastPayoutAt ? formatDate(row.lastPayoutAt) : "Never",
+                ]),
+              );
+              downloadCsv(`finance-ledger-${new Date().toISOString().slice(0, 10)}.csv`, [csv]);
               toast({
-                title: "Statement exported",
-                description: "Mock CSV — nothing leaves the browser.",
-                tone: "info",
-              })
-            }
+                title: "Ledger exported",
+                description: `${organizations.length} organisation${organizations.length === 1 ? "" : "s"} downloaded.`,
+              });
+            }}
           >
             <IconDownload />
             Export ledger
@@ -207,26 +160,26 @@ export default function AdminFinancePage() {
       <PageBody className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Stat
-            label="Gross revenue"
-            value={formatCurrency(totals.gross, "GBP", { compact: true })}
+            label="Gross revenue (30d)"
+            value={formatCurrency(gross30dMinor, "GBP", { compact: true })}
             icon={<IconCoin />}
           />
           <Stat
-            label="Platform commission"
-            value={formatCurrency(totals.commission, "GBP", { compact: true })}
-            hint={formatPercent((totals.commission / (totals.gross || 1)) * 100, 0)}
+            label="Platform revenue (30d)"
+            value={formatCurrency(platform?.commission30dMinor ?? 0, "GBP", { compact: true })}
+            hint="Commission + subscriptions"
           />
           <Stat
             label="Payouts due"
-            value={formatCurrency(totals.net, "GBP", { compact: true })}
+            value={formatCurrency(platform?.payoutsDueMinor ?? 0, "GBP", { compact: true })}
             icon={<IconWallet />}
-            hint="28 August run"
+            hint="Owed to creators, all-time"
           />
           <Stat
             label="Failed payouts"
-            value={String(failed.length)}
+            value={String(data?.failedPayoutCount ?? 0)}
             invertDelta
-            hint={failed.length ? "Needs finance action" : "All clear"}
+            hint={data?.failedPayoutCount ? "Needs finance action" : "All clear"}
           />
         </div>
 
@@ -234,7 +187,7 @@ export default function AdminFinancePage() {
           value={tab}
           onChange={setTab}
           items={[
-            { value: "payouts", label: "Payout run", count: payouts.length },
+            { value: "payouts", label: "Organisations", count: organizations.length },
             { value: "revenue", label: "Revenue" },
             { value: "rules", label: "Commission & tax" },
           ]}
@@ -242,13 +195,12 @@ export default function AdminFinancePage() {
 
         {tab === "payouts" ? (
           <>
-            {failed.length > 0 ? (
+            {(data?.failedPayoutCount ?? 0) > 0 ? (
               <Card className="border-danger/40">
                 <CardBody className="flex flex-wrap items-center gap-3">
                   <Badge tone="danger">Action needed</Badge>
                   <p className="min-w-0 flex-1 text-sm text-fg-muted">
-                    {failed.length} payout{failed.length === 1 ? "" : "s"} failed —{" "}
-                    {failed.map((row) => row.channelName).join(", ")}. Usually an
+                    {data!.failedPayoutCount} payout{data!.failedPayoutCount === 1 ? "" : "s"} failed. Usually an
                     account-name mismatch at the receiving bank.
                   </p>
                   <Button variant="secondary" size="sm" href="/admin/reports">
@@ -258,13 +210,23 @@ export default function AdminFinancePage() {
               </Card>
             ) : null}
 
-            <DataTable
-              columns={columns}
-              rows={payouts}
-              rowKey={(row) => row.id}
-              pageSize={12}
-              caption="Creator payout run"
-            />
+            {isLoading ? (
+              <EmptyState compact title="Loading…" />
+            ) : organizations.length === 0 ? (
+              <EmptyState
+                compact
+                title="No organisations with revenue yet"
+                description="Real purchases, subscriptions or memberships will show up here as they happen."
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                rows={organizations}
+                rowKey={(row) => row.organizationId}
+                pageSize={12}
+                caption="Organisation payout status"
+              />
+            )}
           </>
         ) : null}
 
@@ -272,8 +234,8 @@ export default function AdminFinancePage() {
           <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
             <Card>
               <CardHeader
-                title="Platform activity"
-                description="Reviews and reports, last 30 days"
+                title="Platform revenue"
+                description="Gross vs. platform's own take, last 30 days"
               />
               <CardBody>
                 <div className="h-64">
@@ -286,17 +248,14 @@ export default function AdminFinancePage() {
                         tickFormatter={(value: string) => formatDate(value, "short")}
                         minTickGap={28}
                       />
-                      <YAxis {...chartAxis} width={36} />
+                      <YAxis {...chartAxis} width={36} tickFormatter={(value: number) => formatCurrency(value, "GBP", { compact: true })} />
                       <Tooltip
                         {...chartTooltip}
                         labelFormatter={(value) => formatDate(String(value), "long")}
+                        formatter={(value: number) => formatCurrency(value)}
                       />
-                      <Bar
-                        dataKey="reviews"
-                        name="Transactions"
-                        fill={CHART_COLORS[0]}
-                        radius={[3, 3, 0, 0]}
-                      />
+                      <Bar dataKey="grossMinor" name="Gross" fill={CHART_COLORS[1]} radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="commissionMinor" name="Platform revenue" fill={CHART_COLORS[0]} radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -304,51 +263,49 @@ export default function AdminFinancePage() {
             </Card>
 
             <Card>
-              <CardHeader title="Revenue mix" description="Share of gross" />
+              <CardHeader title="Revenue by stream" description="Gross, last 30 days" />
               <CardBody>
-                <div className="h-52">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={revenueMix}
-                        dataKey="value"
-                        nameKey="label"
-                        innerRadius="55%"
-                        outerRadius="84%"
-                        paddingAngle={2}
-                        stroke="none"
-                      >
-                        {revenueMix.map((_, index) => (
-                          <Cell
-                            key={index}
-                            fill={CHART_COLORS[index % CHART_COLORS.length]}
+                {revenueByStream.length === 0 ? (
+                  <EmptyState compact title="No revenue in this window" />
+                ) : (
+                  <>
+                    <div className="h-52">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={revenueByStream}
+                            dataKey="grossMinor"
+                            nameKey="label"
+                            innerRadius="55%"
+                            outerRadius="84%"
+                            paddingAngle={2}
+                            stroke="none"
+                          >
+                            {revenueByStream.map((_, index) => (
+                              <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip {...chartTooltip} formatter={(value: number) => formatCurrency(value)} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <ul className="mt-3 space-y-1.5">
+                      {revenueByStream.map((slice, index) => (
+                        <li key={slice.label} className="flex items-center gap-2 text-sm">
+                          <span
+                            aria-hidden
+                            className="size-2.5 shrink-0 rounded-sm"
+                            style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
                           />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        {...chartTooltip}
-                        formatter={(value: number) => formatCurrency(value)}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <ul className="mt-3 space-y-1.5">
-                  {revenueMix.map((slice, index) => (
-                    <li key={slice.label} className="flex items-center gap-2 text-sm">
-                      <span
-                        aria-hidden
-                        className="size-2.5 shrink-0 rounded-sm"
-                        style={{ background: CHART_COLORS[index % CHART_COLORS.length] }}
-                      />
-                      <span className="min-w-0 flex-1 truncate text-fg-muted">
-                        {slice.label}
-                      </span>
-                      <span className="text-fg nx-tnum">
-                        {formatCurrency(slice.value, "GBP", { compact: true })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                          <span className="min-w-0 flex-1 truncate text-fg-muted">{slice.label}</span>
+                          <span className="text-fg nx-tnum">
+                            {formatCurrency(slice.grossMinor, "GBP", { compact: true })}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
               </CardBody>
             </Card>
           </div>
@@ -391,33 +348,13 @@ export default function AdminFinancePage() {
             </Card>
 
             <Card>
-              <CardHeader
-                title="Tax rates"
-                description="Applied at checkout by billing country"
-                action={
-                  <Button variant="ghost" size="sm" href="/admin/settings">
-                    Edit
-                  </Button>
-                }
-              />
-              <CardBody className="p-0">
-                <ul className="divide-y divide-border">
-                  {config?.taxes.map((tax) => (
-                    <li key={tax.id} className="flex items-center gap-3 px-5 py-3">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-fg">
-                          {tax.country}
-                        </span>
-                        <span className="mt-0.5 block text-2xs text-fg-subtle">
-                          {tax.name} · {tax.appliesTo}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-sm font-medium text-fg nx-tnum">
-                        {tax.rate}%
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+              <CardHeader title="Tax" description="Withholding and remittance" />
+              <CardBody>
+                <p className="text-sm leading-relaxed text-fg-muted">
+                  No tax computation or withholding is built yet — every figure on this page is gross of tax.
+                  Subscription revenue is 100% platform revenue (no creator commission split applies, since a
+                  platform-wide plan has no per-transaction creator attribution).
+                </p>
               </CardBody>
             </Card>
           </div>

@@ -60,7 +60,7 @@ const QUEUE_CARDS = [
     key: "copyrightClaims" as const,
     label: "Copyright claims",
     description: "Rights disputes",
-    href: "/admin/reviews?queue=copyright",
+    href: "/admin/reports",
     icon: <IconCopyright />,
     tone: "danger",
   },

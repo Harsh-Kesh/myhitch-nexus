@@ -24,13 +24,16 @@ interface FfprobeOutput {
   streams?: Array<{ codec_type?: string }>;
 }
 
-/** Runs ffprobe against the uploaded master and confirms it's a real, readable video —
- * rejects a renamed non-video file, a corrupted upload, or an empty/truncated one.
- * Returns the real duration on success, since ffprobe already has to read it. */
-export async function probeMasterAsset(path: string): Promise<ProbeResult> {
+/** Runs ffprobe against the uploaded master and confirms it's a real, readable file of
+ * the declared kind — rejects a renamed/mismatched file, a corrupted upload, or an
+ * empty/truncated one. Returns the real duration on success, since ffprobe already has
+ * to read it. `kind` selects which stream type is required: a video upload must contain
+ * a video stream, an audio upload must contain an audio stream (and is not rejected for
+ * lacking a video one — the opposite of the video check). */
+export async function probeMasterAsset(path: string, kind: "video" | "audio" = "video"): Promise<ProbeResult> {
   let signedUrl: string;
   try {
-    signedUrl = await createMasterDownloadUrl(path);
+    signedUrl = await createMasterDownloadUrl(path, kind);
   } catch {
     return { ok: false, reason: "Could not access the uploaded file to verify it." };
   }
@@ -51,17 +54,23 @@ export async function probeMasterAsset(path: string): Promise<ProbeResult> {
   try {
     parsed = JSON.parse(stdout) as FfprobeOutput;
   } catch {
-    return { ok: false, reason: "The uploaded file isn't a valid, readable video." };
+    return {
+      ok: false,
+      reason: kind === "audio" ? "The uploaded file isn't a valid, readable audio file." : "The uploaded file isn't a valid, readable video.",
+    };
   }
 
-  const hasVideoStream = parsed.streams?.some((stream) => stream.codec_type === "video") ?? false;
-  if (!hasVideoStream) {
-    return { ok: false, reason: "The uploaded file doesn't contain a video stream." };
+  const hasRequiredStream = parsed.streams?.some((stream) => stream.codec_type === kind) ?? false;
+  if (!hasRequiredStream) {
+    return {
+      ok: false,
+      reason: kind === "audio" ? "The uploaded file doesn't contain an audio stream." : "The uploaded file doesn't contain a video stream.",
+    };
   }
 
   const durationSeconds = Math.round(Number(parsed.format?.duration ?? NaN));
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return { ok: false, reason: "Couldn't determine the video's duration — the file may be corrupted." };
+    return { ok: false, reason: "Couldn't determine the file's duration — it may be corrupted." };
   }
 
   return { ok: true, durationSeconds };

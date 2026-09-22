@@ -6,6 +6,7 @@
 import "server-only";
 import { query, queryOne } from "./db";
 import { recordAudit } from "./moderation";
+import { describeAdminTier } from "./rbac";
 
 export type CopyrightCaseStatus =
   | "open"
@@ -89,6 +90,18 @@ function mapCase(row: CaseDbRow): CopyrightCase {
     decisionReason: row.decision_reason,
     createdAt: row.created_at,
   };
+}
+
+/** Matches admin/reports page.tsx's own DECIDABLE_STATUSES — cases still needing a
+ * decision, backing the admin dashboard's "Copyright claims" tile. */
+const OPEN_CASE_STATUSES: CopyrightCaseStatus[] = ["open", "counter-notice-received", "escalated"];
+
+export async function countOpenCopyrightCases(): Promise<number> {
+  const row = await queryOne<{ count: string }>(
+    `select count(*) as count from copyright_cases where status = any($1)`,
+    [OPEN_CASE_STATUSES],
+  );
+  return Number(row?.count ?? 0);
 }
 
 export interface SubmitCopyrightClaimInput {
@@ -264,7 +277,7 @@ const STRIKE_SUSPENSION_THRESHOLD = 3;
  * strike, account suspension) that decision set doesn't share with any other
  * moderation-queue kind. */
 export async function decideCopyrightCase(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   caseId: string,
   decision: CopyrightDecision,
   reason: string,
@@ -321,7 +334,7 @@ export async function decideCopyrightCase(
   await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: `copyright.${decision.replace(/-/g, "_")}`,
     targetType: "copyright_case",
     targetId: caseId,

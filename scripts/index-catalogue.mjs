@@ -23,6 +23,7 @@ const videosSchema = {
     { name: "title", type: "string" },
     { name: "synopsis", type: "string", optional: true },
     { name: "content_type", type: "string", facet: true },
+    { name: "kind", type: "string", facet: true, optional: true },
     { name: "category_ids", type: "string[]", facet: true, optional: true },
     { name: "tags", type: "string[]", facet: true, optional: true },
     { name: "language", type: "string", facet: true, optional: true },
@@ -60,7 +61,7 @@ async function main() {
   console.log("Fetching published videos from Postgres…");
   const { rows } = await pg.query(`
     select
-      v.id, v.title, v.synopsis, v.content_type, v.duration_seconds, v.release_date,
+      v.id, v.title, v.synopsis, v.content_type, v.kind, v.duration_seconds, v.release_date,
       v.language, v.country, v.published_at, v.views, v.rating_average,
       exists(select 1 from video_subtitle_tracks st where st.video_id = v.id) as has_subtitles,
       o.id as channel_id, o.name as channel_name,
@@ -87,6 +88,7 @@ async function main() {
     title: row.title,
     synopsis: row.synopsis ?? undefined,
     content_type: row.content_type,
+    kind: row.kind,
     category_ids: row.category_ids,
     tags: row.tags,
     language: row.language ?? undefined,

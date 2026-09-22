@@ -52,12 +52,39 @@ function usePayoutStatus(channelId: string, enabled: boolean) {
   });
 }
 
+interface CreatorTipsSummary {
+  totalTipsCount: number;
+  totalTipsCents: number;
+  activePatronsCount: number;
+  recentTips: Array<{
+    id: string;
+    supporter_name: string;
+    amount_cents: number;
+    currency: string;
+    message: string | null;
+    is_patron: boolean;
+    created_at: string;
+  }>;
+}
+
+function useCreatorTips(channelId: string) {
+  return useQuery({
+    queryKey: ["creator-tips", channelId],
+    queryFn: async (): Promise<CreatorTipsSummary> => {
+      const res = await fetch(`/api/studio/tips?channelId=${encodeURIComponent(channelId)}`);
+      if (!res.ok) return { totalTipsCount: 0, totalTipsCents: 0, activePatronsCount: 0, recentTips: [] };
+      return res.json();
+    },
+  });
+}
+
 export default function StudioRevenuePage() {
   const { data: user } = useCurrentUser();
   const channelId = user?.channelId ?? "ch_mara";
   const isRealChannel = looksLikeRealId(channelId);
   const { data, isLoading } = useRevenueSummary(channelId);
   const { data: payout, isLoading: isPayoutLoading } = usePayoutStatus(channelId, isRealChannel);
+  const { data: tipsData } = useCreatorTips(channelId);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -474,6 +501,66 @@ export default function StudioRevenuePage() {
                   className="rounded-none border-0"
                   caption="Revenue transactions"
                 />
+              </CardBody>
+            </Card>
+
+            {/* Fan Subscriptions & Patronage (Tipping) */}
+            <Card>
+              <CardHeader
+                title="Fan Subscriptions & Tips"
+                description="Direct contributions and recurring monthly patronage from your community"
+              />
+              <CardBody className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="text-xs text-fg-muted">Total Tips & Patronage</p>
+                    <p className="mt-1 text-xl font-semibold text-fg">
+                      {tipsData ? formatCurrency(tipsData.totalTipsCents / 100) : "—"}
+                    </p>
+                    <p className="mt-0.5 text-2xs text-fg-subtle">90% creator share</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="text-xs text-fg-muted">Active Monthly Patrons</p>
+                    <p className="mt-1 text-xl font-semibold text-fg">
+                      {tipsData ? tipsData.activePatronsCount : "—"}
+                    </p>
+                    <p className="mt-0.5 text-2xs text-fg-subtle">Recurring support</p>
+                  </div>
+                  <div className="rounded-lg border border-border p-4">
+                    <p className="text-xs text-fg-muted">Total Contributions</p>
+                    <p className="mt-1 text-xl font-semibold text-fg">
+                      {tipsData ? tipsData.totalTipsCount : "—"}
+                    </p>
+                    <p className="mt-0.5 text-2xs text-fg-subtle">Tips and patron renewals</p>
+                  </div>
+                </div>
+
+                {tipsData && tipsData.recentTips.length > 0 ? (
+                  <div className="rounded-lg border border-border divide-y divide-border">
+                    {tipsData.recentTips.map((tip) => (
+                      <div key={tip.id} className="flex items-center justify-between p-3 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-fg">{tip.supporter_name}</p>
+                          {tip.message && (
+                            <p className="text-xs text-fg-muted italic truncate">&ldquo;{tip.message}&rdquo;</p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold text-fg">
+                            {formatCurrency(tip.amount_cents / 100, tip.currency)}
+                          </p>
+                          <Badge tone={tip.is_patron ? "accent" : "outline"} size="sm">
+                            {tip.is_patron ? "Monthly Patron" : "One-time Tip"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-fg-muted">
+                    No tips received yet. Fans can tip or become monthly patrons directly on your channel.
+                  </p>
+                )}
               </CardBody>
             </Card>
           </>

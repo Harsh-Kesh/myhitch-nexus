@@ -3,7 +3,7 @@
 // restore after an uncontested counter-notice window. Admin-only.
 import { NextResponse, type NextRequest } from "next/server";
 import { decideCopyrightCase, type CopyrightDecision } from "@/lib/server/copyright";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 const VALID_DECISIONS: CopyrightDecision[] = ["reject-claim", "uphold", "escalate", "restore"];
 
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["moderator", "finance-admin", "super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const result = await decideCopyrightCase(
-      { id: account.id, name: account.fullName },
+      { id: account.id, name: account.fullName, roles: account.roles },
       id,
       body.decision as CopyrightDecision,
       body.reason?.trim() ?? "",

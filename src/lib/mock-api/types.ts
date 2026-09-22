@@ -17,7 +17,15 @@ export type ContentType =
   | "tourism"
   | "government"
   | "nonprofit"
-  | "user-generated";
+  | "user-generated"
+  | "music"
+  | "podcast";
+
+/** Underlying asset format — orthogonal to `ContentType` (which is genre/vertical, not
+ * format). `music`/`podcast` content types always carry `kind: "audio"`; every other
+ * content type carries `kind: "video"`. Drives storage bucket, upload validation, the
+ * upload wizard's branching, and which player component renders. */
+export type MediaKind = "video" | "audio";
 
 export type ContentStatus =
   | "draft"
@@ -58,7 +66,15 @@ export type UserRole =
   | "producer"
   | "education"
   | "organisation"
-  | "admin";
+  // "admin" stays a valid UserRole value — it's still used as a generic actor-role label
+  // throughout the mock/demo audit trail (AuditLogEntry.actorRole, unrelated to the real
+  // account_roles table). It is NOT one of the three real, grantable admin tiers below —
+  // see rbac.ts/the 20260923000001 migration, where "admin" was retired from
+  // account_roles.role in favour of these three scoped ones.
+  | "admin"
+  | "moderator"
+  | "finance-admin"
+  | "super-admin";
 
 export type LiveStatus = "upcoming" | "live" | "ended" | "replay" | "cancelled";
 
@@ -196,6 +212,8 @@ export interface Video {
   synopsis: string;
   channelId: string;
   contentType: ContentType;
+  /** Defaults to "video" for every seeded/pre-existing video — see `MediaKind`'s comment. */
+  kind: MediaKind;
   categoryIds: string[];
   tags: string[];
   status: ContentStatus;
@@ -340,6 +358,7 @@ export interface ChatMessage {
   id: string;
   liveEventId: string;
   authorName: string;
+  authorAvatarUrl?: string;
   authorGradient: [string, string];
   body: string;
   sentAt: string;
@@ -518,6 +537,7 @@ export interface ThumbnailSuggestion {
 
 export interface VideoDraft {
   uploadSessionId: string;
+  kind: MediaKind;
   title: string;
   description: string;
   contentType: ContentType;
@@ -576,8 +596,14 @@ export interface CampaignCreative {
   name: string;
   format: "pre-roll" | "mid-roll" | "post-roll" | "overlay" | "sponsored-card";
   durationSeconds: number;
+  /** Mock/display-only placeholder colour — always present (synthesised for a real
+   * creative too) so every existing gradient-box preview keeps rendering unchanged. */
   gradient: [string, string];
+  /** Mock/display-only CTA caption — synthesised from clickThroughUrl for a real creative. */
   clickThroughLabel: string;
+  /** Real fields, present only for a real (non-mock) creative. */
+  assetUrl?: string | null;
+  clickThroughUrl?: string | null;
   status: "approved" | "pending" | "rejected";
 }
 
@@ -591,6 +617,9 @@ export interface Campaign {
   budget: Money;
   dailyCap: Money;
   spend: Money;
+  /** The advertiser's set flat rate — real field (2026-09-25); replaces the discarded
+   * mock-only "bidStrategy" UI state, which was collected but never sent anywhere. */
+  cpm: Money;
   startDate: string;
   endDate: string;
   targeting: CampaignTargeting;
@@ -888,6 +917,57 @@ export interface AdminDashboardSummary {
   revenue30d: Money;
   payoutsDue: Money;
   trend: Array<{ date: string; reviews: number; reports: number }>;
+}
+
+export interface OrgPayoutSummary {
+  organizationId: string;
+  organizationName: string;
+  connected: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  grossMinor: number;
+  availableMinor: number;
+  paidMinor: number;
+  lastPayoutAt: string | null;
+}
+
+export interface AdminFinanceSummary {
+  platform: { commission30dMinor: number; payoutsDueMinor: number; currency: string };
+  trend: Array<{ date: string; grossMinor: number; commissionMinor: number }>;
+  revenueByStream: Array<{ label: string; grossMinor: number }>;
+  organizations: OrgPayoutSummary[];
+  failedPayoutCount: number;
+}
+
+export interface PlatformAnalyticsSummary {
+  range: AnalyticsRange;
+  totals: {
+    views: number;
+    uniqueViewers: number;
+    watchTimeSeconds: number;
+    completionRate: number;
+    averageViewDuration: number;
+  };
+  deltas: {
+    views: number | null;
+    watchTime: number | null;
+    uniqueViewers: number | null;
+  };
+  timeSeries: Array<{ date: string; views: number; watchHours: number; uniqueViewers: number }>;
+  topVideos: Array<{
+    videoId: string;
+    title: string;
+    channelId: string;
+    channelName: string;
+    views: number;
+    watchHours: number;
+    completionRate: number;
+  }>;
+  topChannels: Array<{ channelId: string; channelName: string; views: number; watchHours: number }>;
+  countries: Array<{ label: string; value: number; share: number }>;
+  devices: Array<{ label: string; value: number; share: number }>;
+  languages: Array<{ label: string; value: number; share: number }>;
 }
 
 /* ------------------------------- Search --------------------------------- */

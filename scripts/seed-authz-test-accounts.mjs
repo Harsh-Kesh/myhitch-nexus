@@ -41,7 +41,11 @@ const ACCOUNTS = [
   { key: "creator1", email: "authz.creator1@nexus.test", name: "Authz Creator One", roles: ["creator"], org: "creator" },
   { key: "creator2", email: "authz.creator2@nexus.test", name: "Authz Creator Two", roles: ["creator"], org: "creator" },
   { key: "business", email: "authz.business@nexus.test", name: "Authz Business", roles: ["business"], org: "business" },
-  { key: "admin", email: "authz.admin@nexus.test", name: "Authz Admin", roles: ["admin"], org: null },
+  // Scoped admin tiers (ROLE-8/9/10) — "admin" itself was retired from account_roles by
+  // the 20260923000001 migration in favour of these three.
+  { key: "moderator", email: "authz.moderator@nexus.test", name: "Authz Moderator", roles: ["moderator"], org: null },
+  { key: "financeAdmin", email: "authz.finance@nexus.test", name: "Authz Finance Admin", roles: ["finance-admin"], org: null },
+  { key: "superAdmin", email: "authz.admin@nexus.test", name: "Authz Admin", roles: ["super-admin"], org: null },
 ];
 
 async function main() {
@@ -61,13 +65,15 @@ async function main() {
     );
     const accountId = rows[0].id;
 
+    // Delete-then-insert rather than insert-on-conflict-do-nothing — a re-run must leave
+    // the account holding exactly `spec.roles`, not that set plus whatever it held before
+    // (e.g. a stale 'admin' row from before scoped tiers existed).
+    await pg.query(`delete from account_roles where account_id = $1`, [accountId]);
     for (const role of spec.roles) {
-      await pg.query(
-        `insert into account_roles (account_id, role, verified)
-         values ($1, $2, true)
-         on conflict (account_id, role) do nothing`,
-        [accountId, role],
-      );
+      await pg.query(`insert into account_roles (account_id, role, verified) values ($1, $2, true)`, [
+        accountId,
+        role,
+      ]);
     }
 
     let channelId = null;

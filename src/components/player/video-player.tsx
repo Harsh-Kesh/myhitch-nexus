@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { useSaveWatchProgress } from "@/lib/mock-api/hooks";
 import type { Entitlement, Video } from "@/lib/mock-api/types";
 import { cn, formatCurrency, formatDuration } from "@/lib/utils";
+import { AdOverlay } from "./ad-overlay";
+import { AdPreroll } from "./ad-preroll";
 import { PlayerControls } from "./player-controls";
 import { usePlayback } from "./use-playback";
 
@@ -45,6 +47,14 @@ export function VideoPlayer({
 
   const [started, setStarted] = React.useState(false);
   const [showResume, setShowResume] = React.useState(resumeAt > 30);
+  // Real pre-roll gate (P6) — fires at most once per mount, on the very first play
+  // action, regardless of which of the three "start playback" affordances triggered it.
+  const [adGate, setAdGate] = React.useState(false);
+  const adShownRef = React.useRef(false);
+  const [midRollGate, setMidRollGate] = React.useState(false);
+  const midRollShownRef = React.useRef(false);
+  const [postRollGate, setPostRollGate] = React.useState(false);
+  const postRollShownRef = React.useRef(false);
   const [limitReached, setLimitReached] = React.useState(false);
   const [fullscreen, setFullscreen] = React.useState(false);
   const [pip, setPip] = React.useState(false);
@@ -80,6 +90,46 @@ export function VideoPlayer({
       }
     },
   });
+
+  /** Gates the very first play with a real pre-roll ad check. AdPreroll itself decides
+   * (server-side, via GET /api/ads/serve) whether this content/viewer/placement actually
+   * has an eligible ad — most of the time it resolves immediately with nothing to show. */
+  const beginPlayback = () => {
+    if (!adShownRef.current) {
+      adShownRef.current = true;
+      setAdGate(true);
+      return;
+    }
+    controls.play();
+  };
+
+  // Mid-roll ad delivery (FR-6.8.2): triggers at half-way mark for videos >= 60s
+  React.useEffect(() => {
+    if (
+      !midRollShownRef.current &&
+      started &&
+      state.playing &&
+      video.durationSeconds >= 60 &&
+      state.currentTime >= video.durationSeconds / 2
+    ) {
+      midRollShownRef.current = true;
+      controls.pause();
+      setMidRollGate(true);
+    }
+  }, [started, state.playing, state.currentTime, video.durationSeconds, controls]);
+
+  // Post-roll ad delivery (FR-6.8.2): triggers when video reaches completion for videos >= 30s
+  React.useEffect(() => {
+    if (
+      !postRollShownRef.current &&
+      started &&
+      video.durationSeconds >= 30 &&
+      state.currentTime >= video.durationSeconds
+    ) {
+      postRollShownRef.current = true;
+      setPostRollGate(true);
+    }
+  }, [started, state.currentTime, video.durationSeconds]);
 
   /* --------------------------- Fullscreen / PiP -------------------------- */
 
@@ -250,7 +300,7 @@ export function VideoPlayer({
         onPreview={() => {
           setStarted(true);
           setShowResume(false);
-          controls.play();
+          beginPlayback();
         }}
         onPurchase={onRequestPurchase}
       />
@@ -291,6 +341,44 @@ export function VideoPlayer({
         seed={video.id}
         ratio="none"
         className="absolute inset-0 size-full"
+      />
+
+      {adGate ? (
+        <AdPreroll
+          videoId={video.id}
+          placement="pre-roll"
+          onDone={() => {
+            setAdGate(false);
+            controls.play();
+          }}
+        />
+      ) : null}
+
+      {midRollGate ? (
+        <AdPreroll
+          videoId={video.id}
+          placement="mid-roll"
+          onDone={() => {
+            setMidRollGate(false);
+            controls.play();
+          }}
+        />
+      ) : null}
+
+      {postRollGate ? (
+        <AdPreroll
+          videoId={video.id}
+          placement="post-roll"
+          onDone={() => {
+            setPostRollGate(false);
+          }}
+        />
+      ) : null}
+
+      <AdOverlay
+        videoId={video.id}
+        currentTime={state.currentTime}
+        playing={state.playing}
       />
 
       <video
@@ -366,7 +454,7 @@ export function VideoPlayer({
                   controls.seek(resumeAt);
                   setShowResume(false);
                   setStarted(true);
-                  controls.play();
+                  beginPlayback();
                 }}
               >
                 Resume
@@ -457,12 +545,12 @@ export function VideoPlayer({
       ) : null}
 
       {/* Big centre play button before first interaction */}
-      {!state.playing && !limitReached && !showResume ? (
+      {!state.playing && !limitReached && !showResume && !adGate && !midRollGate && !postRollGate ? (
         <button
           type="button"
           onClick={() => {
             setStarted(true);
-            controls.play();
+            beginPlayback();
           }}
           aria-label="Play"
           className="absolute inset-0 flex items-center justify-center"
@@ -526,7 +614,10 @@ export function VideoPlayer({
 
 /* --------------------------- Blocked surfaces ---------------------------- */
 
-function BlockedSurface({
+// Exported for audio-player.tsx — the processing/geo-restriction/unavailable states and
+// the paywall are entitlement/rights-shaped, not video-shaped, so AudioPlayer reuses
+// these directly rather than duplicating them.
+export function BlockedSurface({
   video,
   icon,
   title,
@@ -576,7 +667,7 @@ function BlockedSurface({
   );
 }
 
-function PaywallSurface({
+export function PaywallSurface({
   video,
   entitlement,
   onPreview,

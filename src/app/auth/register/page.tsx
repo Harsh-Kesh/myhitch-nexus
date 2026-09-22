@@ -38,6 +38,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { ProgressBar } from "@/components/ui/progress";
 import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in";
 import { register as registerUser } from "@/lib/mock-api";
 import type { UserRole } from "@/lib/mock-api/types";
 import { cn, formatBytes } from "@/lib/utils";
@@ -263,7 +264,7 @@ export default function RegisterPage() {
   const submit = async () => {
     setSubmitting(true);
     try {
-      await registerUser({ name, email, password, role, country });
+      await registerUser({ name, email, password, role, country, acceptedTerms });
       toast({
         title: "Account created",
         description: needsOrg
@@ -314,6 +315,15 @@ export default function RegisterPage() {
             Sign in
           </Link>
         </p>
+
+        <div className="mt-4">
+          <GoogleSignInButton className="w-full" />
+        </div>
+        <div className="my-5 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-2xs uppercase tracking-wide text-fg-subtle">or continue with step-by-step registration</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
       </div>
 
       <Stepper

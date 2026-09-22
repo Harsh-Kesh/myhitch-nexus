@@ -2,14 +2,14 @@
 // updateOrganisationStatus(). Admin-only.
 import { NextResponse, type NextRequest } from "next/server";
 import { decideOrganisationVerification } from "@/lib/server/adminOrganizations";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["moderator", "super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
   const { id } = await params;
@@ -26,7 +26,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   try {
     const result = await decideOrganisationVerification(
-      { id: account.id, name: account.fullName },
+      { id: account.id, name: account.fullName, roles: account.roles },
       id,
       body.status,
       body.reason?.trim() ?? "",

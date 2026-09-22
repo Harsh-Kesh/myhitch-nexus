@@ -49,7 +49,10 @@ export default function SetPasswordPage() {
     try {
       await setPassword.mutateAsync(values.newPassword);
       toast({ title: "Password set" });
-      router.push(currentUser?.roles.includes("admin") ? "/admin" : "/");
+      const isAdminTier = currentUser?.roles.some((role) =>
+        ["moderator", "finance-admin", "super-admin"].includes(role),
+      );
+      router.push(isAdminTier ? "/admin" : "/");
     } catch (err) {
       toast({
         title: "Couldn't set your password",

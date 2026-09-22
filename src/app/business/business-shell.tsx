@@ -4,6 +4,7 @@ import {
   IconBuildingStore,
   IconChartHistogram,
   IconCreditCard,
+  IconKey,
   IconLink,
   IconShieldCheck,
   IconSpeakerphone,
@@ -97,9 +98,24 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
           title: "Configure",
           items: [
             {
+              href: "/business/team",
+              label: "Team members",
+              icon: <IconUsers />,
+            },
+            {
               href: "/business/verification",
               label: "Verification",
               icon: <IconShieldCheck />,
+            },
+          ],
+        },
+        {
+          title: "Enterprise",
+          items: [
+            {
+              href: "/business/enterprise",
+              label: "Enterprise & API",
+              icon: <IconKey />,
             },
           ],
         },

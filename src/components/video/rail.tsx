@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { Video } from "@/lib/mock-api/types";
 import { cn } from "@/lib/utils";
 import { VideoCard } from "./video-card";
+import { SponsoredCard } from "./sponsored-card";
 
 export interface RailProps {
   title: React.ReactNode;
@@ -16,6 +17,7 @@ export interface RailProps {
   layout?: "wide" | "poster";
   progressFor?: (videoId: string) => number | undefined;
   showStatus?: boolean;
+  showSponsored?: boolean;
   className?: string;
 }
 
@@ -31,6 +33,7 @@ export function Rail({
   layout = "wide",
   progressFor,
   showStatus,
+  showSponsored = true,
   className,
 }: RailProps) {
   const scrollerRef = React.useRef<HTMLDivElement>(null);
@@ -144,6 +147,17 @@ export function Rail({
             />
           </div>
         ))}
+        {showSponsored ? (
+          <div
+            className={cn(
+              layout === "poster"
+                ? "w-[8.5rem] sm:w-40 lg:w-44"
+                : "w-[15rem] sm:w-[17rem] lg:w-[19rem] 3xl:w-[21rem]",
+            )}
+          >
+            <SponsoredCard layout={layout} />
+          </div>
+        ) : null}
         {/* Trailing spacer so the last card clears the viewport edge. */}
         <div aria-hidden className="w-1 shrink-0" />
       </div>
@@ -159,6 +173,7 @@ export function VideoGrid({
   showStatus,
   onToggleWatchlist,
   watchlist,
+  showSponsored,
   className,
 }: {
   videos: Video[];
@@ -167,6 +182,7 @@ export function VideoGrid({
   showStatus?: boolean;
   onToggleWatchlist?: (videoId: string) => void;
   watchlist?: string[];
+  showSponsored?: boolean;
   className?: string;
 }) {
   return (
@@ -190,6 +206,7 @@ export function VideoGrid({
           inWatchlist={watchlist?.includes(video.id)}
         />
       ))}
+      {showSponsored ? <SponsoredCard layout={layout} /> : null}
     </div>
   );
 }

@@ -52,6 +52,7 @@ import type {
   BulkImportRow,
   ContentStatus,
   ContentType,
+  MediaKind,
   SubtitleTrack,
   UploadSession,
   VideoDraft,
@@ -94,6 +95,11 @@ const ACCESS_MODELS: Array<{ value: AccessModel; label: string; description: str
   { value: "subscription", label: "Requires a paid plan", description: "Included with Nexus Premium or Family." },
 ];
 
+// The two audio-shaped content types (DEC-16, docs/DEVELOPMENT-PLAN.md §11) — every other
+// ContentType is video-shaped. Drives the content-type dropdown's options and the default
+// selection when the Video/Audio toggle below changes.
+const AUDIO_CONTENT_TYPES: ContentType[] = ["music", "podcast"];
+
 export default function UploadPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -116,6 +122,7 @@ export default function UploadPage() {
   const [furthest, setFurthest] = React.useState(0);
 
   /* ----------------------------- Step 1: upload ---------------------------- */
+  const [kind, setKind] = React.useState<MediaKind>("video");
   const [session, setSession] = React.useState<UploadSession | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const [masterAssetPath, setMasterAssetPath] = React.useState<string | null>(null);
@@ -166,6 +173,7 @@ export default function UploadPage() {
         channelId,
         fileName: file.name,
         fileSizeBytes: file.size,
+        kind,
       });
       await api.uploadMasterFile(signedUrl, file, (loaded, total) => {
         setSession((current) => (current ? { ...current, uploadedBytes: loaded, fileSizeBytes: total } : current));
@@ -197,6 +205,13 @@ export default function UploadPage() {
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [contentType, setContentType] = React.useState<ContentType>("user-generated");
+
+  const setKindAndContentType = (nextKind: MediaKind) => {
+    setKind(nextKind);
+    // Keep the two in sync rather than letting a video-shaped content type survive a
+    // switch to Audio (or vice versa) — each kind only offers its own content types below.
+    setContentType(nextKind === "audio" ? "music" : "user-generated");
+  };
   const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
   const { data: categories = [] } = useCategories();
   const [tags, setTags] = React.useState<string[]>([]);
@@ -230,7 +245,7 @@ export default function UploadPage() {
   const suggestionsRequestedRef = React.useRef(false);
 
   React.useEffect(() => {
-    if (!isRealChannel || !masterAssetPath || STEPS[step].id !== "thumbnails") return;
+    if (!isRealChannel || kind === "audio" || !masterAssetPath || STEPS[step].id !== "thumbnails") return;
     if (suggestionsRequestedRef.current) return;
     suggestionsRequestedRef.current = true;
     suggestedThumbnails.mutate(
@@ -315,6 +330,7 @@ export default function UploadPage() {
       // finishes (see startRealUpload) — not session?.id, which is just the fixed
       // string "real" for a real session and carries no useful information itself.
       uploadSessionId: isRealChannel ? (masterAssetPath ?? "") : (session?.id ?? ""),
+      kind,
       title: title.trim(),
       description,
       contentType,
@@ -465,6 +481,25 @@ export default function UploadPage() {
                         }}
                       />
                     ) : (
+                      <>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <RadioCard
+                          name="upload-kind"
+                          value="video"
+                          checked={kind === "video"}
+                          onChange={() => setKindAndContentType("video")}
+                          title="Video"
+                          description="Films, shows, commercials and every other video vertical."
+                        />
+                        <RadioCard
+                          name="upload-kind"
+                          value="audio"
+                          checked={kind === "audio"}
+                          onChange={() => setKindAndContentType("audio")}
+                          title="Music or podcast"
+                          description="Audio-only — a track, an episode, a performance recording."
+                        />
+                      </div>
                       <div
                         onDragOver={(event) => {
                           event.preventDefault();
@@ -489,7 +524,9 @@ export default function UploadPage() {
                         <p className="mt-1 text-sm text-fg-muted">
                           {isRealChannel
                             ? `Uploaded for real, up to ${Math.round(MAX_MASTER_UPLOAD_BYTES / (1024 * 1024))}MB for this preview build.`
-                            : "ProRes, DNxHD, MP4 or MOV. Resumable — if the connection drops it picks up from the last completed chunk."}
+                            : kind === "audio"
+                              ? "MP3, WAV or M4A. Resumable — if the connection drops it picks up from the last completed chunk."
+                              : "ProRes, DNxHD, MP4 or MOV. Resumable — if the connection drops it picks up from the last completed chunk."}
                         </p>
                         <div className="mt-5 flex flex-wrap justify-center gap-2">
                           <Button variant="primary" onClick={() => fileInputRef.current?.click()}>
@@ -512,8 +549,8 @@ export default function UploadPage() {
                         <input
                           ref={fileInputRef}
                           type="file"
-                          accept="video/*"
-                          aria-label="Upload video file"
+                          accept={kind === "audio" ? "audio/*" : "video/*"}
+                          aria-label={kind === "audio" ? "Upload audio file" : "Upload video file"}
                           className="sr-only"
                           onChange={(event) => {
                             const picked = event.target.files?.[0];
@@ -521,6 +558,7 @@ export default function UploadPage() {
                           }}
                         />
                       </div>
+                      </>
                     )
                   ) : null}
 
@@ -566,11 +604,17 @@ export default function UploadPage() {
                               setContentType(event.target.value as ContentType)
                             }
                           >
-                            {(Object.keys(CONTENT_TYPE_LABELS) as ContentType[]).map((type) => (
-                              <option key={type} value={type}>
-                                {CONTENT_TYPE_LABELS[type]}
-                              </option>
-                            ))}
+                            {(Object.keys(CONTENT_TYPE_LABELS) as ContentType[])
+                              .filter((type) =>
+                                kind === "audio"
+                                  ? AUDIO_CONTENT_TYPES.includes(type)
+                                  : !AUDIO_CONTENT_TYPES.includes(type),
+                              )
+                              .map((type) => (
+                                <option key={type} value={type}>
+                                  {CONTENT_TYPE_LABELS[type]}
+                                </option>
+                              ))}
                           </Select>
                         </Field>
                         <Field
@@ -703,7 +747,7 @@ export default function UploadPage() {
                   {/* ----------------------- Thumbnails ---------------------- */}
                   {STEPS[step].id === "thumbnails" ? (
                     <>
-                      {!isRealChannel ? (
+                      {kind === "audio" ? null : !isRealChannel ? (
                         <div>
                           <p className="flex items-center gap-2 text-sm font-medium text-fg">
                             <IconSparkles className="size-4 text-accent" />
@@ -805,9 +849,13 @@ export default function UploadPage() {
 
                       <div className={cn("border-t border-border pt-5")}>
                         <Field
-                          label="Upload a thumbnail"
+                          label={kind === "audio" ? "Upload cover art" : "Upload a thumbnail"}
                           htmlFor="up-thumbnail-file"
-                          hint="1920×1080 recommended, under 5 MB."
+                          hint={
+                            kind === "audio"
+                              ? "Square, 1400×1400 recommended, under 5 MB."
+                              : "1920×1080 recommended, under 5 MB."
+                          }
                           required={isRealChannel}
                         >
                           <input
@@ -875,18 +923,22 @@ export default function UploadPage() {
                       <Switch
                         checked={autoTranscribe}
                         onCheckedChange={setAutoTranscribe}
-                        label="Auto-transcribe this video"
+                        label={kind === "audio" ? "Auto-transcribe this episode" : "Auto-transcribe this video"}
                         description="Generates a caption track in the source language. Mocked — no speech recognition runs."
                       />
-                      <Switch
-                        checked={audioDescription}
-                        onCheckedChange={setAudioDescription}
-                        label="Audio description track available"
-                        description="Adds an AD option to the player's audio-track menu."
-                      />
+                      {kind === "audio" ? null : (
+                        <Switch
+                          checked={audioDescription}
+                          onCheckedChange={setAudioDescription}
+                          label="Audio description track available"
+                          description="Adds an AD option to the player's audio-track menu."
+                        />
+                      )}
 
                       <div className="border-t border-border pt-5">
-                        <p className="text-sm font-medium text-fg">Subtitle tracks</p>
+                        <p className="text-sm font-medium text-fg">
+                          {kind === "audio" ? "Transcript tracks" : "Subtitle tracks"}
+                        </p>
                         <div className="mt-3 flex flex-wrap items-end gap-2">
                           <Field label="Language" className="min-w-[10rem] flex-1">
                             <Select

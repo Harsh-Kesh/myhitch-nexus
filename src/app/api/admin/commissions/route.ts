@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { listCommissionRates, setCommissionRate, type CommissionScope } from "@/lib/server/commissions";
 import { recordAudit } from "@/lib/server/moderation";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { describeAdminTier, getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 const VALID_SCOPES: CommissionScope[] = ["purchase_rental", "ppv", "membership"];
 
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     await recordAudit({
       actorAccountId: account.id,
       actorName: account.fullName,
-      actorRole: "admin",
+      actorRole: describeAdminTier(account.roles),
       action: "config.commission_rate_set",
       targetType: "commission_rate",
       targetId: rate.id,

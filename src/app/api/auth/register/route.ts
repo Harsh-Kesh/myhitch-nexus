@@ -13,6 +13,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { provisionChannelForRole } from "@/lib/server/channelProvisioning";
 import { query } from "@/lib/server/db";
 import { createLocalAccount, emailIsRegistered } from "@/lib/server/localPassword";
+import { recordLegalAcceptance } from "@/lib/server/legalAcceptance";
 import { toDbRole } from "@/lib/server/rbac";
 import { createSession, setSessionCookie } from "@/lib/server/session";
 
@@ -48,6 +49,7 @@ interface RegisterBody {
   password?: string;
   role?: string;
   country?: string;
+  acceptedTerms?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -70,6 +72,12 @@ export async function POST(request: NextRequest) {
   if (password.length < 8) {
     return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
   }
+  if (body.acceptedTerms !== true) {
+    return NextResponse.json(
+      { error: "You must accept the terms of service and privacy policy." },
+      { status: 400 },
+    );
+  }
   if (!SELF_REGISTRABLE_ROLES.has(toDbRole(role))) {
     return NextResponse.json({ error: "That role can't be self-registered." }, { status: 400 });
   }
@@ -79,6 +87,8 @@ export async function POST(request: NextRequest) {
   }
 
   const account = await createLocalAccount({ email, password, fullName: name, country });
+  await recordLegalAcceptance(account.id, request.headers.get("x-forwarded-for"), "terms_and_privacy");
+  await recordLegalAcceptance(account.id, request.headers.get("x-forwarded-for"), "community_guidelines");
 
   const dbRole = toDbRole(role);
   await query(

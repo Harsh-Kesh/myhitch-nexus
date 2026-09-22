@@ -124,7 +124,10 @@ async function fetchAudienceCounts(
   return rows.map((row) => ({ label: row.label ?? "Unknown", n: Number(row.n) }));
 }
 
-function buildSuppressedBreakdown(rows: Array<{ label: string; n: number }>): RealBreakdownSlice[] {
+/** Exported for getPlatformAnalytics() below — pure JS over already-aggregated {label, n}
+ * rows, so the k-anonymity suppression logic is identical whether the rows came from a
+ * channel-scoped or platform-wide query. */
+export function buildSuppressedBreakdown(rows: Array<{ label: string; n: number }>): RealBreakdownSlice[] {
   const total = rows.reduce((sum, row) => sum + row.n, 0);
   if (total < MIN_AUDIENCE_FOR_BREAKDOWN) return [];
 
@@ -345,6 +348,207 @@ export async function getRealCreatorAnalytics(
     retention,
     topVideos,
     revenueByContent,
+    countries: buildSuppressedBreakdown(countryRows),
+    devices: buildSuppressedBreakdown(deviceRows),
+    languages: buildSuppressedBreakdown(languageRows),
+  };
+}
+
+/* --------------------------- Platform-wide (admin) ----------------------------- */
+
+export interface PlatformVideoRow {
+  videoId: string;
+  title: string;
+  channelId: string;
+  channelName: string;
+  views: number;
+  watchHours: number;
+  completionRate: number;
+}
+
+export interface PlatformChannelRow {
+  channelId: string;
+  channelName: string;
+  views: number;
+  watchHours: number;
+}
+
+export interface PlatformTimeSeriesPoint {
+  date: string;
+  views: number;
+  watchHours: number;
+  uniqueViewers: number;
+}
+
+export interface PlatformAnalytics {
+  range: AnalyticsRange;
+  totals: {
+    views: number;
+    uniqueViewers: number;
+    watchTimeSeconds: number;
+    completionRate: number;
+    averageViewDuration: number;
+  };
+  deltas: {
+    views: number | null;
+    watchTime: number | null;
+    uniqueViewers: number | null;
+  };
+  timeSeries: PlatformTimeSeriesPoint[];
+  topVideos: PlatformVideoRow[];
+  topChannels: PlatformChannelRow[];
+  countries: RealBreakdownSlice[];
+  devices: RealBreakdownSlice[];
+  languages: RealBreakdownSlice[];
+}
+
+interface PlatformVideoAggRow {
+  video_id: string;
+  title: string;
+  channel_id: string;
+  channel_name: string;
+  duration_seconds: number;
+  views: string;
+  watch_seconds: string;
+  completed_count: string;
+}
+
+/** aggregateVideoStats()'s exact shape, platform-wide (no channel filter) and with
+ * channel_id/channel_name added — one query serves both "top videos" and "top channels"
+ * (summed in JS from the same rows), rather than two separate aggregates. */
+async function aggregatePlatformVideoStats(since: Date, until: Date): Promise<PlatformVideoAggRow[]> {
+  return query<PlatformVideoAggRow>(
+    `select v.id as video_id, v.title, v.channel_id, o.name as channel_name, v.duration_seconds,
+            count(wp.account_id) as views,
+            coalesce(sum(wp.position_seconds), 0) as watch_seconds,
+            coalesce(sum(case when wp.completed then 1 else 0 end), 0) as completed_count
+     from videos v
+     join organizations o on o.id = v.channel_id
+     left join watch_progress wp
+       on wp.video_id = v.id and wp.updated_at >= $1 and wp.updated_at < $2
+     group by v.id, v.title, v.channel_id, o.name, v.duration_seconds`,
+    [since, until],
+  );
+}
+
+/** fetchAudienceCounts()'s exact query, platform-wide (channel join/filter dropped). */
+async function fetchPlatformAudienceCounts(
+  column: "country" | "device_type" | "language",
+  since: Date,
+): Promise<Array<{ label: string; n: number }>> {
+  const rows = await query<{ label: string | null; n: string }>(
+    `select wp.${column} as label, count(*) as n
+     from watch_progress wp
+     where wp.updated_at >= $1
+     group by wp.${column}`,
+    [since],
+  );
+  return rows.map((row) => ({ label: row.label ?? "Unknown", n: Number(row.n) }));
+}
+
+/** Real zero-filled daily platform-wide time series via SQL generate_series — the idiom
+ * this project settled on for platform-wide trends (moderation.ts's getModerationTrend(),
+ * commissions.ts's getPlatformRevenueTrend()), not getRealCreatorAnalytics()'s own JS-side
+ * zero-fill loop, which only ever needed to handle one channel's rows. */
+async function fetchPlatformTimeSeries(days: number): Promise<PlatformTimeSeriesPoint[]> {
+  const rows = await query<{ date: string; views: string; watch_seconds: string }>(
+    `select d::date::text as date,
+            coalesce(r.views, 0) as views,
+            coalesce(r.watch_seconds, 0) as watch_seconds
+     from generate_series(current_date - ($1::int - 1) * interval '1 day', current_date, interval '1 day') d
+     left join (
+       select date_trunc('day', wp.updated_at)::date as day,
+              count(*) as views,
+              coalesce(sum(wp.position_seconds), 0) as watch_seconds
+       from watch_progress wp
+       where wp.updated_at >= current_date - ($1::int - 1) * interval '1 day'
+       group by 1
+     ) r on r.day = d::date
+     order by d`,
+    [days],
+  );
+  return rows.map((row) => ({
+    date: row.date,
+    views: Number(row.views),
+    // Same "views == uniqueViewers" simplification as the per-channel function — one row
+    // per (account, video), so a real rewatch/multi-session can't be told apart.
+    uniqueViewers: Number(row.views),
+    watchHours: Math.round((Number(row.watch_seconds) / 3600) * 10) / 10,
+  }));
+}
+
+/** Platform-wide counterpart of getRealCreatorAnalytics() — backs the real admin
+ * /admin/analytics page. Deliberately engagement-only (no revenue tab — /admin/finance
+ * already owns platform-wide revenue) and no retention curve (a platform-average
+ * retention across wildly different content lengths/genres isn't an actionable number the
+ * way a per-video or per-channel one is). */
+export async function getPlatformAnalytics(range: AnalyticsRange): Promise<PlatformAnalytics> {
+  const days = RANGE_DAYS[range];
+  const now = new Date();
+  const since = new Date(now.getTime() - days * 86_400_000);
+  const priorSince = new Date(since.getTime() - days * 86_400_000);
+
+  const [currentRows, priorRows, timeSeries, countryRows, deviceRows, languageRows] = await Promise.all([
+    aggregatePlatformVideoStats(since, now),
+    aggregatePlatformVideoStats(priorSince, since),
+    fetchPlatformTimeSeries(days),
+    fetchPlatformAudienceCounts("country", since),
+    fetchPlatformAudienceCounts("device_type", since),
+    fetchPlatformAudienceCounts("language", since),
+  ]);
+
+  const current = sumTotals(currentRows);
+  const prior = sumTotals(priorRows);
+
+  const topVideos = [...currentRows]
+    .map((row) => ({
+      videoId: row.video_id,
+      title: row.title,
+      channelId: row.channel_id,
+      channelName: row.channel_name,
+      views: Number(row.views),
+      watchHours: Math.round((Number(row.watch_seconds) / 3600) * 10) / 10,
+      completionRate: Number(row.views) > 0 ? Math.round((Number(row.completed_count) / Number(row.views)) * 100) : 0,
+    }))
+    .filter((row) => row.views > 0)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 10);
+
+  const channelTotals = new Map<string, { channelName: string; views: number; watchSeconds: number }>();
+  for (const row of currentRows) {
+    const existing = channelTotals.get(row.channel_id) ?? { channelName: row.channel_name, views: 0, watchSeconds: 0 };
+    existing.views += Number(row.views);
+    existing.watchSeconds += Number(row.watch_seconds);
+    channelTotals.set(row.channel_id, existing);
+  }
+  const topChannels = [...channelTotals.entries()]
+    .map(([channelId, entry]) => ({
+      channelId,
+      channelName: entry.channelName,
+      views: entry.views,
+      watchHours: Math.round((entry.watchSeconds / 3600) * 10) / 10,
+    }))
+    .filter((row) => row.views > 0)
+    .sort((a, b) => b.views - a.views)
+    .slice(0, 10);
+
+  return {
+    range,
+    totals: {
+      views: current.views,
+      uniqueViewers: current.views,
+      watchTimeSeconds: current.watchSeconds,
+      completionRate: current.views > 0 ? Math.round((current.completed / current.views) * 100) : 0,
+      averageViewDuration: current.views > 0 ? Math.round(current.watchSeconds / current.views) : 0,
+    },
+    deltas: {
+      views: pctChange(current.views, prior.views),
+      watchTime: pctChange(current.watchSeconds, prior.watchSeconds),
+      uniqueViewers: pctChange(current.views, prior.views),
+    },
+    timeSeries,
+    topVideos,
+    topChannels,
     countries: buildSuppressedBreakdown(countryRows),
     devices: buildSuppressedBreakdown(deviceRows),
     languages: buildSuppressedBreakdown(languageRows),

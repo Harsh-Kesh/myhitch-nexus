@@ -4,7 +4,6 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   IconArrowLeft,
   IconBrandApple,
-  IconBrandGoogle,
   IconMail,
   IconShieldLock,
 } from "@tabler/icons-react";
@@ -17,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input, PasswordInput } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { useLogin } from "@/lib/mock-api/hooks";
+
+import { GoogleSignInButton } from "@/components/auth/google-sign-in";
 
 const schema = z.object({
   email: z.string().min(1, "Enter your email address").email("That does not look like an email address"),
@@ -83,19 +84,11 @@ export default function LoginPage() {
       </p>
 
       <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <GoogleSignInButton />
         <Button
           variant="secondary"
           onClick={() =>
-            toast({ title: "Social sign-in is a UI demonstration", tone: "info" })
-          }
-        >
-          <IconBrandGoogle />
-          Continue with Google
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() =>
-            toast({ title: "Social sign-in is a UI demonstration", tone: "info" })
+            toast({ title: "Sign in with Apple requires Apple Developer Program ($99/yr)", tone: "info" })
           }
         >
           <IconBrandApple />

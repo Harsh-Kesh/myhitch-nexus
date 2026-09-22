@@ -22,8 +22,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
+  const kind = body.kind === "audio" ? "audio" : "video";
+
   try {
-    const result = await publishVideo(account.id, body as PublishVideoInput);
+    const result = await publishVideo(account.id, { ...body, kind } as PublishVideoInput);
     switch (result.outcome) {
       case "not_channel_member":
         return NextResponse.json({ error: "You aren't a member of that channel." }, { status: 403 });

@@ -416,7 +416,12 @@ function QueueRow({
               Watch
             </Button>
           ) : null}
-          {onAction ? (
+          {item.kind === "copyright" ? (
+            <Button variant="ghost" size="sm" href="/admin/reports">
+              <IconExternalLink />
+              Review claim
+            </Button>
+          ) : onAction ? (
             <Button variant="primary" size="sm" onClick={onAction}>
               Action
             </Button>

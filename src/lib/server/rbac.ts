@@ -24,7 +24,9 @@ const MOCK_TO_DB_ROLE: Record<string, string> = {
   producer: "producer",
   education: "education",
   organisation: "organisation",
-  admin: "admin",
+  moderator: "moderator",
+  "finance-admin": "finance-admin",
+  "super-admin": "super-admin",
 };
 
 const DB_TO_MOCK_ROLE: Record<string, string> = Object.fromEntries(
@@ -54,6 +56,25 @@ export async function getRequestAccount(request: NextRequest): Promise<SessionAc
 export async function accountHasRole(request: NextRequest, role: string): Promise<boolean> {
   const account = await getRequestAccount(request);
   return Boolean(account?.roles.includes(toDbRole(role)));
+}
+
+/** For an already-resolved account (every admin route already has one from
+ * getRequestAccount()) — scoped-admin-role gate (ROLE-8/9/10, SEC-1): each admin route
+ * passes the exact tiers docs/openapi.yaml documents for it, e.g.
+ * hasAnyRole(account, ["moderator", "super-admin"]). */
+export function hasAnyRole(account: SessionAccount, roles: string[]): boolean {
+  return roles.some((role) => account.roles.includes(toDbRole(role)));
+}
+
+/** The real audit-log counterpart of the generic "admin" actorRole literal every
+ * recordAudit() call used before scoped roles existed — most-privileged tier first, since
+ * an account can hold more than one (additive roles). Falls back to "admin" only for a
+ * pre-migration edge case that shouldn't exist for any real account any more. */
+export function describeAdminTier(roles: string[]): string {
+  if (roles.includes("super-admin")) return "super-admin";
+  if (roles.includes("finance-admin")) return "finance-admin";
+  if (roles.includes("moderator")) return "moderator";
+  return "admin";
 }
 
 /**

@@ -10,6 +10,7 @@ interface CreateUploadBody {
   channelId?: string;
   fileName?: string;
   fileSizeBytes?: number;
+  kind?: "video" | "audio";
 }
 
 export async function POST(request: NextRequest) {
@@ -30,10 +31,23 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await createUploadUrl(account.id, body.channelId, body.fileName, body.fileSizeBytes);
+    const result = await createUploadUrl(
+      account.id,
+      body.channelId,
+      body.fileName,
+      body.fileSizeBytes,
+      body.kind === "audio" ? "audio" : "video",
+    );
     switch (result.outcome) {
       case "not_channel_member":
         return NextResponse.json({ error: "You aren't a member of that channel." }, { status: 403 });
+      case "upload_restricted":
+        return NextResponse.json(
+          {
+            error: `Uploads for this channel are temporarily suspended until ${new Date(result.until).toLocaleDateString()} due to a community guidelines strike.`,
+          },
+          { status: 403 },
+        );
       case "too_large":
         return NextResponse.json(
           { error: `File is too large for this preview build (max ${Math.round(result.maxBytes / (1024 * 1024))}MB).` },

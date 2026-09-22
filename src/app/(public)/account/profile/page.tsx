@@ -5,8 +5,10 @@ import {
   IconLock,
   IconPencil,
   IconPlus,
+  IconTrash,
   IconUserPlus,
 } from "@tabler/icons-react";
+import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
 import {
+  qk,
   useCurrentUser,
   useSwitchProfile,
   useUpdateUser,
@@ -35,6 +38,7 @@ const GRADIENTS: Array<[string, string]> = [
 
 export default function ProfilePage() {
   const { data: user } = useCurrentUser();
+  const queryClient = useQueryClient();
   const updateUser = useUpdateUser();
   const switchProfile = useSwitchProfile();
   const { toast } = useToast();
@@ -46,6 +50,9 @@ export default function ProfilePage() {
   const [newKind, setNewKind] = React.useState<ViewerProfile["kind"]>("adult");
   const [newRating, setNewRating] = React.useState<AgeRating>("18");
   const [newGradient, setNewGradient] = React.useState(0);
+  const [newPin, setNewPin] = React.useState("");
+  const [submittingProfile, setSubmittingProfile] = React.useState(false);
+  const [actionProfileId, setActionProfileId] = React.useState<string | null>(null);
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -81,19 +88,110 @@ export default function ProfilePage() {
     );
   };
 
-  const addProfile = () => {
-    const profile: ViewerProfile = {
-      id: `prof_${Date.now()}`,
-      name: newName.trim() || "New profile",
-      kind: newKind,
-      avatarGradient: GRADIENTS[newGradient],
-      maxAgeRating: newRating,
-      language: user.language,
-    };
-    updateUser.mutate({ profiles: [...user.profiles, profile] });
-    setAddOpen(false);
-    setNewName("");
-    toast({ title: "Profile added", description: `${profile.name} can now watch on this account.` });
+  const addProfile = async () => {
+    const profileName = newName.trim() || "New profile";
+    setSubmittingProfile(true);
+
+    if (isRealAccount) {
+      try {
+        const ratingMap: Record<AgeRating, "ALL" | "PG" | "TEEN" | "18+"> = {
+          U: "ALL",
+          PG: "PG",
+          "12": "TEEN",
+          "15": "TEEN",
+          "18": "18+",
+        };
+
+        const res = await fetch("/api/account/profiles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: profileName,
+            isKids: newKind === "child",
+            maturityRating: ratingMap[newRating] || "ALL",
+            pinCode: newPin ? newPin.trim() : undefined,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to create profile");
+        }
+
+        await queryClient.invalidateQueries({ queryKey: qk.user });
+        toast({
+          title: "Profile added",
+          description: `${profileName} can now watch on this account.`,
+        });
+        setAddOpen(false);
+        setNewName("");
+        setNewPin("");
+      } catch (err: any) {
+        toast({
+          tone: "error",
+          title: "Could not add profile",
+          description: err.message,
+        });
+      } finally {
+        setSubmittingProfile(false);
+      }
+    } else {
+      const profile: ViewerProfile = {
+        id: `prof_${Date.now()}`,
+        name: profileName,
+        kind: newKind,
+        avatarGradient: GRADIENTS[newGradient],
+        maxAgeRating: newRating,
+        language: user.language,
+      };
+      updateUser.mutate({ profiles: [...user.profiles, profile] });
+      setAddOpen(false);
+      setNewName("");
+      setNewPin("");
+      setSubmittingProfile(false);
+      toast({
+        title: "Profile added",
+        description: `${profile.name} can now watch on this account.`,
+      });
+    }
+  };
+
+  const deleteProfile = async (profileId: string, profileName: string) => {
+    if (!confirm(`Are you sure you want to delete profile "${profileName}"?`)) return;
+    setActionProfileId(profileId);
+
+    if (isRealAccount) {
+      try {
+        const res = await fetch(`/api/account/profiles/${profileId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || "Failed to delete profile");
+        }
+        await queryClient.invalidateQueries({ queryKey: qk.user });
+        toast({
+          title: "Profile deleted",
+          description: `${profileName} has been removed.`,
+        });
+      } catch (err: any) {
+        toast({
+          tone: "error",
+          title: "Could not delete profile",
+          description: err.message,
+        });
+      } finally {
+        setActionProfileId(null);
+      }
+    } else {
+      const remaining = user.profiles.filter((p) => p.id !== profileId);
+      updateUser.mutate({ profiles: remaining });
+      setActionProfileId(null);
+      toast({
+        title: "Profile deleted",
+        description: `${profileName} has been removed.`,
+      });
+    }
   };
 
   return (
@@ -102,55 +200,82 @@ export default function ProfilePage() {
       <Card>
         <CardHeader
           title="Viewer profiles"
-          description="Up to five profiles share this account. Each keeps its own watchlist, history and recommendations."
+          description="Up to five profiles share this account (Family Tier). Each keeps its own watchlist, history, parental ratings and recommendations."
           action={
-            <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)}>
-              <IconUserPlus />
-              Add profile
-            </Button>
+            <div className="flex items-center gap-3">
+              <Badge tone={user.profiles.length >= 5 ? "warning" : "neutral"} size="sm">
+                {user.profiles.length} of 5 Profiles Used
+              </Badge>
+              {user.profiles.length < 5 && (
+                <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)}>
+                  <IconUserPlus />
+                  Add profile
+                </Button>
+              )}
+            </div>
           }
         />
         <CardBody>
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {user.profiles.map((profile) => {
               const active = profile.id === user.activeProfileId;
+              const canDelete = user.profiles.length > 1 && !active;
               return (
-                <button
+                <div
                   key={profile.id}
-                  type="button"
-                  onClick={() => {
-                    switchProfile.mutate(profile.id);
-                    toast({ title: `Now viewing as ${profile.name}` });
-                  }}
                   className={cn(
-                    "flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors",
+                    "relative flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors",
                     active
                       ? "border-accent bg-accent/[0.07]"
                       : "border-border bg-surface-2 hover:border-border-strong",
                   )}
                 >
-                  <Avatar
-                    name={profile.name}
-                    gradient={profile.avatarGradient}
-                    src={profile.avatarUrl}
-                    size="xl"
-                  />
-                  <span className="text-sm font-medium text-fg">{profile.name}</span>
-                  <span className="flex items-center gap-1.5">
-                    <Badge tone={profile.kind === "adult" ? "neutral" : "info"} size="sm">
-                      {profile.kind}
-                    </Badge>
-                    <Badge tone="outline" size="sm">
-                      {profile.maxAgeRating}
-                    </Badge>
-                  </span>
-                  {active ? (
-                    <Badge tone="accent" size="sm">
-                      <IconCheck />
-                      Active
-                    </Badge>
-                  ) : null}
-                </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      aria-label={`Delete ${profile.name}`}
+                      disabled={actionProfileId === profile.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteProfile(profile.id, profile.name);
+                      }}
+                      className="absolute right-2 top-2 rounded p-1 text-fg-subtle transition-colors hover:bg-danger/10 hover:text-danger"
+                    >
+                      <IconTrash className="size-3.5" />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      switchProfile.mutate(profile.id);
+                      toast({ title: `Now viewing as ${profile.name}` });
+                    }}
+                    className="flex flex-col items-center gap-2 w-full"
+                  >
+                    <Avatar
+                      name={profile.name}
+                      gradient={profile.avatarGradient}
+                      src={profile.avatarUrl}
+                      size="xl"
+                    />
+                    <span className="text-sm font-medium text-fg">{profile.name}</span>
+                    <span className="flex items-center gap-1.5">
+                      <Badge tone={profile.kind === "adult" ? "neutral" : "info"} size="sm">
+                        {profile.kind}
+                      </Badge>
+                      <Badge tone="outline" size="sm">
+                        {profile.maxAgeRating}
+                      </Badge>
+                    </span>
+                    {active ? (
+                      <Badge tone="accent" size="sm">
+                        <IconCheck />
+                        Active
+                      </Badge>
+                    ) : null}
+                  </button>
+                </div>
               );
             })}
 
@@ -358,7 +483,7 @@ export default function ProfilePage() {
             <Button variant="ghost" onClick={() => setAddOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={addProfile}>
+            <Button variant="primary" loading={submittingProfile} onClick={addProfile}>
               Add profile
             </Button>
           </>
@@ -406,6 +531,21 @@ export default function ProfilePage() {
                 </option>
               ))}
             </Select>
+          </Field>
+
+          <Field
+            label="Parental PIN (optional)"
+            htmlFor="new-profile-pin"
+            hint="Require a 4-digit PIN for parental controls."
+          >
+            <Input
+              id="new-profile-pin"
+              type="password"
+              maxLength={4}
+              value={newPin}
+              onChange={(event) => setNewPin(event.target.value.replace(/\D/g, ""))}
+              placeholder="1234"
+            />
           </Field>
 
           <Field label="Avatar colour">

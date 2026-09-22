@@ -3,14 +3,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateCategoryFeatured } from "@/lib/server/catalogue";
 import { recordAudit } from "@/lib/server/moderation";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { describeAdminTier, getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
   const { id } = await params;
@@ -33,7 +33,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     await recordAudit({
       actorAccountId: account.id,
       actorName: account.fullName,
-      actorRole: "admin",
+      actorRole: describeAdminTier(account.roles),
       action: "config.categories_updated",
       targetType: "category",
       targetId: id,

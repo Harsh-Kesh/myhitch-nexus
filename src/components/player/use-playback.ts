@@ -44,7 +44,10 @@ export function usePlayback({
   onLimitReached,
   onTimeUpdate,
 }: {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
+  // HTMLAudioElement/HTMLVideoElement both extend HTMLMediaElement, and every member this
+  // hook touches (.play/.pause/.currentTime/loadedmetadata/timeupdate/...) lives on that
+  // shared base — AudioPlayer passes an <audio> ref through the exact same hook.
+  videoRef: React.RefObject<HTMLMediaElement | null>;
   duration: number;
   startAt?: number;
   limitSeconds?: number;

@@ -7,6 +7,7 @@ import "server-only";
 import { query } from "./db";
 import { createDocumentUrl } from "./storage";
 import { recordAudit } from "./moderation";
+import { describeAdminTier } from "./rbac";
 
 // organizations.type's real values (creator/business/government/education/non_profit,
 // plus advertiser/producer per 20260915000002) mapped to the mock's ChannelKind labels —
@@ -147,7 +148,7 @@ export async function listAdminOrganisations(): Promise<AdminOrganisationRow[]> 
 export type DecideOrganisationResult = { outcome: "success" } | { outcome: "not_found" };
 
 export async function decideOrganisationVerification(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   organizationId: string,
   decision: "verified" | "rejected",
   reason: string,
@@ -164,7 +165,7 @@ export async function decideOrganisationVerification(
   await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: `organisation.${decision}`,
     targetType: "organisation",
     targetId: organizationId,

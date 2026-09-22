@@ -6,6 +6,7 @@ import {
   IconBroadcast,
   IconBuildingStore,
   IconChevronDown,
+  IconDownload,
   IconHistory,
   IconHome,
   IconLayoutGrid,
@@ -51,6 +52,8 @@ const PRIMARY_NAV: Array<{
   { href: "/education", label: "Education" },
   { href: "/news", label: "News" },
   { href: "/entertainment", label: "Entertainment" },
+  { href: "/music", label: "Music" },
+  { href: "/podcasts", label: "Podcasts" },
   { href: "/creators", label: "Creators" },
   { href: "/explore", label: "Categories" },
 ];
@@ -321,6 +324,9 @@ export function SiteHeader() {
                 <MenuItem href="/account/watchlist" icon={<IconBookmark />}>
                   Watchlist
                 </MenuItem>
+                <MenuItem href="/account/downloads" icon={<IconDownload />}>
+                  Downloads
+                </MenuItem>
                 <MenuItem href="/account/history" icon={<IconHistory />}>
                   Watch history
                 </MenuItem>
@@ -328,7 +334,7 @@ export function SiteHeader() {
                   Plans &amp; pricing
                 </MenuItem>
                 {user.roles.some((role) =>
-                  ["creator", "business", "advertiser", "admin"].includes(role),
+                  ["creator", "business", "advertiser", "moderator", "finance-admin", "super-admin"].includes(role),
                 ) ? (
                   <>
                     <MenuSeparator />
@@ -348,7 +354,7 @@ export function SiteHeader() {
                         Business Studio
                       </MenuItem>
                     ) : null}
-                    {user.roles.includes("admin") ? (
+                    {user.roles.some((role) => ["moderator", "finance-admin", "super-admin"].includes(role)) ? (
                       <MenuItem href="/admin" icon={<IconShieldCog />}>
                         Admin console
                       </MenuItem>

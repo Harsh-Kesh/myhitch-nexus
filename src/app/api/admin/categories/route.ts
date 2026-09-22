@@ -4,7 +4,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createCategory } from "@/lib/server/catalogue";
 import { recordAudit } from "@/lib/server/moderation";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { describeAdminTier, getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 interface CreateCategoryBody {
   slug?: string;
@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     await recordAudit({
       actorAccountId: account.id,
       actorName: account.fullName,
-      actorRole: "admin",
+      actorRole: describeAdminTier(account.roles),
       action: "config.category_created",
       targetType: "category",
       targetId: result.category.id,

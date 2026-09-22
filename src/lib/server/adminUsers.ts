@@ -7,7 +7,7 @@ import "server-only";
 import { query } from "./db";
 import { emailIsRegistered, generateTempPassword, hashPassword } from "./localPassword";
 import { recordAudit } from "./moderation";
-import { toDbRole, toMockRoles } from "./rbac";
+import { describeAdminTier, toDbRole, toMockRoles } from "./rbac";
 import { revokeAccountSessions } from "./session";
 
 export interface AdminUserRow {
@@ -77,9 +77,10 @@ export async function listAdminUsers(): Promise<AdminUserRow[]> {
 }
 
 export async function updateAdminUserRoles(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   targetAccountId: string,
   mockRoles: string[],
+  reason: string,
 ): Promise<void> {
   const dbRoles = mockRoles.map(toDbRole);
   await query(`delete from account_roles where account_id = $1`, [targetAccountId]);
@@ -92,11 +93,11 @@ export async function updateAdminUserRoles(
   await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: "user.roles_updated",
     targetType: "user",
     targetId: targetAccountId,
-    reason: `Roles set to: ${mockRoles.join(", ")}.`,
+    reason: `Roles set to: ${mockRoles.join(", ")}. ${reason}`,
     severity: "notice",
   });
 }
@@ -114,7 +115,7 @@ export type CreateAdminUserResult =
  * verification, unlike the self-service registration path in api/auth/register.
  */
 export async function createAdminUser(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   input: { email: string; fullName: string; roles: string[] },
 ): Promise<CreateAdminUserResult> {
   const email = input.email.trim().toLowerCase();
@@ -145,7 +146,7 @@ export async function createAdminUser(
   await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: "user.created",
     targetType: "user",
     targetId: accountId,
@@ -157,7 +158,7 @@ export async function createAdminUser(
 }
 
 export async function updateAdminUserStatus(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   targetAccountId: string,
   status: AdminUserRow["status"],
   reason: string,
@@ -172,7 +173,7 @@ export async function updateAdminUserStatus(
   await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: `user.${status}`,
     targetType: "user",
     targetId: targetAccountId,

@@ -3,14 +3,14 @@
 // password (see adminUsers.ts's createAdminUser() header comment). Admin-only.
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminUser, listAdminUsers } from "@/lib/server/adminUsers";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await createAdminUser(
-      { id: account.id, name: account.fullName },
+      { id: account.id, name: account.fullName, roles: account.roles },
       { email, fullName, roles },
     );
     if (result.outcome === "email_taken") {

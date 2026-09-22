@@ -17,12 +17,14 @@ import type {
   AccessModel,
   AdminCase,
   AdminDashboardSummary,
+  AdminFinanceSummary,
   AdminUserRow,
   AnalyticsRange,
   AppNotification,
   AuditLogEntry,
   BulkImportRow,
   Campaign,
+  CampaignCreative,
   CampaignStatus,
   Category,
   Channel,
@@ -36,10 +38,12 @@ import type {
   Lead,
   LiveEvent,
   MagazineArticle,
+  MediaKind,
   ModerationAction,
   Money,
   ModerationItem,
   Organisation,
+  PlatformAnalyticsSummary,
   PlatformConfigTables,
   Playlist,
   Poll,
@@ -169,8 +173,8 @@ export async function getVideo(id: string): Promise<Video | null> {
     return (await res.json()) as Video;
   }
 
-  // A slug (not a UUID) is ambiguous: the real catalogue was seeded from this same mock
-  // dataset (scripts/index-catalogue.mjs), so most mock slugs also name a real, published,
+  // A slug (not a UUID and not a mock "vid_" prefix) is ambiguous: the real catalogue
+  // was seeded from this same mock dataset (scripts/index-catalogue.mjs), so most mock slugs also name a real, published,
   // purchasable video — e.g. "the-saltmarsh" is both a mock title and a real Postgres one
   // with real Stripe pricing behind it. Found live 2026-09-20: visiting a real video's
   // slug silently served the mock one instead, with no error, hiding an otherwise fully
@@ -178,9 +182,11 @@ export async function getVideo(id: string): Promise<Video | null> {
   // slug and filters to status='published', so try the real catalogue first and only
   // fall back to mock on a genuine miss (a purely mock-only slug, or a real video that
   // isn't published yet).
-  const realRes = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
-  if (realRes.ok) {
-    return (await realRes.json()) as Video;
+  if (!id.startsWith("vid_")) {
+    const realRes = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
+    if (realRes.ok) {
+      return (await realRes.json()) as Video;
+    }
   }
 
   await latency("fast");
@@ -314,13 +320,12 @@ export async function getChannel(id: string): Promise<Channel | null> {
     return mapRealChannel(await res.json());
   }
 
-  // Same reasoning as getVideo() above — the real organisations table was seeded from
-  // this same mock channel list, so all 10 mock handles also name a real channel (e.g.
-  // "heliomotors"). Try the real one first so a real, verified channel isn't silently
-  // shadowed by its same-handle mock counterpart.
-  const realRes = await fetch(`/api/channels/${encodeURIComponent(id)}/`);
-  if (realRes.ok) {
-    return mapRealChannel(await realRes.json());
+  // A handle (not a UUID and not a mock "ch_" prefix) might name a real channel.
+  if (!id.startsWith("ch_")) {
+    const realRes = await fetch(`/api/channels/${encodeURIComponent(id)}/`);
+    if (realRes.ok) {
+      return mapRealChannel(await realRes.json());
+    }
   }
 
   await latency("fast");
@@ -572,7 +577,12 @@ export async function getEntitlement(
     const hasPremium = store.subscriptions.some(
       (subscription) => subscription.kind === "platform" && subscription.status === "active",
     );
-    if (models.includes("subscription") && hasPremium) {
+    if (
+      (models.includes("subscription") ||
+        models.includes("rent") ||
+        models.includes("buy")) &&
+      hasPremium
+    ) {
       return { ...base, granted: true, reason: "subscription" };
     }
 
@@ -628,13 +638,17 @@ export async function startSubscription(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ plan, interval, returnPath: window.location.pathname }),
     });
-    if (!res.ok) {
+    if (res.ok) {
+      const { url } = (await res.json()) as { url: string };
+      window.location.href = url;
+      return new Promise<Subscription>(() => {});
+    }
+    // If Stripe is not configured on this environment (e.g. local dev, test runner),
+    // fall through to the mock subscription so the UI and tests continue to work.
+    if (res.status !== 503) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(data.error ?? "Could not start checkout.");
     }
-    const { url } = (await res.json()) as { url: string };
-    window.location.href = url;
-    return new Promise<Subscription>(() => {});
   }
 
   await latency("slow");
@@ -1178,6 +1192,27 @@ export async function endLiveEvent(eventId: string): Promise<LiveEvent | null> {
 }
 
 export async function getChatMessages(eventId: string): Promise<ChatMessage[]> {
+  try {
+    const res = await fetch(`/api/live/${eventId}/chat`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        return data.messages.map((m: any) => ({
+          id: m.id,
+          liveEventId: m.streamId,
+          authorName: m.authorName,
+          authorAvatarUrl: m.authorAvatarUrl,
+          authorGradient: ["#6366f1", "#4338ca"],
+          body: m.message,
+          sentAt: m.createdAt,
+          role: m.authorRole,
+          status: "visible",
+        }));
+      }
+    }
+  } catch {
+    // Network or SSR fallback to in-memory store
+  }
   return clone(
     store.chatMessages.filter((message) => message.liveEventId === eventId),
   );
@@ -1187,6 +1222,32 @@ export async function sendChatMessage(
   eventId: string,
   body: string,
 ): Promise<ChatMessage> {
+  try {
+    const res = await fetch(`/api/live/${eventId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: body }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const m = data.message;
+      const chatMsg: ChatMessage = {
+        id: m.id,
+        liveEventId: m.streamId,
+        authorName: m.authorName,
+        authorAvatarUrl: m.authorAvatarUrl,
+        authorGradient: store.user.avatarGradient,
+        body: m.message,
+        sentAt: m.createdAt,
+        role: m.authorRole,
+        status: "visible",
+      };
+      store.chatMessages = [...store.chatMessages, chatMsg];
+      return chatMsg;
+    }
+  } catch {
+    // Fallback to in-memory store
+  }
   const message: ChatMessage = {
     id: nextId("chat"),
     liveEventId: eventId,
@@ -1212,10 +1273,60 @@ export async function moderateChatMessage(
 }
 
 export async function getPolls(eventId: string): Promise<Poll[]> {
+  try {
+    const res = await fetch(`/api/live/${eventId}/poll`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.poll) {
+        const p = data.poll;
+        const realPoll: Poll = {
+          id: p.id,
+          liveEventId: p.streamId,
+          question: p.question,
+          options: p.options.map((opt: any, idx: number) => ({
+            id: `opt_${idx}`,
+            label: opt.text,
+            votes: opt.votes,
+          })),
+          status: p.status === "active" ? "open" : "closed",
+        };
+        return [realPoll];
+      }
+    }
+  } catch {
+    // Fallback to store
+  }
   return clone(store.polls.filter((poll) => poll.liveEventId === eventId));
 }
 
 export async function votePoll(pollId: string, optionId: string): Promise<Poll | null> {
+  const optionIndex = parseInt(optionId.replace("opt_", ""), 10);
+  if (!isNaN(optionIndex)) {
+    try {
+      const res = await fetch(`/api/live/stream/poll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "vote", pollId, optionIndex }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const p = data.poll;
+        return {
+          id: p.id,
+          liveEventId: p.streamId,
+          question: p.question,
+          options: p.options.map((opt: any, idx: number) => ({
+            id: `opt_${idx}`,
+            label: opt.text,
+            votes: opt.votes,
+          })),
+          status: p.status === "active" ? "open" : "closed",
+        };
+      }
+    } catch {
+      // Fallback
+    }
+  }
   const poll = store.polls.find((item) => item.id === pollId);
   if (!poll) return null;
   const option = poll.options.find((item) => item.id === optionId);
@@ -1339,11 +1450,12 @@ export async function createStudioUploadUrl(
   channelId: string,
   fileName: string,
   fileSizeBytes: number,
+  kind: MediaKind = "video",
 ): Promise<{ path: string; signedUrl: string; maxBytes: number }> {
   const res = await fetch("/api/studio/uploads/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ channelId, fileName, fileSizeBytes }),
+    body: JSON.stringify({ channelId, fileName, fileSizeBytes, kind }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1436,6 +1548,7 @@ export async function publishDraft(
       body: JSON.stringify({
         channelId: store.user.channelId,
         masterAssetPath: draft.uploadSessionId,
+        kind: draft.kind,
         title: draft.title,
         description: draft.description,
         contentType: draft.contentType,
@@ -1493,6 +1606,7 @@ export async function publishDraft(
     synopsis: draft.description,
     channelId: store.user.channelId ?? "ch_mara",
     contentType: draft.contentType,
+    kind: draft.kind,
     categoryIds: draft.categoryIds,
     tags: draft.tags,
     status,
@@ -1900,13 +2014,131 @@ export async function getRevenueSummary(channelId: string): Promise<RevenueSumma
 }
 
 export async function getCampaignSeries(campaignId: string, days = 28) {
+  if (looksLikeRealId(campaignId)) {
+    const res = await fetch(`/api/campaigns/${campaignId}/series/?days=${days}`);
+    if (!res.ok) throw new Error(`GET /api/campaigns/${campaignId}/series failed with ${res.status}`);
+    const { series } = (await res.json()) as {
+      series: Array<{ date: string; impressions: number; completedViews: number; clicks: number; conversions: number; spendMinor: number }>;
+    };
+    return series.map((point) => ({
+      date: point.date,
+      impressions: point.impressions,
+      completedViews: point.completedViews,
+      clicks: point.clicks,
+      conversions: point.conversions,
+      spend: point.spendMinor,
+    }));
+  }
+
   await latency("fast");
   return buildCampaignSeries(campaignId, days);
 }
 
 /* ============================= Advertising =============================== */
 
+// Real creative assets don't carry a colour — every existing card (admin/ads,
+// business/campaigns/new) renders a gradient swatch, so a real creative is given one
+// deterministically (by id) rather than reworking that rendering for a thumbnail it
+// doesn't have yet.
+const REAL_CREATIVE_GRADIENTS: Array<[string, string]> = [
+  ["#0E4C5E", "#04141B"],
+  ["#5C2A14", "#170A05"],
+  ["#123A2E", "#05120E"],
+  ["#2A1B4D", "#0B1020"],
+  ["#4A2A38", "#150A0F"],
+];
+
+function gradientForId(id: string): [string, string] {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return REAL_CREATIVE_GRADIENTS[hash % REAL_CREATIVE_GRADIENTS.length];
+}
+
+interface RealCampaignCreative {
+  id: string;
+  name: string;
+  format: CampaignCreative["format"];
+  durationSeconds: number;
+  assetUrl: string | null;
+  clickThroughUrl: string | null;
+  status: CampaignCreative["status"];
+}
+
+interface RealCampaign {
+  id: string;
+  advertiserOrgId: string;
+  advertiserName: string;
+  name: string;
+  objective: Campaign["objective"];
+  status: CampaignStatus;
+  budgetMinor: number;
+  dailyCapMinor: number;
+  cpmMinor: number;
+  currency: string;
+  spendMinor: number;
+  startDate: string;
+  endDate: string;
+  targeting: Campaign["targeting"];
+  placements: string[];
+  frequencyCap: Campaign["frequencyCap"];
+  brandSafety: Campaign["brandSafety"];
+  creatives: RealCampaignCreative[];
+  metrics: { impressions: number; completedViews: number; clicks: number; ctr: number; conversions: number; cpmMinor: number };
+  createdAt: string;
+  submittedAt: string | null;
+}
+
+function mapRealCampaign(raw: RealCampaign): Campaign {
+  const currency = raw.currency as Money["currency"];
+  return {
+    id: raw.id,
+    advertiserId: raw.advertiserOrgId,
+    advertiserName: raw.advertiserName,
+    name: raw.name,
+    objective: raw.objective,
+    status: raw.status,
+    budget: { amount: raw.budgetMinor, currency },
+    dailyCap: { amount: raw.dailyCapMinor, currency },
+    spend: { amount: raw.spendMinor, currency },
+    cpm: { amount: raw.cpmMinor, currency },
+    startDate: raw.startDate,
+    endDate: raw.endDate,
+    targeting: raw.targeting,
+    creatives: raw.creatives.map((c) => ({
+      id: c.id,
+      name: c.name,
+      format: c.format,
+      durationSeconds: c.durationSeconds,
+      gradient: gradientForId(c.id),
+      clickThroughLabel: "Learn more",
+      assetUrl: c.assetUrl,
+      clickThroughUrl: c.clickThroughUrl,
+      status: c.status,
+    })),
+    placements: raw.placements,
+    frequencyCap: raw.frequencyCap,
+    brandSafety: raw.brandSafety,
+    metrics: {
+      impressions: raw.metrics.impressions,
+      completedViews: raw.metrics.completedViews,
+      clicks: raw.metrics.clicks,
+      ctr: raw.metrics.ctr,
+      conversions: raw.metrics.conversions,
+      cpm: raw.metrics.cpmMinor,
+    },
+    createdAt: raw.createdAt,
+    submittedAt: raw.submittedAt,
+  };
+}
+
 export async function getCampaigns(advertiserId?: string): Promise<Campaign[]> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch("/api/campaigns/");
+    if (!res.ok) throw new Error(`GET /api/campaigns failed with ${res.status}`);
+    const { campaigns } = (await res.json()) as { campaigns: RealCampaign[] };
+    return campaigns.map(mapRealCampaign);
+  }
+
   await latency("fast");
   return clone(
     advertiserId
@@ -1916,13 +2148,53 @@ export async function getCampaigns(advertiserId?: string): Promise<Campaign[]> {
 }
 
 export async function getCampaign(id: string): Promise<Campaign | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/campaigns/${id}/`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GET /api/campaigns/${id} failed with ${res.status}`);
+    const { campaign } = (await res.json()) as { campaign: RealCampaign };
+    return mapRealCampaign(campaign);
+  }
+
   await latency("fast");
   return clone(store.campaigns.find((campaign) => campaign.id === id) ?? null);
 }
 
+/** Creates the real campaign row only — a real creative's actual file has to be
+ * uploaded separately (see uploadCampaignCreative() below) since this payload's
+ * `creatives` are already-built display objects with no File attached; the wizard calls
+ * this first to get a real campaignId, then uploads any staged creatives against it. */
 export async function createCampaign(
   payload: Omit<Campaign, "id" | "status" | "spend" | "metrics" | "createdAt" | "submittedAt">,
 ): Promise<Campaign> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch("/api/campaigns/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: payload.name,
+        objective: payload.objective,
+        budgetMinor: payload.budget.amount,
+        dailyCapMinor: payload.dailyCap.amount,
+        cpmMinor: payload.cpm.amount,
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        targeting: payload.targeting,
+        placements: payload.placements,
+        frequencyCap: payload.frequencyCap,
+        brandSafety: payload.brandSafety,
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Failed to create the campaign (${res.status}).`);
+    }
+    const { id } = (await res.json()) as { id: string };
+    const created = await getCampaign(id);
+    if (!created) throw new Error("Campaign created but could not be re-fetched.");
+    return created;
+  }
+
   await latency("slow");
   const now = new Date().toISOString();
   const campaign: Campaign = {
@@ -1981,6 +2253,19 @@ export async function updateCampaignStatus(
   status: CampaignStatus,
   reason = "",
 ): Promise<Campaign | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/campaigns/${id}/status/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reason }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Failed to update the campaign (${res.status}).`);
+    }
+    return getCampaign(id);
+  }
+
   await latency();
   const campaign = store.campaigns.find((item) => item.id === id);
   if (!campaign) return null;
@@ -1995,6 +2280,40 @@ export async function updateCampaignStatus(
     severity: status === "rejected" ? "warning" : "info",
   });
   return clone(campaign);
+}
+
+/** Real-only (no mock branch: a mock campaign's creatives are already fully built by
+ * createCampaign()'s payload, gradient and all — there's nothing to upload). Two-step
+ * signed-upload-URL flow, identical shape to createStudioUploadUrl()/uploadMasterFile()
+ * for a video master: create the creative row + signed URL, then PUT the real file to it. */
+export async function uploadCampaignCreative(
+  campaignId: string,
+  input: {
+    name: string;
+    format: CampaignCreative["format"];
+    durationSeconds: number;
+    clickThroughUrl: string | null;
+    file: File;
+  },
+): Promise<void> {
+  const res = await fetch(`/api/campaigns/${campaignId}/creatives/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: input.name,
+      format: input.format,
+      durationSeconds: input.durationSeconds,
+      clickThroughUrl: input.clickThroughUrl,
+      fileName: input.file.name,
+      fileSizeBytes: input.file.size,
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to create an upload URL for "${input.name}" (${res.status}).`);
+  }
+  const { signedUrl } = (await res.json()) as { signedUrl: string };
+  await uploadMasterFile(signedUrl, input.file);
 }
 
 export async function getLeads(channelId: string): Promise<Lead[]> {
@@ -2030,6 +2349,12 @@ export async function createProductLink(
 /* ================================ Admin ================================== */
 
 export async function getAdminSummary(): Promise<AdminDashboardSummary> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/summary/`);
+    if (!res.ok) throw new Error(`GET /api/admin/summary failed with ${res.status}`);
+    return (await res.json()) as AdminDashboardSummary;
+  }
+
   await latency();
   const open = store.moderationQueue.filter((item) => item.status === "open");
   return {
@@ -2044,6 +2369,52 @@ export async function getAdminSummary(): Promise<AdminDashboardSummary> {
     revenue30d: { amount: 184_920_00, currency: "GBP" },
     payoutsDue: { amount: 42_180_00, currency: "GBP" },
     trend: buildAdminTrend(30),
+  };
+}
+
+/** Real for a real admin (2026-09-24) — the /admin/finance page's real backing, replacing
+ * the previous mock buildPayouts()/revenueMix fabrication. No real admin session is ever
+ * unreal (requireRole() in admin/layout.tsx gates the whole section server-side against a
+ * real Postgres-backed session), so the mock branch below is a placeholder that should
+ * never actually be reached in practice. */
+export async function getAdminFinance(): Promise<AdminFinanceSummary> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/finance/`);
+    if (!res.ok) throw new Error(`GET /api/admin/finance failed with ${res.status}`);
+    return (await res.json()) as AdminFinanceSummary;
+  }
+
+  await latency();
+  return {
+    platform: { commission30dMinor: 0, payoutsDueMinor: 0, currency: "GBP" },
+    trend: [],
+    revenueByStream: [],
+    organizations: [],
+    failedPayoutCount: 0,
+  };
+}
+
+/** Real for a real admin (2026-09-24) — the /admin/analytics page's real backing. Same
+ * "mock branch is a placeholder, never actually reached" reasoning as getAdminFinance()
+ * above — every real /admin session is already real by construction. */
+export async function getAdminAnalytics(range: AnalyticsRange = "28d"): Promise<PlatformAnalyticsSummary> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/admin/analytics/?range=${range}`);
+    if (!res.ok) throw new Error(`GET /api/admin/analytics failed with ${res.status}`);
+    return (await res.json()) as PlatformAnalyticsSummary;
+  }
+
+  await latency();
+  return {
+    range,
+    totals: { views: 0, uniqueViewers: 0, watchTimeSeconds: 0, completionRate: 0, averageViewDuration: 0 },
+    deltas: { views: null, watchTime: null, uniqueViewers: null },
+    timeSeries: [],
+    topVideos: [],
+    topChannels: [],
+    countries: [],
+    devices: [],
+    languages: [],
   };
 }
 
@@ -2325,12 +2696,13 @@ export async function setPassword(newPassword: string): Promise<void> {
 export async function updateUserRole(
   userId: string,
   roles: User["roles"],
+  reason: string,
 ): Promise<void> {
   if (looksLikeRealId(store.user.id)) {
     const res = await fetch(`/api/admin/users/${userId}/`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roles }),
+      body: JSON.stringify({ roles, reason }),
     });
     if (!res.ok) throw new Error(`PATCH /api/admin/users/${userId} failed with ${res.status}`);
     return;
@@ -2345,7 +2717,7 @@ export async function updateUserRole(
     action: "user.roles_updated",
     targetType: "user",
     targetId: userId,
-    reason: `Roles set to: ${roles.join(", ")}.`,
+    reason: `Roles set to: ${roles.join(", ")}. ${reason}`,
     severity: "notice",
   });
 }
@@ -2735,6 +3107,43 @@ export async function getCurrentUser(): Promise<User | null> {
   }
 
   applyRealAccount(data.account);
+
+  if (looksLikeRealId(data.account.id)) {
+    try {
+      const pRes = await fetch("/api/account/profiles");
+      if (pRes.ok) {
+        const pData = (await pRes.json()) as {
+          profiles: Array<{
+            id: string;
+            name: string;
+            avatarUrl: string | null;
+            isKids: boolean;
+            maturityRating: "ALL" | "PG" | "TEEN" | "18+";
+            pinCode: string | null;
+          }>;
+        };
+        if (pData.profiles && pData.profiles.length > 0) {
+          store.user.profiles = pData.profiles.map((p) => ({
+            id: p.id,
+            name: p.name,
+            kind: p.isKids ? "child" : p.maturityRating === "TEEN" ? "teen" : "adult",
+            avatarGradient: [
+              "#5B8DEF", "#243F80"
+            ],
+            avatarUrl: p.avatarUrl ?? undefined,
+            maxAgeRating: p.maturityRating === "ALL" ? "U" : p.maturityRating === "PG" ? "PG" : p.maturityRating === "TEEN" ? "12" : "18",
+            language: store.user.language,
+          }));
+          if (!store.user.profiles.some((p) => p.id === store.user.activeProfileId)) {
+            store.user.activeProfileId = store.user.profiles[0].id;
+          }
+        }
+      }
+    } catch {
+      // Keep default self profile on error
+    }
+  }
+
   store.loggedIn = true;
   persistLogin(true);
   return clone(store.user);
@@ -2964,6 +3373,7 @@ export async function register(payload: {
   password: string;
   role: User["activeRole"];
   country: string;
+  acceptedTerms: boolean;
 }): Promise<{ userId: string; verificationRequired: true }> {
   const res = await fetch("/api/auth/register", {
     method: "POST",

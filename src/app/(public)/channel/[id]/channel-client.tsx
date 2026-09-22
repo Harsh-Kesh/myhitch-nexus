@@ -3,6 +3,7 @@
 import {
   IconBroadcast,
   IconCalendar,
+  IconHeart,
   IconMail,
   IconMapPin,
   IconPlaylist,
@@ -11,6 +12,7 @@ import {
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import * as React from "react";
+import { TipModal } from "@/components/creators/tip-modal";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,10 +27,12 @@ import {
   useChannel,
   useChannelLiveEvents,
   useChannelVideos,
+  useCurrentUser,
   useIsFollowing,
   usePlaylists,
   useToggleFollow,
 } from "@/lib/mock-api/hooks";
+import { CommunityFeed } from "@/components/creators/community-feed";
 import {
   compactNumber,
   formatDate,
@@ -45,10 +49,12 @@ export function ChannelClient() {
   const { data: playlists = [] } = usePlaylists(channel?.id ?? "");
   const { data: liveEvents = [] } = useChannelLiveEvents(channel?.id ?? "");
   const { data: following } = useIsFollowing(channel?.id ?? "");
+  const { data: user } = useCurrentUser();
   const toggleFollow = useToggleFollow();
   const { toast } = useToast();
 
   const [tab, setTab] = React.useState("videos");
+  const [tipModalOpen, setTipModalOpen] = React.useState(false);
 
   const handleToggleFollow = () => {
     if (!channel) return;
@@ -150,6 +156,10 @@ export function ChannelClient() {
             <Button variant={following ? "secondary" : "primary"} onClick={handleToggleFollow}>
               {following ? "Following" : "Follow"}
             </Button>
+            <Button variant="secondary" onClick={() => setTipModalOpen(true)}>
+              <IconHeart className="size-4 mr-1 text-red-400 fill-current" />
+              Tip / Patron
+            </Button>
             {liveNow ? (
               <Button variant="live" href={`/live/${liveNow.id}`}>
                 <IconBroadcast />
@@ -184,11 +194,19 @@ export function ChannelClient() {
             { value: "videos", label: "Videos", count: videos.length },
             { value: "playlists", label: "Playlists", count: playlists.length },
             { value: "live", label: "Live", count: liveEvents.length },
+            { value: "community", label: "Community" },
             { value: "about", label: "About" },
           ]}
         />
 
         <div className="py-6">
+          {tab === "community" && channel ? (
+            <CommunityFeed
+              channelId={channel.id}
+              isOwner={Boolean(user && (user.channelId === channel.id || user.roles?.includes("super-admin")))}
+            />
+          ) : null}
+
           {tab === "videos" ? (
             videos.length ? (
               <VideoGrid videos={videos} />
@@ -372,6 +390,13 @@ export function ChannelClient() {
           </div>
         ) : null}
       </div>
+
+      <TipModal
+        open={tipModalOpen}
+        onClose={() => setTipModalOpen(false)}
+        channelId={channel.id}
+        channelName={channel.name}
+      />
     </div>
   );
 }

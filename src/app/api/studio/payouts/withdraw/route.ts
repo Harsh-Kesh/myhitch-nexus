@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await createPayout(body.channelId, body.amountMinor);
+    const result = await createPayout(body.channelId, { id: account.id, name: account.fullName }, body.amountMinor);
     switch (result.outcome) {
       case "not_onboarded":
         return NextResponse.json({ error: "Finish connecting a bank account first." }, { status: 400 });

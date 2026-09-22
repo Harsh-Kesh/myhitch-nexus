@@ -7,7 +7,7 @@
 import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
-import { getStripe } from "./stripeClient";
+import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { SITE_URL } from "@/lib/utils";
 
 export type PlanId = "premium" | "family" | "business";
@@ -65,8 +65,8 @@ export async function createPlanCheckoutSession(
   if (!unitAmount) return { outcome: "invalid_interval" };
 
   const existing = await queryOne<{ id: string }>(
-    `select id from subscriptions where account_id = $1 and status in ('active', 'past_due')`,
-    [accountId],
+    `select id from subscriptions where account_id = $1 and plan = $2 and status in ('active', 'past_due')`,
+    [accountId, plan],
   );
   if (existing) return { outcome: "already_subscribed" };
 
@@ -101,6 +101,33 @@ function mapStripeStatus(status: Stripe.Subscription.Status): "active" | "past_d
   if (status === "past_due" || status === "unpaid") return "past_due";
   if (status === "canceled") return "cancelled";
   return "incomplete";
+}
+
+/** Credits real platform-wide plan revenue once per Stripe invoice — the exact mirror of
+ * channelMemberships.ts's recordMembershipPaymentFromInvoice(), which only records when
+ * the invoice's underlying subscription HAS a channelId (a channel membership); this
+ * records when it does NOT (a platform-wide Premium/Family/Business plan). The two
+ * functions are always called together from the webhook's invoice.paid handler and are
+ * exact complements, so the same invoice is never recorded into both tables. Found live
+ * 2026-09-24 while scoping the real admin finance page: this had no counterpart at all
+ * before now — real Stripe subscription revenue, the platform's actual primary revenue
+ * stream under the six-tier pricing model, was being collected with zero local record of
+ * it (getPlatformRevenueSummary() only ever summed entitlements/membership_payments). */
+export async function recordSubscriptionPaymentFromInvoice(invoice: Stripe.Invoice): Promise<void> {
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+  const stripeSubscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id;
+  if (!stripeSubscriptionId) return;
+
+  const subscription = await getStripe().subscriptions.retrieve(stripeSubscriptionId);
+  const { accountId, channelId, plan } = subscription.metadata ?? {};
+  if (!accountId || channelId) return; // channel membership, or metadata missing — not platform revenue
+
+  await query(
+    `insert into subscription_payments (account_id, plan, amount_minor, currency, stripe_invoice_id)
+     values ($1, $2, $3, $4, $5)
+     on conflict (stripe_invoice_id) do nothing`,
+    [accountId, (plan as PlanId | undefined) ?? "premium", invoice.amount_paid, (invoice.currency ?? "gbp").toUpperCase(), invoice.id],
+  );
 }
 
 /** Idempotent upsert keyed on stripe_subscription_id — the webhook's
@@ -249,6 +276,7 @@ export async function listRealPlanPurchases(accountId: string): Promise<PlanPurc
     try {
       invoices = await getStripe().invoices.list({ customer: customerId, limit: 100 });
     } catch (err) {
+      if (err instanceof StripeNotConfiguredError) return [];
       console.error("Failed to list Stripe invoices for customer", customerId, err);
       continue;
     }

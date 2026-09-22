@@ -80,8 +80,8 @@ test.describe("Entitlement and playback", () => {
       page.getByRole("heading", { name: /Unlock to watch in full/ }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Rent through the mock checkout.
-    await page.getByRole("button", { name: /^Rent £/ }).first().click();
+    // Subscribe through the checkout modal.
+    await page.getByRole("button", { name: /Unlock with Premium/ }).first().click();
     await expect(
       page.getByRole("dialog").getByText(/Get access to/),
     ).toBeVisible();
@@ -96,7 +96,7 @@ test.describe("Entitlement and playback", () => {
     await expect(page.getByRole("button", { name: "Play" }).first()).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByText(/Rented|Owned|Unlocked/).first()).toBeVisible();
+    await expect(page.getByText(/Rented|Owned|Unlocked|Included with Premium/).first()).toBeVisible();
   });
 
   test("geo-restricted content is blocked when the region changes", async ({
@@ -236,7 +236,7 @@ test.describe("Advertising", () => {
     const name = `Smoke campaign ${Date.now()}`;
 
     // 1 — basics
-    await page.getByLabel("Campaign name").fill(name);
+    await page.getByLabel(/Campaign name/).fill(name);
     await page.getByRole("button", { name: "Continue" }).click();
 
     // 2 — budget (defaults are valid)
@@ -246,7 +246,11 @@ test.describe("Advertising", () => {
     await page.getByRole("button", { name: "Continue" }).click();
 
     // 4 — creative
-    await page.getByRole("button", { name: "Add your first creative" }).click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "smoke-creative.mp4",
+      mimeType: "video/mp4",
+      buffer: Buffer.from("mock video content"),
+    });
     await page.getByRole("button", { name: "Continue" }).click();
 
     // 5 — brand safety
@@ -321,7 +325,13 @@ test.describe("Admin", () => {
     const email = `pw-org-fixture-${Date.now()}@example.com`;
     try {
       await request.post("/api/auth/register/", {
-        data: { name: "Playwright Org Fixture", email, password: "password123", role: "business" },
+        data: {
+          name: "Playwright Org Fixture",
+          email,
+          password: "password123",
+          role: "business",
+          acceptedTerms: true,
+        },
       });
       const me = await request.get("/api/auth/me/");
       const { account } = (await me.json()) as { account: { channelId: string } };

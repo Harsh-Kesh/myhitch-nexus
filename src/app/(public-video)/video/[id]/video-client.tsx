@@ -8,20 +8,24 @@ import {
   IconBrandX,
   IconCheck,
   IconCopy,
+  IconDownload,
   IconEar,
   IconFlag,
   IconLink,
+  IconLoader2,
   IconShare3,
   IconShoppingBag,
   IconStar,
   IconStarFilled,
   IconThumbUp,
 } from "@tabler/icons-react";
+import { downloadVideo, isDownloaded, removeDownload } from "@/lib/offline/downloadManager";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { VideoPlayer } from "@/components/player/video-player";
+import { AudioPlayer } from "@/components/player/audio-player";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -167,6 +171,58 @@ export function VideoDetailClient() {
   const [replyTo, setReplyTo] = React.useState<string | null>(null);
   const [replyBody, setReplyBody] = React.useState("");
   const [liked, setLiked] = React.useState(false);
+  const [downloaded, setDownloaded] = React.useState(false);
+  const [downloadProgress, setDownloadProgress] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!video?.id) return;
+    isDownloaded(video.id).then(setDownloaded);
+  }, [video?.id]);
+
+  const handleDownload = async () => {
+    if (!requireSignIn("Sign in to download titles.")) return;
+
+    if (downloaded) {
+      if (confirm(`Remove "${video?.title}" from offline downloads?`)) {
+        if (video?.id) {
+          await removeDownload(video.id);
+          setDownloaded(false);
+          toast({ title: "Download removed", description: "This title was removed from your device." });
+        }
+      }
+      return;
+    }
+
+    if (!video) return;
+
+    setDownloadProgress(0);
+    try {
+      await downloadVideo(
+        {
+          id: video.id,
+          title: video.title,
+          channelTitle: channel?.name || "Nexus Creator",
+          posterUrl: video.thumbnailUrl || video.heroUrl || "",
+          duration: video.durationSeconds,
+          mediaUrl: video.thumbnailUrl || `/videos/${video.id}.mp4`,
+        },
+        (pct) => setDownloadProgress(pct),
+      );
+      setDownloaded(true);
+      toast({
+        title: "Download complete",
+        description: `"${video.title}" is now available offline in Account → Downloads.`,
+      });
+    } catch (err: any) {
+      toast({
+        tone: "error",
+        title: "Download failed",
+        description: err.message,
+      });
+    } finally {
+      setDownloadProgress(null);
+    }
+  };
 
   if (isLoading || !entitlement) {
     return (
@@ -238,23 +294,41 @@ export function VideoDetailClient() {
     <div className="mx-auto max-w-[110rem] px-0 pb-10 sm:px-6 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_25rem]">
         <div className="min-w-0">
-          <VideoPlayer
-            video={video}
-            entitlement={entitlement}
-            resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
-            onRequestPurchase={() => setPurchaseOpen(true)}
-            onCommerceClick={(linkId) => {
-              const link = video.pricing.affiliateLinks?.find(
-                (item) => item.id === linkId,
-              );
-              toast({
-                title: "Opening Mart product",
-                description: `${link?.productName} — mock commerce link, nothing is fetched externally.`,
-                tone: "info",
-              });
-            }}
-            className="sm:rounded-lg"
-          />
+          {video.kind === "audio" ? (
+            <AudioPlayer
+              video={video}
+              entitlement={entitlement}
+              resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
+              onRequestPurchase={() => setPurchaseOpen(true)}
+              onCommerceClick={(linkId) => {
+                const link = video.pricing.affiliateLinks?.find((item) => item.id === linkId);
+                toast({
+                  title: "Opening Mart product",
+                  description: `${link?.productName} — mock commerce link, nothing is fetched externally.`,
+                  tone: "info",
+                });
+              }}
+              className="sm:rounded-lg"
+            />
+          ) : (
+            <VideoPlayer
+              video={video}
+              entitlement={entitlement}
+              resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
+              onRequestPurchase={() => setPurchaseOpen(true)}
+              onCommerceClick={(linkId) => {
+                const link = video.pricing.affiliateLinks?.find(
+                  (item) => item.id === linkId,
+                );
+                toast({
+                  title: "Opening Mart product",
+                  description: `${link?.productName} — mock commerce link, nothing is fetched externally.`,
+                  tone: "info",
+                });
+              }}
+              className="sm:rounded-lg"
+            />
+          )}
 
           <div className="px-4 sm:px-0">
             {/* Title block */}
@@ -361,6 +435,30 @@ export function VideoDetailClient() {
               <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
                 <IconShare3 />
                 Share
+              </Button>
+
+              <Button
+                variant={downloaded ? "primary" : "secondary"}
+                size="sm"
+                disabled={downloadProgress !== null}
+                onClick={handleDownload}
+              >
+                {downloadProgress !== null ? (
+                  <>
+                    <IconLoader2 className="size-4 animate-spin" />
+                    <span>{downloadProgress}%</span>
+                  </>
+                ) : downloaded ? (
+                  <>
+                    <IconCheck className="size-4" />
+                    <span>Downloaded</span>
+                  </>
+                ) : (
+                  <>
+                    <IconDownload className="size-4" />
+                    <span>Download</span>
+                  </>
+                )}
               </Button>
 
               <RatingControl
@@ -853,12 +951,17 @@ function DetailsPanel({ video }: { video: Video }) {
     ["Language", video.language],
     ["Country of origin", video.country],
     ["Age rating", video.rights.ageRating],
+    // "Available quality" (the video-bitrate ladder) and "Audio tracks" (alternate-
+    // language dub tracks alongside a picture track) are both video-shaped concepts —
+    // meaningless, and always empty, for kind === "audio" content, so they're omitted
+    // rather than rendered as a blank row.
+    ...(video.kind === "audio"
+      ? []
+      : ([["Available quality", video.qualities.map((level) => level.label).join(" · ")]] as Array<
+          [string, React.ReactNode]
+        >)),
     [
-      "Available quality",
-      video.qualities.map((level) => level.label).join(" · "),
-    ],
-    [
-      "Subtitles",
+      video.kind === "audio" ? "Transcript" : "Subtitles",
       video.subtitles.length
         ? video.subtitles
             .map(
@@ -868,15 +971,19 @@ function DetailsPanel({ video }: { video: Video }) {
             .join(" · ")
         : "None",
     ],
-    [
-      "Audio tracks",
-      video.audioTracks
-        .map(
-          (track) =>
-            `${track.language}${track.kind !== "original" ? ` (${track.kind.replace("-", " ")})` : ""}`,
-        )
-        .join(" · "),
-    ],
+    ...(video.kind === "audio"
+      ? []
+      : ([
+          [
+            "Audio tracks",
+            video.audioTracks
+              .map(
+                (track) =>
+                  `${track.language}${track.kind !== "original" ? ` (${track.kind.replace("-", " ")})` : ""}`,
+              )
+              .join(" · "),
+          ],
+        ] as Array<[string, React.ReactNode]>)),
     ["Rights holder", video.rights.declaredOwner],
     [
       "Licence period",
@@ -923,7 +1030,7 @@ function DetailsPanel({ video }: { video: Video }) {
             onClick={() => setClaimOpen(true)}
             className="text-xs text-fg-subtle underline decoration-dotted underline-offset-2 transition-colors hover:text-fg"
           >
-            Report a copyright claim on this video
+            Report a copyright claim on this upload
           </button>
         </div>
       </Card>

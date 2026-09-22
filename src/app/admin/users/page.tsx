@@ -29,7 +29,9 @@ const ALL_ROLES: UserRole[] = [
   "producer",
   "education",
   "organisation",
-  "admin",
+  "moderator",
+  "finance-admin",
+  "super-admin",
 ];
 
 const STATUS_TONE: Record<User["status"], "published" | "pending" | "danger" | "archived"> = {
@@ -286,12 +288,14 @@ export default function AdminUsersPage() {
             <Button
               variant="primary"
               disabled={
-                draftStatus !== editing?.status && reason.trim().length < 8
+                (draftStatus !== editing?.status ||
+                  draftRoles.join() !== editing?.roles.join()) &&
+                reason.trim().length < 8
               }
               onClick={() => {
                 if (!editing) return;
                 if (draftRoles.join() !== editing.roles.join()) {
-                  updateRole.mutate({ userId: editing.id, roles: draftRoles });
+                  updateRole.mutate({ userId: editing.id, roles: draftRoles, reason: reason.trim() });
                 }
                 if (draftStatus !== editing.status) {
                   updateStatus.mutate({
@@ -374,9 +378,9 @@ export default function AdminUsersPage() {
               </Select>
             </Field>
 
-            {draftStatus !== editing.status ? (
+            {draftStatus !== editing.status || draftRoles.join() !== editing.roles.join() ? (
               <Field
-                label="Reason for status change"
+                label="Reason for this change"
                 htmlFor="user-reason"
                 required
                 hint="Recorded in the audit log and shown to the account holder."

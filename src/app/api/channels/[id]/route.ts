@@ -42,7 +42,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
 
   try {
-    const result = await updateOrganization(id, body);
+    const result = await updateOrganization(id, body, { id: account.id, name: account.fullName });
     switch (result.outcome) {
       case "success":
         return NextResponse.json(result.channel);

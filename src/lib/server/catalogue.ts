@@ -55,6 +55,9 @@ export interface VideoSummary {
   channelName: string;
   channelHandle: string | null;
   contentType: string;
+  /** Underlying asset format — "video" for every pre-2026-09-22 row (DEC-16). Drives
+   * which player component the client renders. */
+  kind: "video" | "audio";
   status: string;
   /** "awaiting_transcode" for a real upload with no playable stream yet (Mux isn't
    * wired up) — separate from `status`, which is editorial/publication state, not
@@ -100,6 +103,7 @@ interface VideoSummaryRow {
   channel_name: string;
   channel_handle: string | null;
   content_type: string;
+  kind: "video" | "audio";
   status: string;
   processing_status: "none" | "awaiting_transcode";
   thumbnail_url: string | null;
@@ -148,7 +152,7 @@ interface VideoSummaryRow {
 const VIDEO_SUMMARY_COLUMNS = `
   v.id, v.slug, v.title, v.synopsis, v.channel_id,
   o.name as channel_name, o.handle as channel_handle,
-  v.content_type, v.status, v.processing_status, v.thumbnail_url, v.poster_gradient, v.duration_seconds,
+  v.content_type, v.kind, v.status, v.processing_status, v.thumbnail_url, v.poster_gradient, v.duration_seconds,
   v.release_date, v.published_at, v.scheduled_for, v.language, v.country,
   v.views, v.unique_viewers, v.likes, v.rating_average, v.rating_count,
   v.comment_count, v.watch_time_seconds, v.completion_rate,
@@ -175,6 +179,7 @@ function mapVideoSummary(row: VideoSummaryRow): VideoSummary {
     channelName: row.channel_name,
     channelHandle: row.channel_handle,
     contentType: row.content_type,
+    kind: row.kind,
     status: row.status,
     processingStatus: row.processing_status,
     thumbnailUrl: row.thumbnail_url,

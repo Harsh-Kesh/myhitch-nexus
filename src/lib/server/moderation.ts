@@ -5,6 +5,7 @@
 // docs/DEVELOPMENT-PLAN.md's 2026-09-17 admin-screens entry.
 import "server-only";
 import { query, queryOne } from "./db";
+import { describeAdminTier } from "./rbac";
 
 export type ModerationKind = "content" | "comment" | "live" | "copyright" | "channel" | "campaign";
 export type ModerationQueueName = "pending-review" | "reported" | "copyright" | "live-incident" | "verification";
@@ -131,6 +132,62 @@ export async function reportVideo(
   return { outcome: "success" };
 }
 
+export interface ModerationQueueCounts {
+  pendingContent: number;
+  reportedContent: number;
+  liveIncidents: number;
+  verificationQueue: number;
+}
+
+/** Real open-item counts per queue, grouped in one query — backs the admin dashboard's
+ * queue tiles (getAdminSummary()'s real branch), which previously always showed static
+ * mock numbers even once reportVideo()/flagForReview() started writing real rows here. */
+export async function getOpenQueueCounts(): Promise<ModerationQueueCounts> {
+  const rows = await query<{ queue: ModerationQueueName; count: string }>(
+    `select queue, count(*) as count from moderation_queue where status = 'open' group by queue`,
+  );
+  const byQueue = Object.fromEntries(rows.map((row) => [row.queue, Number(row.count)]));
+  return {
+    pendingContent: byQueue["pending-review"] ?? 0,
+    reportedContent: byQueue["reported"] ?? 0,
+    liveIncidents: byQueue["live-incident"] ?? 0,
+    verificationQueue: byQueue["verification"] ?? 0,
+  };
+}
+
+export interface ModerationTrendPoint {
+  date: string;
+  reviews: number;
+  reports: number;
+}
+
+/** Real daily counts for the dashboard's "moderation load" chart: reviews = queue items
+ * actioned that day, reports = new 'reported'-queue items submitted that day. Zero-fills
+ * days with no activity via generate_series rather than only returning days that exist. */
+export async function getModerationTrend(days = 30): Promise<ModerationTrendPoint[]> {
+  const rows = await query<{ date: string; reviews: string; reports: string }>(
+    `select d::date::text as date,
+            coalesce(r.reviews, 0) as reviews,
+            coalesce(rep.reports, 0) as reports
+     from generate_series(current_date - ($1::int - 1) * interval '1 day', current_date, interval '1 day') d
+     left join (
+       select date_trunc('day', updated_at)::date as day, count(*) as reviews
+       from moderation_queue
+       where status = 'actioned' and updated_at >= current_date - ($1::int - 1) * interval '1 day'
+       group by 1
+     ) r on r.day = d::date
+     left join (
+       select date_trunc('day', submitted_at)::date as day, count(*) as reports
+       from moderation_queue
+       where queue = 'reported' and submitted_at >= current_date - ($1::int - 1) * interval '1 day'
+       group by 1
+     ) rep on rep.day = d::date
+     order by d`,
+    [days],
+  );
+  return rows.map((row) => ({ date: row.date, reviews: Number(row.reviews), reports: Number(row.reports) }));
+}
+
 export async function listModerationQueue(queue?: ModerationQueueName): Promise<ModerationQueueItem[]> {
   const rows = await query<QueueDbRow>(
     `select * from moderation_queue
@@ -154,21 +211,63 @@ export type ModerationAction =
   | "suspend"
   | "remove";
 
+export type CommunityStrikePenalty = "warning" | "upload_freeze" | "demonetised" | "suspended";
+
+export interface CommunityStrikeRow {
+  id: string;
+  accountId: string;
+  moderationItemId: string | null;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  strikeLevel: number;
+  penalty: CommunityStrikePenalty;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface IssueStrikeResult {
+  outcome: "success";
+  strikeId: string;
+  strikeLevel: number;
+  penalty: CommunityStrikePenalty;
+  accountSuspended: boolean;
+  channelUploadsFrozen: boolean;
+  channelDemonetised: boolean;
+}
+
 export type ActionModerationItemResult =
-  | { outcome: "success"; auditId: string; targetId: string }
-  | { outcome: "not_found" };
+  | { outcome: "success"; auditId: string; targetId: string; strike?: IssueStrikeResult }
+  | { outcome: "not_found" }
+  | { outcome: "unsupported"; message: string };
 
 /** Applies an admin decision to the underlying record (video/comment) and the queue item
  * itself, then writes an audit entry — real counterpart of the mock's
- * actionModerationItem(), same action→effect mapping. */
+ * actionModerationItem(), same action→effect mapping. Supports graduated enforcement
+ * strikes (FR-6.6.4). */
 export async function actionModerationItem(
-  admin: { id: string; name: string },
+  admin: { id: string; name: string; roles: string[] },
   itemId: string,
   action: ModerationAction,
   reason: string,
+  options: { issueStrike?: boolean } = {},
 ): Promise<ActionModerationItemResult> {
   const item = await queryOne<QueueDbRow>(`select * from moderation_queue where id = $1`, [itemId]);
   if (!item) return { outcome: "not_found" };
+
+  // copyright claims are resolved from /admin/reports, not this generic decision modal;
+  // live/channel/campaign have no real backing system yet. Bail out before marking the
+  // queue item "actioned" and writing a misleading success audit entry for a decision
+  // that was never actually applied to anything.
+  if (item.kind !== "content" && item.kind !== "comment") {
+    return {
+      outcome: "unsupported",
+      message:
+        item.kind === "copyright"
+          ? "Copyright claims are resolved from the Reports page, not this queue."
+          : `Moderation actions aren't wired up for "${item.kind}" items yet.`,
+    };
+  }
 
   if (item.kind === "content") {
     if (action === "approve") {
@@ -198,9 +297,36 @@ export async function actionModerationItem(
       ]);
     }
   }
-  // live/copyright/channel/campaign: no real backing system exists yet (live streaming,
-  // copyright claims and ad campaigns are all still mock-only) — nothing real produces a
-  // queue row of those kinds today, so there's nothing to apply here.
+
+  // Graduated strike ladder enforcement (FR-6.6.4)
+  let strikeResult: IssueStrikeResult | undefined;
+  if (options.issueStrike || action === "suspend") {
+    let targetAccountId: string | null = null;
+    if (item.kind === "content" && item.channel_id) {
+      const owner = await queryOne<{ account_id: string }>(
+        `select account_id from memberships where organization_id = $1 and org_role = 'owner' limit 1`,
+        [item.channel_id],
+      );
+      targetAccountId = owner?.account_id ?? null;
+    } else if (item.kind === "comment") {
+      const comment = await queryOne<{ account_id: string }>(
+        `select account_id from video_comments where id = $1`,
+        [item.target_id],
+      );
+      targetAccountId = comment?.account_id ?? null;
+    }
+
+    if (targetAccountId) {
+      strikeResult = await issueCommunityStrike({
+        admin,
+        accountId: targetAccountId,
+        targetType: item.kind,
+        targetId: item.target_id,
+        reason: reason || `${action} applied from moderation queue`,
+        moderationItemId: itemId,
+      });
+    }
+  }
 
   await query(
     `update moderation_queue set status = 'actioned', assigned_to = coalesce(assigned_to, $2),
@@ -211,7 +337,7 @@ export async function actionModerationItem(
   const auditId = await recordAudit({
     actorAccountId: admin.id,
     actorName: admin.name,
-    actorRole: "admin",
+    actorRole: describeAdminTier(admin.roles),
     action: `moderation.${action.replace(/-/g, "_")}`,
     targetType: item.kind,
     targetId: item.target_id,
@@ -219,7 +345,124 @@ export async function actionModerationItem(
     severity: action === "approve" ? "info" : action === "suspend" || action === "remove" ? "critical" : "warning",
   });
 
-  return { outcome: "success", auditId, targetId: item.target_id };
+  return { outcome: "success", auditId, targetId: item.target_id, strike: strikeResult };
+}
+
+export async function issueCommunityStrike(input: {
+  admin: { id: string; name: string; roles: string[] };
+  accountId: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  moderationItemId?: string | null;
+}): Promise<IssueStrikeResult> {
+  const countRow = await queryOne<{ n: string }>(
+    `select count(*) as n from community_strikes
+     where account_id = $1 and (expires_at is null or expires_at > now())`,
+    [input.accountId],
+  );
+  const activeStrikes = Number(countRow?.n ?? 0);
+  const strikeLevel = activeStrikes + 1;
+
+  let penalty: CommunityStrikePenalty = "warning";
+  let accountSuspended = false;
+  let channelUploadsFrozen = false;
+  let channelDemonetised = false;
+
+  if (strikeLevel === 1) {
+    penalty = "warning";
+  } else if (strikeLevel === 2) {
+    penalty = "upload_freeze";
+    await query(
+      `update organizations set upload_restricted_until = now() + interval '7 days'
+       where id in (select organization_id from memberships where account_id = $1)`,
+      [input.accountId],
+    );
+    channelUploadsFrozen = true;
+  } else if (strikeLevel === 3) {
+    penalty = "demonetised";
+    await query(
+      `update video_pricing set access_models = array['free']
+       where video_id in (
+         select id from videos
+         where channel_id in (select organization_id from memberships where account_id = $1)
+       )`,
+      [input.accountId],
+    );
+    channelDemonetised = true;
+  } else {
+    penalty = "suspended";
+    await query(`update accounts set status = 'suspended' where id = $1`, [input.accountId]);
+    accountSuspended = true;
+  }
+
+  const row = await queryOne<{ id: string }>(
+    `insert into community_strikes (
+       account_id, moderation_item_id, target_type, target_id, reason, strike_level, penalty
+     ) values ($1, $2, $3, $4, $5, $6, $7)
+     returning id`,
+    [
+      input.accountId,
+      input.moderationItemId ?? null,
+      input.targetType,
+      input.targetId,
+      input.reason,
+      strikeLevel,
+      penalty,
+    ],
+  );
+
+  await recordAudit({
+    actorAccountId: input.admin.id,
+    actorName: input.admin.name,
+    actorRole: describeAdminTier(input.admin.roles),
+    action: `moderation.strike_${penalty}`,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    reason: `Community strike #${strikeLevel} (${penalty}): ${input.reason}`,
+    severity: strikeLevel >= 3 ? "critical" : "warning",
+  });
+
+  return {
+    outcome: "success",
+    strikeId: row!.id,
+    strikeLevel,
+    penalty,
+    accountSuspended,
+    channelUploadsFrozen,
+    channelDemonetised,
+  };
+}
+
+export async function listAccountStrikes(accountId: string): Promise<CommunityStrikeRow[]> {
+  const rows = await query<{
+    id: string;
+    account_id: string;
+    moderation_item_id: string | null;
+    target_type: string;
+    target_id: string;
+    reason: string;
+    strike_level: number;
+    penalty: CommunityStrikePenalty;
+    created_at: string;
+    expires_at: string | null;
+  }>(
+    `select id, account_id, moderation_item_id, target_type, target_id, reason, strike_level, penalty, created_at, expires_at
+     from community_strikes where account_id = $1 order by created_at desc`,
+    [accountId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    accountId: r.account_id,
+    moderationItemId: r.moderation_item_id,
+    targetType: r.target_type,
+    targetId: r.target_id,
+    reason: r.reason,
+    strikeLevel: r.strike_level,
+    penalty: r.penalty,
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+  }));
 }
 
 /* -------------------------------- Audit log -------------------------------- */
@@ -296,10 +539,14 @@ export async function recordAudit(input: {
 }
 
 export async function listAuditLog(
-  filters: { query?: string; severity?: AuditSeverity; targetType?: string } = {},
+  filters: { query?: string; severity?: AuditSeverity; targetType?: string; actorAccountId?: string } = {},
 ): Promise<AuditEntry[]> {
   const conditions: string[] = [];
   const params: unknown[] = [];
+  if (filters.actorAccountId) {
+    params.push(filters.actorAccountId);
+    conditions.push(`actor_account_id = $${params.length}`);
+  }
   if (filters.severity) {
     params.push(filters.severity);
     conditions.push(`severity = $${params.length}`);

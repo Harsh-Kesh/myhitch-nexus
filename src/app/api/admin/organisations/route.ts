@@ -2,14 +2,14 @@
 // Admin-only.
 import { NextResponse, type NextRequest } from "next/server";
 import { listAdminOrganisations } from "@/lib/server/adminOrganizations";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   }
-  if (!account.roles.includes("admin")) {
+  if (!hasAnyRole(account, ["moderator", "super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 

@@ -1,0 +1,53 @@
+// GET & POST /api/creators/[channelId]/posts/[postId]/comments — Post comments
+import { NextResponse, type NextRequest } from "next/server";
+import { getRequestAccount } from "@/lib/server/rbac";
+import {
+  addPostComment,
+  listPostComments,
+} from "@/lib/server/creatorCommunity";
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ channelId: string; postId: string }> },
+) {
+  const { postId } = await params;
+  const comments = await listPostComments(postId);
+  return NextResponse.json({ comments });
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ channelId: string; postId: string }> },
+) {
+  const { postId } = await params;
+  const account = await getRequestAccount(request);
+
+  let body: {
+    content?: string;
+    authorName?: string;
+  };
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (!body.content || !body.content.trim()) {
+    return NextResponse.json({ error: "Comment content is required" }, { status: 400 });
+  }
+
+  try {
+    const comment = await addPostComment({
+      postId,
+      accountId: account?.id ?? null,
+      authorName: account?.fullName ?? body.authorName ?? "Community Member",
+      authorAvatarUrl: account?.avatarUrl ?? null,
+      content: body.content,
+    });
+
+    return NextResponse.json({ comment }, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

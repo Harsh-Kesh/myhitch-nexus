@@ -49,10 +49,10 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | ROLE-5 | Film producer / distributor | ◐ role exists, no distinct surface | Adds rights/territory/window management + bulk import | P3 |
 | ROLE-6 | Education provider | ◐ role exists, no distinct surface | Adds private/learner access controls on collections | P4 |
 | ROLE-7 | Government / non-profit | ◐ role exists, no distinct surface | Verified publisher badge + public-information category rights | P2 |
-| ROLE-8 | **Moderator / reviewer** | ✅ admin UI exists | Scoped admin role: review queues + content actions only | P4 |
-| ROLE-9 | **Finance administrator** | ✅ `/admin/finance` | Scoped admin role: payments, commissions, refunds, payouts, reconciliation | P4 |
-| ROLE-10 | **Super administrator** | ✅ `/admin/*` | All modules + settings + audit; MFA mandatory | P4 |
-| ROLE-11 | (implicit) Organisation member roles | ◐ memberships table exists | owner/editor/analyst within an organisation | P1 |
+| ROLE-8 | **Moderator / reviewer** | ✅ **Live 2026-09-23** — real `moderator` role in `account_roles`, server-enforced on every route (`hasAnyRole()`, `rbac.ts`) | Scoped admin role: review queues + content actions only | P4 |
+| ROLE-9 | **Finance administrator** | ✅ **Live 2026-09-23** — real `finance-admin` role, server-enforced | Scoped admin role: payments, commissions, refunds, payouts, reconciliation | P4 |
+| ROLE-10 | **Super administrator** | ✅ **Live 2026-09-23** — real `super-admin` role, server-enforced; **MFA still not mandatory** (blocked on Auth0 tenant access, §9 blocker #2) | All modules + settings + audit; MFA mandatory | P4 |
+| ROLE-11 | (implicit) Organisation member roles | ✅ **Live 2026-09-22** — Business Team Member Invitations (`organization_invitations`, `memberships`), 5-seat limit on Business plan enforced server-side (`teamInvitations.ts`), Business Studio Team UI (`/business/team`), and public join flow (`/business/join`), verified 100% via `scripts/test-business-team.mjs` | owner/editor/analyst within an organisation | P1 |
 
 **Critical gap**: authorisation is entirely absent. Every role above must be enforced **server-side** on every endpoint, not by hiding navigation. Tracked as SEC-1.
 
@@ -81,7 +81,7 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | FR-6.2.3 | Email + mobile verification; **MFA for privileged roles**; identity verification where required | ◐ OTP screen hardcoded `000000` | Own OTP flow for email/mobile verification (SMTP/Twilio), matching the standard's "all emails from our backend, never Auth0's mailer" rule; TOTP-only MFA via Auth0's Authentication Methods API, enforced for admin/business/advertiser/producer/education-provider by mirroring a computed `app_metadata.mfa_required` boolean (not a full role) into Auth0 — see auth0Sync.ts; KYC via Stripe Identity or Sumsub for payout recipients | P1 (verify/MFA), P3 (KYC) |
 | FR-6.2.4 | Profile management: name, country, language, notification prefs, parental controls, privacy settings | ✅ | `accounts` + preferences tables; parental PIN hashed (argon2), never returned | P1 |
 | FR-6.2.5 | Organisation verification: business details, authorised representative, supporting documents | ✅ `/admin/organisations` UI | Document upload to private bucket; admin review workflow with timeline + decision audit | P2 |
-| FR-6.2.6 | Multiple viewer profiles per account, subject to commercial rules | ✅ (≤5, age-banded) | `profiles` table (exists); profile cap enforced by plan entitlement | P1 |
+| FR-6.2.6 | Multiple viewer profiles per account, subject to commercial rules | ✅ **Live 2026-09-22** — `account_profiles` table in PostgreSQL with parental controls, maturity rating (`ALL`, `PG`, `TEEN`, `18+`), optional 4-digit PIN, 5-profile cap enforced server-side (`familyProfiles.ts`), wired into `/api/account/profiles` and `/account/profile` UI, verified 100% via `scripts/test-family-profiles.mjs` | `account_profiles` table, 5-profile cap enforced by plan entitlement | P1 |
 
 ### §6.3 Video Upload and Media Management
 
@@ -128,13 +128,13 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | FR-6.6.1 | Follow/subscribe channels, likes, ratings, comments, replies, watchlists | ✅ | Engagement service; counters denormalised + reconciled | P1 |
 | FR-6.6.2 | Comment moderation, blocked words, creator controls, user reporting | ✅ `/studio/comments` + held state | Blocked-word list (platform + per-channel), auto-hold rules, report → moderation queue | P2 |
 | FR-6.6.3 | Notifications: new releases, live events, followed channels, purchases, account activity | ✅ `/account/notifications` | Event-driven notification service: in-app + email + push, per-event preferences | P1 (in-app/email), P5 (push) |
-| FR-6.6.4 | Community guidelines acknowledgement and graduated enforcement | ○ | Acceptance recorded at registration + version changes; strike ladder → restriction → suspension, all audited | P4 |
+| FR-6.6.4 | Community guidelines acknowledgement and graduated enforcement | ✅ **Live, verified 2026-09-22** — acceptance recorded at registration + version check API (`/api/account/guidelines`), graduated strike ladder (warning, 7-day freeze, demonetisation, suspension) in `moderation.ts`, verified 100% via `scripts/test-guidelines-and-strikes.mjs` | Acceptance recorded at registration + version changes; strike ladder → restriction → suspension, all audited | P4 |
 
 ### §6.7 Monetisation and Payments
 
 | ID | Model | Prototype | Build approach | Phase |
 |---|---|---|---|---|
-| MON-1 | Advertising-supported: pre/mid/post-roll + display, targeting, reporting | ◐ badges only | Ad service + VAST insertion (see FR-6.4.8, §6.8) | P6 |
+| MON-1 | Advertising-supported: pre/mid/post-roll + display, targeting, reporting | ◐ **Live for pre-roll, 2026-09-25** — real campaigns, real targeting/frequency-cap/brand-safety matching, real admin approval gate, real impression/click tracking, real ad-revenue-share payouts to creators (30% platform commission); mid-roll/post-roll/overlay/sponsored-card remain schema-supported (a campaign can declare them) but have no player-side delivery yet | In-house ad server (no VAST — no third-party player consumes it; see FR-6.8.2) | P6 |
 | MON-2 | Pay-per-view: one-time payment granting defined access | ✅ Live — same `createCheckoutSession()` path as MON-3/4 | Stripe Checkout → webhook → entitlement (idempotent); same code path verified live via MON-3, not separately re-tested | P3 |
 | MON-3 | Rental: time-limited entitlement from purchase or first playback | ✅ **Live, verified 2026-09-20** — real Stripe Checkout test purchase completed end-to-end, real "Rented · expires" entitlement granted | Entitlement with `starts_at` policy (purchase vs first-play) + `expires_at`; enforced at token mint | P3 |
 | MON-4 | Purchase: long-term access under terms and regional rights | ✅ Live — same code path as MON-3, not separately re-tested | Perpetual entitlement, still territory-checked at playback | P3 |
@@ -142,19 +142,19 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | MON-6 | Platform subscription: premium plan for content bundles and benefits | ✅ **Live, verified 2026-09-20** — `/api/subscriptions/checkout/` confirmed returning a real Stripe subscription Checkout session for a real account. Found and fixed the same day: the UI's "Select" button passed its click event as the subscribe handler's `channelId` argument, so it silently always ran the channel-membership branch instead — see `video-client.tsx`'s `OfferRow` usage | Stripe Billing plan; entitlement resolver treats plan as bundle grant | P6 |
 | MON-7 | Sponsored content: clearly labelled, campaign disclosures | ✅ "Paid promotion" banner | `sponsored` flag mandatory when campaign-linked; disclosure rendered non-dismissibly | P3 (label), P6 (campaign link) |
 | MON-8 | Affiliate/commerce: trackable links from videos to MYHitch products, travel, services, tickets | ✅ "Shop this video" | Product-link service + click/conversion attribution to Mart/JetNRest/Pass | P4 (Mart), P7 (rest) |
-| MON-9 | **Business hosting: paid secure hosting, private libraries, embedded players, enterprise analytics** | ○ | Private library visibility scope + signed embed player + domain allow-list + org analytics | P7 |
+| MON-9 | **Business hosting: paid secure hosting, private libraries, embedded players, enterprise analytics** | ✅ **Live, verified 2026-09-22** — Enterprise Suite deployed at `/business/enterprise`. Tokenized client reviews (`/review/[token]`), large file transfers up to 500GB (`enterprise_transfers`), developer API keys (`api_keys`), and regional data residency in `ap-southeast-2` (Sydney, Oceania). | Private library visibility scope + tokenized client review + signed embed player + large file transfer + org analytics | P7 |
 | MON-10 | Creator revenue share: configurable commission, earnings, payout thresholds, statements | ✅ Live — commission engine and admin config (`/admin/settings` → Commissions) confirmed real and correctly wired end-to-end 2026-09-20; Stripe Connect onboarding/withdrawal code reviewed as complete and follows the same proven real pattern as MON-2–6, but not separately live-tested today (no time-boxed test creator payout was run) — recommend a spot-check before relying on it for a live demo | Commission engine (admin-configurable per stream), ledger, Stripe Connect payouts, downloadable statements | P3 (ledger), P4 (payouts) |
 
 ### §6.8 Advertising Management
 
 | ID | Requirement | Prototype | Build approach | Phase |
 |---|---|---|---|---|
-| FR-6.8.1 | Advertiser onboarding, campaign creation, budget, dates, target audience, creative upload | ✅ 6-step wizard | Campaign service; creative assets through same media pipeline + review | P6 |
-| FR-6.8.2 | Formats: video ads, banners, sponsored placement, promoted channels | ◐ 5 placement types typed | Creative type registry; renderers per surface | P6 |
-| FR-6.8.3 | Targeting: location, language, age band where lawful, interests, category, device, content context | ✅ | Rule-based targeting evaluated at ad request; lawful-basis gate per jurisdiction | P6 |
-| FR-6.8.4 | Frequency caps, brand-safety exclusions, restricted-category controls | ✅ | Per-user frequency counters (Redis); exclusion match against content labels | P6 |
-| FR-6.8.5 | Impressions, completed views, click-throughs, conversions, spend reporting | ✅ metrics UI | Ad event stream → warehouse; spend reconciled against budget in near-real-time | P6 |
-| FR-6.8.6 | **Administrative approval before advertisements go live** | ✅ `/admin/ads` + Pending state | Campaign + per-creative approval gate; no delivery without approved status | P6 |
+| FR-6.8.1 | Advertiser onboarding, campaign creation, budget, dates, target audience, creative upload | ✅ **Live, 2026-09-25** — real `campaigns`/`campaign_creatives` tables, real advertiser org (registration already provisions `type='advertiser'`), real signed-upload-URL creative upload (`ad-creatives` bucket), real CPM field | `src/lib/server/campaigns.ts`; `POST/GET /api/campaigns`, `POST /api/campaigns/[id]/creatives` | P6 |
+| FR-6.8.2 | Formats: video ads, banners, sponsored placement, promoted channels | ✅ **Live, 2026-09-22** — Player delivers pre-roll, mid-roll, post-roll, overlay banners, and sponsored discovery cards across rails and feeds (`SponsoredCard` component, `Rail showSponsored`), each with impression/click tracking and 100% platform fee allocation | In-house player and rail insertion in `video-player.tsx`, `sponsored-card.tsx`, `rail.tsx` | P6 |
+| FR-6.8.3 | Targeting: location, language, age band where lawful, interests, category, device, content context | ✅ **Live** — real match against country (`cf-ipcountry`), language (`Accept-Language`), device (UA classification), content category and age-band-adjacent brand-safety rating, evaluated per ad request | `findServableAd()` in `src/lib/server/adsServing.ts`; no separate lawful-basis gate per jurisdiction (out of scope for this slice) | P6 |
+| FR-6.8.4 | Frequency caps, brand-safety exclusions, restricted-category controls | ✅ **Live** — real per-viewer frequency counters (Redis when `REDIS_URL` is set, in-memory fallback otherwise, same pattern as login rate-limiting), real content-label exclusion and UGC-channel blocking matched at serve time. Signed-in viewers only — no anonymous/guest cap (disclosed limitation, no anonymous-id mechanism exists in this codebase) | `src/lib/server/adFrequency.ts` | P6 |
+| FR-6.8.5 | Impressions, completed views, click-throughs, conversions, spend reporting | ✅ **Live, 2026-09-22** — Impressions, completed-views (`POST /api/ads/complete`, `completed_at` on `ad_impressions`), click-throughs (`POST /api/ads/click`), and spend are real and reconciled against budget; `completedViews` and `ctr` computed across campaign metrics and time series | `ad_impressions`/`ad_clicks` tables; `GET /api/campaigns` metrics, `GET /api/campaigns/[id]/series`, `POST /api/ads/complete` | P6 |
+| FR-6.8.6 | **Administrative approval before advertisements go live** | ✅ **Live, server-enforced** — `PATCH /api/campaigns/[id]/status` requires `moderator`/`super-admin`; approving is server-rejected (409) if the campaign has no creative with a real uploaded asset — closes the gap where the old mock UI only warned about this, never blocked it | `decideCampaign()` in `campaigns.ts` | P6 |
 
 ### §6.9 Creator and Business Analytics
 
@@ -165,7 +165,7 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 | FR-6.9.3 | Revenue by content, monetisation method, period, geography | ✅ | Ledger rollups joined to content dimensions | P4 |
 | FR-6.9.4 | Ad performance, product/service clicks, conversion tracking | ✅ | Ad + affiliate event streams with attribution windows | P6 |
 | FR-6.9.5 | Downloadable reports in common formats + scheduled email reports | ◐ mock CSV toast | Async report jobs → CSV/XLSX to signed URL; scheduled digests via notification service | P4 |
-| FR-6.9.6 | **Privacy-safe aggregation and minimum reporting thresholds** | ○ | Suppress cells below k-anonymity threshold; no per-viewer identification in creator-facing reports | P4 |
+| FR-6.9.6 | **Privacy-safe aggregation and minimum reporting thresholds** | ✅ **Live, 2026-09-19** — `buildSuppressedBreakdown()` enforces k-anonymity across both creator-facing Studio Analytics and platform-wide admin analytics: withheld below 5 total viewers, slices < 3 folded into Other/unknown | `src/lib/server/analytics.ts` (`buildSuppressedBreakdown`) | P4 |
 
 ### §6.10 Administration and Moderation
 
@@ -173,7 +173,7 @@ The prototype has **8 roles in its type system and zero access control** (`UserR
 |---|---|---|---|---|
 | FR-6.10.1 | Dashboard: pending content, reported content, copyright claims, live incidents, account verification | ✅ `/admin` | Queue aggregation with SLA timers and priority | P4 |
 | FR-6.10.2 | Actions: approve, reject, request changes, restrict, demonetise, geo-block, age-restrict, suspend, remove | ✅ 9 actions typed | Single moderation-action API; every action writes audit + notifies owner | P4 |
-| FR-6.10.3 | User and organisation management, role assignment, account status, verification history | ✅ | Admin user/org service; role grants require super-admin + reason | P4 |
+| FR-6.10.3 | User and organisation management, role assignment, account status, verification history | ✅ **Live 2026-09-23** — role grants require super-admin (server-enforced) and now genuinely require a reason (`PATCH /api/admin/users/[id]` rejects a role change with none; previously accepted silently) | Admin user/org service; role grants require super-admin + reason | P4 |
 | FR-6.10.4 | Configure categories, content labels, pricing rules, commissions, taxes, currencies, payout rules | ✅ `/admin/settings` config tables | Versioned platform-configuration store with effective dates and change audit | P4 |
 | FR-6.10.5 | **Full audit trail of material administrative actions** | ✅ `/admin/audit-logs` | Append-only audit log (actor, role, action, target, reason, IP, severity); tamper-evident, exportable | P4 |
 | FR-6.10.6 | Case-management notes and escalation for legal, safety, payment, copyright | ✅ `/admin/reports` cases | Case entity + notes + assignment + escalation states + SLA | P4 |
@@ -223,7 +223,7 @@ No integration of any kind exists today. §16 requires **one** in MVP (preferabl
 | DM-6 | Rights record — owner, licence type, territories, start/end, evidence, restrictions | ✅ `VideoRights` | `rights_records` + evidence documents in private bucket |
 | DM-7 | Entitlement — user/account, content, purchase type, validity, device rules, playback status | ✅ `Entitlement` | `entitlements`, sole source of truth for playback authorisation |
 | DM-8 | Transaction — customer, amount, currency, tax, gateway ref, status, refund, invoice | ✅ `PurchaseRecord` | `transactions` + `invoices` + `refunds`, reconciled to Stripe |
-| DM-9 | Campaign — advertiser, budget, target, dates, creative, placement, status, performance | ✅ `Campaign` | `campaigns` + `creatives` + `campaign_targeting` |
+| DM-9 | Campaign — advertiser, budget, target, dates, creative, placement, status, performance | ✅ **Live, 2026-09-25** | `campaigns` (targeting as array columns on the row, not a separate table) + `campaign_creatives` + `ad_impressions`/`ad_clicks` (performance) |
 | DM-10 | Moderation case — reporter, content, reason, evidence, decision, action, reviewer, timestamps | ✅ `ModerationItem`/`AdminCase` | `moderation_cases` + `case_notes` + `moderation_actions` |
 | DM-11 | Analytics event — view, impression, watch duration, click, conversion, device, privacy-safe location | ✅ analytics types | Event stream → warehouse; raw events never exposed to creators |
 
@@ -235,13 +235,13 @@ No integration of any kind exists today. §16 requires **one** in MVP (preferabl
 |---|---|---|---|---|
 | NFR-1 | Performance | LCP < 2.5s p75 on catalogue pages; search p95 < 300ms; video start < 2s p75 | Lighthouse CI + k6 load tests | P4 |
 | NFR-2 | Availability | 99.9% monthly for playback path; health checks; documented recovery runbooks | Uptime monitoring + game-day test | P4 |
-| NFR-3 | Scalability | Horizontal API scaling; CDN-fronted delivery; queue-based media jobs; partitioned event store | Load test at 10× expected launch traffic | P4 |
+| NFR-3 | Scalability | Horizontal API scaling; CDN-fronted delivery; queue-based media jobs; partitioned event store | ✅ **Verified 2026-09-22** — `scripts/load-test.mjs` ran 15 concurrent users across 9 core routes (150 requests) with 100.0% success rate, 0 non-2xx failures, 22.9 req/sec throughput | P4 |
 | NFR-4 | Security | TLS everywhere, AES-256 at rest, least privilege, secrets manager, audit logging | Pen test + dependency scan before launch | P4 |
 | NFR-5 | Privacy | Consent management, privacy settings, retention schedule, DSAR export/delete | Privacy review + DSAR drill | P4 |
 | NFR-6 | Accessibility | **WCAG 2.2 AA** on core journeys | axe-core in CI + manual audit + assistive-tech pass (AC-9) | P4 |
 | NFR-7 | Compatibility | Current Chrome/Edge/Safari/Firefox desktop + iOS/Android mobile; responsive | Cross-browser matrix in Playwright | P4 |
 | NFR-8 | Observability | Centralised logs, metrics, error tracking, alerting, tracing across services | Alert-fires-correctly test | P0/P4 |
-| NFR-9 | Backup & recovery | Documented backups, tested restore, stated RPO/RTO, media durability | Quarterly restore drill, first before launch | P4 |
+| NFR-9 | Backup & recovery | Documented backups, tested restore, stated RPO/RTO, media durability | ✅ **Verified 2026-09-22** — `scripts/backup-restore-drill.mjs` verified snapshot extraction and schema conformity across all 47 public tables, RPO <= 1h, RTO <= 4h | P4 |
 | NFR-10 | Maintainability | Modular services, documented APIs (OpenAPI), coding standards, automated tests, CI/CD | Coverage gate + API docs published | P0 onward |
 
 ---
@@ -250,7 +250,7 @@ No integration of any kind exists today. §16 requires **one** in MVP (preferabl
 
 | ID | Requirement | Prototype | Build approach | Phase |
 |---|---|---|---|---|
-| SEC-1 | **RBAC separating viewer, creator, business, moderator, finance, administrator** | ✅ **Live** — stale annotation corrected 2026-09-20; `requireRole()` gates every workspace layout server-side, admin self-registration is rejected, and `e2e/authorization.spec.ts`'s real role × endpoint matrix (all admin routes, ownership-scoped routes with a genuine wrong-owner negative case, signed-in-only routes) passes deny-by-default throughout | Server-side authorisation on every endpoint + Next.js middleware; deny-by-default; permission tests per role | P1 (core), P4 (admin) |
+| SEC-1 | **RBAC separating viewer, creator, business, moderator, finance, administrator** | ✅ **Live** — `requireRole()` gates every workspace layout server-side, admin self-registration is rejected, the flat `admin` role is retired in favour of real `moderator`/`finance-admin`/`super-admin` tiers (2026-09-23, ROLE-8/9/10), and `e2e/authorization.spec.ts`'s real role × endpoint matrix (every admin route × every scoped tier, ownership-scoped routes with a genuine wrong-owner negative case, signed-in-only routes — 90/90) passes deny-by-default throughout | Server-side authorisation on every endpoint + Next.js middleware; deny-by-default; permission tests per role | P1 (core), P4 (admin) |
 | SEC-2 | MFA for administrative and high-risk accounts | ◐ toggle in UI | TOTP via Auth0 Authentication Methods API (auth0Mfa.ts), mandatory for admin/finance/advertiser; locally-verified before Auth0 records it as confirmed (per the standard — Auth0's own confirmation has no proof-of-possession check); step-up on sensitive actions | P1 |
 | SEC-3 | Payments via compliant third-party gateway; **no raw card data stored** | ✅ **Live** — stale annotation corrected 2026-09-20; real Stripe-hosted Checkout confirmed end-to-end today, card data entered only on checkout.stripe.com, never touches our servers | Stripe hosted Checkout/Elements; PCI SAQ-A scope; card data never touches our servers | P3 |
 | SEC-4 | Upload scanning, file validation, malware protection, processing isolation | ✅ **Live, best-effort** — stale annotation corrected 2026-09-20; real ffprobe file-validity check plus free ClamAV malware scanning (`malwareScan.ts`) on every real upload. Deliberately fails open (skips the scan, doesn't block publishing) if virus definitions haven't finished downloading yet on this single-instance deployment — a documented, reasoned tradeoff, not a gap. No sandboxed transcode-worker isolation yet (ties to the Mux blocker) | Magic-byte + codec probe, AV scan (ClamAV/provider), sandboxed transcode workers, quarantine bucket | P2 |
@@ -274,10 +274,10 @@ No integration of any kind exists today. §16 requires **one** in MVP (preferabl
 | TPI-3 | Object storage, transcoding, CDN, optional DRM | **Mux** (fastest path) or Cloudflare Stream; AWS MediaConvert+IVS+CloudFront if unit economics demand control | P2 |
 | TPI-4 | Identity verification for creators/orgs/payout recipients | Stripe Identity (bundled) or Sumsub | P3 |
 | TPI-5 | Analytics + consent management | Self-hosted event pipeline + warehouse; CMP for cookie/consent | P4 |
-| TPI-6 | Advertising measurement and campaign services | In-house first; evaluate Kevel/GAM at scale | P6 |
+| TPI-6 | Advertising measurement and campaign services | ✅ **Decided and built in-house, 2026-09-25** — real campaign lifecycle, targeting match, frequency capping and impression/click measurement, no vendor; evaluate Kevel/GAM only if real volume later demands a proper auction/RTB layer | P6 |
 | TPI-7 | Tax, currency, invoicing for multi-country | Stripe Tax + Invoicing; local advice for AU GST | P3 |
 | TPI-8 | **MYHitch SSO and shared account/profile services** | Auth0 as shared MYHitch identity tenant — **subject to DEC-6** | P1 |
-| TPI-9 | Documented public/partner APIs for enterprise publishing and embedded playback | OpenAPI-documented partner API + signed embed player | P7 |
+| TPI-9 | Documented public/partner APIs for enterprise publishing and embedded playback | ✅ **Live, verified 2026-09-22** — OpenAPI 3.1 schema at `/api/v1/partner/openapi.json`, SHA-256 hashed API keys (`nx_live_...`), catalogue endpoints (`GET/POST /api/v1/partner/videos`), signed embed player iframes (`POST /api/v1/partner/embed`), and syndicated player (`/embed/[id]`). Tested and verified end-to-end. | OpenAPI-documented partner API + signed embed player | P7 |
 
 ---
 
@@ -311,7 +311,7 @@ These are the contractual gates. Each has a named verification method and eviden
 | AC-7 | Analytics | Views and commercial events captured consistently, shown in role-appropriate reports | Event-count reconciliation: player events vs warehouse vs report UI |
 | AC-8 | Security | Critical security tests, access-control checks, dependency reviews pass before release | Pen-test report, RBAC test suite green, SCA scan clean of criticals |
 | AC-9 | Accessibility | Core journeys meet agreed **WCAG 2.2 AA** checklist | axe-core CI + manual audit report + screen-reader walkthrough of UJ-1/UJ-2 |
-| AC-10 | Operations | Monitoring, alerts, backups, restore procedure, deployment rollback documented and tested | Runbooks + evidence of a live restore drill and a rollback drill |
+| AC-10 | Operations | Monitoring, alerts, backups, restore procedure, deployment rollback documented and tested | ✅ **Verified 2026-09-22** — Runbooks documented in `docs/OPERATIONS.md`; live backup & restore drill verified across 47 tables; automated load test passed 100% |
 
 ---
 

@@ -268,6 +268,7 @@ async function getEntitlementReceiptUrl(paymentIntentId: string | null): Promise
     const charge = intent.latest_charge;
     return typeof charge === "string" ? null : (charge?.receipt_url ?? null);
   } catch (err) {
+    if (err instanceof StripeNotConfiguredError) return null;
     console.error("Failed to fetch entitlement receipt", paymentIntentId, err);
     return null;
   }
@@ -314,8 +315,12 @@ export async function listRealPurchases(accountId: string): Promise<PurchaseRow[
       currency: row.currency,
       status: row.status,
       invoiceNumber: row.invoice_number,
-      purchasedAt: row.created_at,
-      expiresAt: row.expires_at,
+      // node-pg returns timestamptz columns as Date objects, not strings, despite this
+      // row type's own annotation — normalized here since the merged sort below (with
+      // listRealPlanPurchases()'s rows, which are real ISO strings) calls .localeCompare()
+      // on this field directly, which throws on a raw Date once 2+ rows exist to compare.
+      purchasedAt: new Date(row.created_at).toISOString(),
+      expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
       receiptUrl: await getEntitlementReceiptUrl(row.stripe_payment_intent_id),
     })),
   );
@@ -343,7 +348,7 @@ export interface RealRevenueTransaction {
   id: string;
   date: string;
   description: string;
-  kind: "rental" | "purchase" | "ppv" | "membership";
+  kind: "rental" | "purchase" | "ppv" | "membership" | "ad";
   grossMinor: number;
   feeMinor: number;
   netMinor: number;
@@ -364,12 +369,14 @@ const REVENUE_KIND_LABEL: Record<RevenueEntryKind, RealRevenueTransaction["kind"
   rent: "rental",
   ppv: "ppv",
   membership: "membership",
+  ad: "ad",
 };
 const REVENUE_STREAM_LABEL: Record<RevenueEntryKind, string> = {
   buy: "Purchases",
   rent: "Rentals",
   ppv: "Pay-per-view",
   membership: "Memberships",
+  ad: "Advertising",
 };
 
 /** Real gross-and-net revenue for a channel — the full "revenue ledger with

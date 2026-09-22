@@ -6,6 +6,7 @@ import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe } from "./stripeClient";
 import { computeChannelNetRevenue } from "./commissions";
+import { recordAudit } from "./moderation";
 import { SITE_URL } from "@/lib/utils";
 
 export interface PayoutAccountStatus {
@@ -104,7 +105,11 @@ export type CreatePayoutResult =
 
 const MINIMUM_PAYOUT_MINOR = 5000; // £50.00 — matches the mock's own minimum
 
-export async function createPayout(organizationId: string, requestedAmountMinor?: number): Promise<CreatePayoutResult> {
+export async function createPayout(
+  organizationId: string,
+  actor: { id: string; name: string },
+  requestedAmountMinor?: number,
+): Promise<CreatePayoutResult> {
   const account = await queryOne<{ stripe_account_id: string; payouts_enabled: boolean }>(
     `select stripe_account_id, payouts_enabled from payout_accounts where organization_id = $1`,
     [organizationId],
@@ -128,6 +133,17 @@ export async function createPayout(organizationId: string, requestedAmountMinor?
     [organizationId, transfer.id, amountMinor, currency],
   );
 
+  await recordAudit({
+    actorAccountId: actor.id,
+    actorName: actor.name,
+    actorRole: "creator",
+    action: "payout.created",
+    targetType: "organization",
+    targetId: organizationId,
+    reason: `Withdrew ${(amountMinor / 100).toFixed(2)} ${currency} via Stripe Connect (transfer ${transfer.id}).`,
+    severity: "notice",
+  });
+
   return { outcome: "success", amountMinor };
 }
 
@@ -137,6 +153,107 @@ export interface PayoutRow {
   currency: string;
   status: string;
   createdAt: string;
+}
+
+export interface OrgPayoutRow {
+  organizationId: string;
+  organizationName: string;
+  connected: boolean;
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+  grossMinor: number;
+  availableMinor: number;
+  paidMinor: number;
+  lastPayoutAt: string | null;
+}
+
+/** Platform-wide, one-query counterpart of getAvailableBalance() — that function (and
+ * computeChannelNetRevenue() underneath it) is 4 queries per organization with no batch
+ * variant, so looping it over every org would be 4×N round trips. Same LEFT JOIN LATERAL
+ * rate-resolution shape as commissions.ts's getPlatformRevenueSummary(), applied per-row
+ * instead of collapsed to one grand total. Backs the real admin finance page. Only
+ * returns organizations with real revenue or a connected payout account — every other
+ * organization has nothing to show here. */
+export async function listPlatformPayouts(): Promise<OrgPayoutRow[]> {
+  const rows = await query<{
+    organization_id: string;
+    organization_name: string;
+    connected: boolean;
+    charges_enabled: boolean;
+    payouts_enabled: boolean;
+    details_submitted: boolean;
+    gross_minor: string;
+    net_minor: string;
+    paid_minor: string;
+    last_payout_at: string | null;
+  }>(
+    `select
+       o.id as organization_id,
+       o.name as organization_name,
+       (pa.stripe_account_id is not null) as connected,
+       coalesce(pa.charges_enabled, false) as charges_enabled,
+       coalesce(pa.payouts_enabled, false) as payouts_enabled,
+       coalesce(pa.details_submitted, false) as details_submitted,
+       coalesce(rev.gross_minor, 0) as gross_minor,
+       coalesce(rev.net_minor, 0) as net_minor,
+       coalesce(paid.paid_minor, 0) as paid_minor,
+       paid.last_payout_at
+     from organizations o
+     left join payout_accounts pa on pa.organization_id = o.id
+     left join lateral (
+       select
+         coalesce(sum(x.amount_minor), 0) as gross_minor,
+         coalesce(sum(x.amount_minor - round(x.amount_minor * x.pct / 100.0)), 0) as net_minor
+       from (
+         select e.amount_minor, coalesce(cr.platform_share_pct, 0) as pct
+         from entitlements e
+         join videos v on v.id = e.video_id
+         left join lateral (
+           select platform_share_pct from commission_rates
+           where scope = (case when e.kind = 'ppv' then 'ppv' else 'purchase_rental' end)
+             and effective_from <= e.created_at
+           order by effective_from desc limit 1
+         ) cr on true
+         where v.channel_id = o.id
+         union all
+         select mp.amount_minor, coalesce(cr.platform_share_pct, 0) as pct
+         from membership_payments mp
+         left join lateral (
+           select platform_share_pct from commission_rates
+           where scope = 'membership' and effective_from <= mp.created_at
+           order by effective_from desc limit 1
+         ) cr on true
+         where mp.channel_id = o.id
+         union all
+         -- Already split at write time — pct derived from the stored platform_fee_minor
+         -- so it reproduces exactly, same reasoning as commissions.ts's trend query.
+         select ai.cost_minor as amount_minor,
+           case when ai.cost_minor > 0 then ai.platform_fee_minor * 100.0 / ai.cost_minor else 0 end as pct
+         from ad_impressions ai
+         where ai.channel_id = o.id
+       ) x
+     ) rev on true
+     left join lateral (
+       select coalesce(sum(amount_minor), 0) as paid_minor, max(created_at) as last_payout_at
+       from payouts where organization_id = o.id and status = 'paid'
+     ) paid on true
+     where coalesce(rev.gross_minor, 0) > 0 or pa.stripe_account_id is not null
+     order by rev.net_minor desc nulls last`,
+  );
+
+  return rows.map((row) => ({
+    organizationId: row.organization_id,
+    organizationName: row.organization_name,
+    connected: row.connected,
+    chargesEnabled: row.charges_enabled,
+    payoutsEnabled: row.payouts_enabled,
+    detailsSubmitted: row.details_submitted,
+    grossMinor: Number(row.gross_minor),
+    availableMinor: Math.max(Number(row.net_minor) - Number(row.paid_minor), 0),
+    paidMinor: Number(row.paid_minor),
+    lastPayoutAt: row.last_payout_at,
+  }));
 }
 
 export async function listPayouts(organizationId: string): Promise<PayoutRow[]> {
