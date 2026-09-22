@@ -105,7 +105,6 @@ export function AdOverlay({ videoId, currentTime, playing }: AdOverlayProps) {
 
       {ad.assetUrl ? (
         <div className="mb-2 overflow-hidden rounded">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={ad.assetUrl} alt="Ad banner" className="h-24 w-full object-cover" />
         </div>
       ) : null}

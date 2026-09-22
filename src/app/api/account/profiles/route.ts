@@ -15,8 +15,9 @@ export async function GET(request: NextRequest) {
   try {
     const overview = await listAccountProfiles(account.id);
     return NextResponse.json(overview);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to list profiles";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -54,7 +55,8 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(profile, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to create profile";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

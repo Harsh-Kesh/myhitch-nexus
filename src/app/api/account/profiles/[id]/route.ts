@@ -35,8 +35,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const updated = await updateAccountProfile(account.id, profileId, body);
     return NextResponse.json(updated);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to update profile";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
@@ -51,7 +52,8 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const success = await deleteAccountProfile(account.id, profileId);
     return NextResponse.json({ success });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to delete profile";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

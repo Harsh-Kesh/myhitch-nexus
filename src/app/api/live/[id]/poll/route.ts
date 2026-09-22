@@ -50,8 +50,9 @@ export async function POST(
     try {
       const poll = await createLivePoll(streamId, body.question, body.options);
       return NextResponse.json({ poll }, { status: 201 });
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create poll";
+      return NextResponse.json({ error: message }, { status: 500 });
     }
   }
 
@@ -73,8 +74,9 @@ export async function POST(
     try {
       const updatedPoll = await voteLivePoll(body.pollId, account.id, body.optionIndex);
       return NextResponse.json({ poll: updatedPoll });
-    } catch (err: any) {
-      return NextResponse.json({ error: err.message }, { status: 500 });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to vote on poll";
+      return NextResponse.json({ error: message }, { status: 500 });
     }
   }
 

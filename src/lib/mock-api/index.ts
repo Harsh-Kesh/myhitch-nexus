@@ -1197,7 +1197,15 @@ export async function getChatMessages(eventId: string): Promise<ChatMessage[]> {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data.messages) && data.messages.length > 0) {
-        return data.messages.map((m: any) => ({
+        return data.messages.map((m: {
+          id: string;
+          streamId: string;
+          authorName: string;
+          authorAvatarUrl: string | null;
+          message: string;
+          createdAt: string;
+          authorRole: "viewer" | "creator" | "moderator" | "subscriber";
+        }) => ({
           id: m.id,
           liveEventId: m.streamId,
           authorName: m.authorName,
@@ -1283,7 +1291,7 @@ export async function getPolls(eventId: string): Promise<Poll[]> {
           id: p.id,
           liveEventId: p.streamId,
           question: p.question,
-          options: p.options.map((opt: any, idx: number) => ({
+          options: (p.options as { text: string; votes: number }[]).map((opt, idx: number) => ({
             id: `opt_${idx}`,
             label: opt.text,
             votes: opt.votes,
@@ -1315,7 +1323,7 @@ export async function votePoll(pollId: string, optionId: string): Promise<Poll |
           id: p.id,
           liveEventId: p.streamId,
           question: p.question,
-          options: p.options.map((opt: any, idx: number) => ({
+          options: (p.options as { text: string; votes: number }[]).map((opt, idx: number) => ({
             id: `opt_${idx}`,
             label: opt.text,
             votes: opt.votes,

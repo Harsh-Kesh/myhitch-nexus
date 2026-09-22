@@ -126,11 +126,12 @@ export default function ProfilePage() {
         setAddOpen(false);
         setNewName("");
         setNewPin("");
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const description = err instanceof Error ? err.message : "Unknown error";
         toast({
           tone: "error",
           title: "Could not add profile",
-          description: err.message,
+          description,
         });
       } finally {
         setSubmittingProfile(false);
@@ -174,11 +175,12 @@ export default function ProfilePage() {
           title: "Profile deleted",
           description: `${profileName} has been removed.`,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const description = err instanceof Error ? err.message : "Unknown error";
         toast({
           tone: "error",
           title: "Could not delete profile",
-          description: err.message,
+          description,
         });
       } finally {
         setActionProfileId(null);

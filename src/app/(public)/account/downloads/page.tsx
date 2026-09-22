@@ -32,11 +32,12 @@ export default function DownloadsPage() {
     try {
       const items = await getDownloadedVideos();
       setDownloads(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const description = err instanceof Error ? err.message : "Unknown error";
       toast({
         tone: "error",
         title: "Could not load downloads",
-        description: err.message,
+        description,
       });
     } finally {
       setLoading(false);
@@ -56,11 +57,12 @@ export default function DownloadsPage() {
         description: `"${title}" has been deleted from your device.`,
       });
       loadDownloads();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const description = err instanceof Error ? err.message : "Unknown error";
       toast({
         tone: "error",
         title: "Failed to remove download",
-        description: err.message,
+        description,
       });
     } finally {
       setDeletingId(null);
@@ -78,11 +80,12 @@ export default function DownloadsPage() {
         description: "All offline titles have been removed from this device.",
       });
       loadDownloads();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const description = err instanceof Error ? err.message : "Unknown error";
       toast({
         tone: "error",
         title: "Failed to clear downloads",
-        description: err.message,
+        description,
       });
     }
   };

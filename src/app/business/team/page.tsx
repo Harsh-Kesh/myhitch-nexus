@@ -32,11 +32,11 @@ export default function BusinessTeamPage() {
       if (!res.ok) throw new Error("Failed to load team");
       const json = await res.json();
       setData(json);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         tone: "error",
         title: "Could not load team members",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
       });
     } finally {
       setLoading(false);
@@ -71,11 +71,11 @@ export default function BusinessTeamPage() {
       });
       setInviteEmail("");
       fetchTeam();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         tone: "error",
         title: "Invitation failed",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
       });
     } finally {
       setInviting(false);
@@ -97,11 +97,11 @@ export default function BusinessTeamPage() {
         title: "Invitation revoked",
       });
       fetchTeam();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         tone: "error",
         title: "Failed to revoke invitation",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
       });
     } finally {
       setActionInProgress(null);
@@ -126,11 +126,11 @@ export default function BusinessTeamPage() {
         title: "Member removed",
       });
       fetchTeam();
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         tone: "error",
         title: "Failed to remove member",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
       });
     } finally {
       setActionInProgress(null);

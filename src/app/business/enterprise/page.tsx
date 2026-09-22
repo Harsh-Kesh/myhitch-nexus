@@ -114,10 +114,10 @@ export default function EnterpriseHubPage() {
       if (resReviews.reviews) setReviews(resReviews.reviews);
       if (resTransfers.transfers) setTransfers(resTransfers.transfers);
       if (resKeys.keys) setKeys(resKeys.keys);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "Error loading enterprise data",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
         tone: "error",
       });
     } finally {
@@ -151,8 +151,8 @@ export default function EnterpriseHubPage() {
         description: "Review URL copied to clipboard.",
         tone: "success",
       });
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -185,8 +185,8 @@ export default function EnterpriseHubPage() {
         description: "Large file transfer is now active.",
         tone: "success",
       });
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -213,8 +213,8 @@ export default function EnterpriseHubPage() {
         description: "Copy your API key before closing this prompt.",
         tone: "success",
       });
-    } catch (err: any) {
-      toast({ title: "Failed", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -234,8 +234,8 @@ export default function EnterpriseHubPage() {
         description: "The key can no longer make requests.",
         tone: "info",
       });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     }
   };
 

@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
   try {
     const result = await acceptInvitation(body.token.trim(), account.id);
     return NextResponse.json(result);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to accept invitation";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

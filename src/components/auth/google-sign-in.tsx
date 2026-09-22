@@ -13,9 +13,9 @@ declare global {
     google?: {
       accounts: {
         id: {
-          initialize: (config: any) => void;
-          prompt: (momentListener?: (notification: any) => void) => void;
-          renderButton: (parent: HTMLElement, options: any) => void;
+          initialize: (config: Record<string, unknown>) => void;
+          prompt: (momentListener?: (notification: unknown) => void) => void;
+          renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
         };
       };
     };
@@ -58,11 +58,11 @@ export function GoogleSignInButton({ callbackUrl = "/", className }: GoogleSignI
         await queryClient.invalidateQueries({ queryKey: qk.user });
         toast({ title: "Signed in with Google" });
         router.push(callbackUrl);
-      } catch (err: any) {
+      } catch (err: unknown) {
         toast({
           tone: "error",
           title: "Google sign-in failed",
-          description: err.message,
+          description: err instanceof Error ? err.message : "An error occurred",
         });
       } finally {
         setLoading(false);

@@ -106,7 +106,6 @@ export function SponsoredCard({ layout = "wide", className }: SponsoredCardProps
         )}
       >
         {ad.assetUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={ad.assetUrl} alt="Sponsored content" className="size-full object-cover" />
         ) : (
           <Poster

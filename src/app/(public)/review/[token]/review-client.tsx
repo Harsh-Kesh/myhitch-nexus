@@ -94,10 +94,10 @@ export function ReviewClient({
           tone: "info",
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "Error",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
         tone: "error",
       });
     } finally {

@@ -219,9 +219,9 @@ export async function getClientReviewByToken(token: string): Promise<{
 
   // Fetch linked video or fallback to review metadata
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(review.video_id);
-  let videoData: any = null;
+  let videoData: { id: string; title: string; synopsis: string | null; thumbnail_url: string | null; duration_seconds: number } | null = null;
   if (isUuid) {
-    videoData = await queryOne(
+    videoData = await queryOne<{ id: string; title: string; synopsis: string | null; thumbnail_url: string | null; duration_seconds: number }>(
       `select id, title, synopsis, thumbnail_url, duration_seconds from videos where id = $1`,
       [review.video_id],
     );

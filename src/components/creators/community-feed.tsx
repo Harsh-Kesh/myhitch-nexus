@@ -114,8 +114,8 @@ export function CommunityFeed({
       setPostContent("");
       setComposerOpen(false);
       toast({ title: "Post published", description: "Your update is now live on your community feed.", tone: "success" });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -192,8 +192,8 @@ export function CommunityFeed({
       setPosts((prev) =>
         prev.map((p) => (p.id === postId ? { ...p, commentsCount: p.commentsCount + 1 } : p)),
       );
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, tone: "error" });
+    } catch (err: unknown) {
+      toast({ title: "Error", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmittingComment(false);
     }
@@ -244,7 +244,7 @@ export function CommunityFeed({
                     <span className="text-fg-muted">Audience:</span>
                     <select
                       value={postAudience}
-                      onChange={(e) => setPostAudience(e.target.value as any)}
+                      onChange={(e) => setPostAudience(e.target.value as "public" | "subscribers" | "patrons")}
                       className="rounded border border-border bg-surface-2 px-2 py-1 text-xs text-fg"
                     >
                       <option value="public">Public (Everyone)</option>

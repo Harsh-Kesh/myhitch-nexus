@@ -139,7 +139,7 @@ export async function updateAccountProfile(
   },
 ): Promise<AccountProfile> {
   const updates: string[] = ["updated_at = now()"];
-  const params: any[] = [profileId, accountId];
+  const params: unknown[] = [profileId, accountId];
   let paramIdx = 3;
 
   if (input.name !== undefined) {

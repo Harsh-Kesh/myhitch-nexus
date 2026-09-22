@@ -28,9 +28,10 @@ export async function POST(request: NextRequest) {
   let identity;
   try {
     identity = await verifyGoogleIdToken(credential);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to verify Google credential.";
     return NextResponse.json(
-      { error: err.message || "Failed to verify Google credential." },
+      { error: message },
       { status: 401 },
     );
   }

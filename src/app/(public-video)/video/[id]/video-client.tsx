@@ -213,11 +213,11 @@ export function VideoDetailClient() {
         title: "Download complete",
         description: `"${video.title}" is now available offline in Account → Downloads.`,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         tone: "error",
         title: "Download failed",
-        description: err.message,
+        description: err instanceof Error ? err.message : "An error occurred",
       });
     } finally {
       setDownloadProgress(null);
