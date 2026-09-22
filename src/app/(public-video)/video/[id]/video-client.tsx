@@ -56,6 +56,7 @@ import {
   useVideo,
   useWatchProgress,
   useWatchlist,
+  useSubscriptions,
   qk,
 } from "@/lib/mock-api/hooks";
 import { useChannel } from "@/lib/mock-api/hooks";
@@ -86,6 +87,7 @@ export function VideoDetailClient() {
   const videoId = video?.id ?? id;
   const { data: currentUser, isLoading: isCurrentUserLoading } = useCurrentUser();
   const { data: entitlement } = useEntitlement(videoId, currentUser?.id, !isCurrentUserLoading);
+  const { data: subscriptions = [] } = useSubscriptions();
   const { data: channel } = useChannel(video?.channelId ?? "");
   const { data: related = [], isLoading: isRelatedLoading } = useRelatedVideos(videoId);
   const { data: comments = [] } = useComments(videoId);
@@ -194,6 +196,29 @@ export function VideoDetailClient() {
     }
 
     if (!video) return;
+
+    // Check if user has Premium or Family subscription access
+    const hasPremiumAccess =
+      Boolean(
+        entitlement?.granted &&
+          (entitlement.reason === "subscription" ||
+            entitlement.reason === "purchased" ||
+            entitlement.reason === "rented" ||
+            entitlement.reason === "owner"),
+      ) ||
+      subscriptions.some(
+        (s) => s.kind === "platform" && s.status === "active",
+      );
+
+    if (!hasPremiumAccess) {
+      toast({
+        title: "Nexus Premium Feature",
+        description: "Offline downloads are available with Nexus Premium and Family plans.",
+        tone: "warning",
+      });
+      setPurchaseOpen(true);
+      return;
+    }
 
     setDownloadProgress(0);
     try {
