@@ -811,7 +811,7 @@ export const videos: Video[] = [
     synopsis:
       "The unedited 52-minute interview referenced in 'Who owns the water'. Published in full for transparency.",
     channelId: "ch_ledger",
-    contentType: "news",
+    contentType: "podcast",
     categoryIds: ["cat_news_bulletins", "cat_investigations"],
     tags: ["interview", "unedited", "transparency"],
     posterGradient: ["#153B44", "#061417"],
@@ -1014,7 +1014,7 @@ export const videos: Video[] = [
     synopsis:
       "Halcyon Bell, live in the room, one take. The extended cut with the two unreleased tracks is available to members.",
     channelId: "ch_orbit",
-    contentType: "entertainment",
+    contentType: "music",
     categoryIds: ["cat_music", "cat_series"],
     tags: ["live music", "session", "one take"],
     posterGradient: ["#3E1638", "#120610"],
@@ -1038,7 +1038,7 @@ export const videos: Video[] = [
     title: "Orbit Session 13 — Nadir Quartet",
     synopsis: "The Nadir Quartet play the full suite live, unedited.",
     channelId: "ch_orbit",
-    contentType: "entertainment",
+    contentType: "music",
     categoryIds: ["cat_music", "cat_series"],
     tags: ["live music", "classical", "session"],
     posterGradient: ["#2A1B4A", "#0A0714"],
