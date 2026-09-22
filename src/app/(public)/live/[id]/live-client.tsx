@@ -61,13 +61,15 @@ export function LiveViewerClient() {
   const votePoll = useVotePoll(id);
   const toggleFollow = useToggleFollow();
 
-  // Redirect guests to the login page — same fix as video-client.tsx's: gated on the
-  // *current user* query's own loading state, not the live event's.
+  // Only redirect guests to the login page if the stream is not public.
+  // Public streams can be freely watched by everyone!
   React.useEffect(() => {
-    if (!isCurrentUserLoading && currentUser === null) {
-      router.replace("/auth/login");
+    if (!isCurrentUserLoading && currentUser === null && event) {
+      if (event.accessType !== "public") {
+        router.replace(`/auth/login?callbackUrl=/live/${id}`);
+      }
     }
-  }, [isCurrentUserLoading, currentUser, router]);
+  }, [isCurrentUserLoading, currentUser, event, router, id]);
 
   const [draft, setDraft] = React.useState("");
   const [tab, setTab] = React.useState("chat");
@@ -253,38 +255,52 @@ export function LiveViewerClient() {
                   <div ref={chatEndRef} />
                 </div>
 
-                <form
-                  className="flex items-center gap-2 border-t border-border p-2.5"
-                  onSubmit={async (formEvent) => {
-                    formEvent.preventDefault();
-                    if (!draft.trim()) return;
-                    await sendMessage.mutateAsync(draft.trim());
-                    setDraft("");
-                  }}
-                >
-                  <Input
-                    value={draft}
-                    onChange={(inputEvent) => setDraft(inputEvent.target.value)}
-                    placeholder={
-                      event.chatEnabled
-                        ? slowMode
-                          ? "Slow mode: 1 message / 30s"
-                          : "Say something…"
-                        : "Chat is disabled"
-                    }
-                    disabled={!event.chatEnabled}
-                    sizeVariant="sm"
-                  />
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="icon-sm"
-                    aria-label="Send message"
-                    disabled={!draft.trim() || !event.chatEnabled}
+                {!currentUser ? (
+                  <div className="border-t border-border p-3 text-center">
+                    <p className="mb-2 text-xs text-fg-muted">Sign in to participate in live chat</p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => router.push(`/auth/login?callbackUrl=/live/${id}`)}
+                    >
+                      Sign In to Chat
+                    </Button>
+                  </div>
+                ) : (
+                  <form
+                    className="flex items-center gap-2 border-t border-border p-2.5"
+                    onSubmit={async (formEvent) => {
+                      formEvent.preventDefault();
+                      if (!draft.trim()) return;
+                      await sendMessage.mutateAsync(draft.trim());
+                      setDraft("");
+                    }}
                   >
-                    <IconSend />
-                  </Button>
-                </form>
+                    <Input
+                      value={draft}
+                      onChange={(inputEvent) => setDraft(inputEvent.target.value)}
+                      placeholder={
+                        event.chatEnabled
+                          ? slowMode
+                            ? "Slow mode: 1 message / 30s"
+                            : "Say something…"
+                          : "Chat is disabled"
+                      }
+                      disabled={!event.chatEnabled}
+                      sizeVariant="sm"
+                    />
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="icon-sm"
+                      aria-label="Send message"
+                      disabled={!draft.trim() || !event.chatEnabled}
+                    >
+                      <IconSend />
+                    </Button>
+                  </form>
+                )}
               </>
             ) : null}
 
@@ -312,9 +328,17 @@ export function LiveViewerClient() {
                               key={option.id}
                               type="button"
                               disabled={poll.status !== "open"}
-                              onClick={() =>
-                                votePoll.mutate({ pollId: poll.id, optionId: option.id })
-                              }
+                              onClick={() => {
+                                if (!currentUser) {
+                                  toast({
+                                    title: "Sign in required",
+                                    description: "Sign in to vote on live stream polls.",
+                                    tone: "warning",
+                                  });
+                                  return;
+                                }
+                                votePoll.mutate({ pollId: poll.id, optionId: option.id });
+                              }}
                               className="block w-full text-left disabled:cursor-not-allowed"
                             >
                               <ProgressBar

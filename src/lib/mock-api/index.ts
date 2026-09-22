@@ -195,9 +195,39 @@ export async function getVideo(id: string): Promise<Video | null> {
 }
 
 export async function getRelatedVideos(id: string, limit = 12): Promise<Video[]> {
+  // 1. If this is a real video ID or slug, try querying the real catalogue
+  if (!id.startsWith("vid_")) {
+    try {
+      const videoRes = await fetch(`/api/videos/${encodeURIComponent(id)}/`);
+      if (videoRes.ok) {
+        const video = (await videoRes.json()) as Video;
+        const searchRes = await fetch(
+          `/api/videos?limit=${limit + 1}${video.channelId ? `&channelId=${encodeURIComponent(video.channelId)}` : ""}`,
+        );
+        if (searchRes.ok) {
+          const data = (await searchRes.json()) as { items?: Video[] };
+          const items = Array.isArray(data.items) ? data.items : [];
+          const filtered = items.filter((v) => v.id !== id);
+          if (filtered.length > 0) {
+            return filtered.slice(0, limit);
+          }
+        }
+      }
+    } catch {
+      // Fall through to store fallback
+    }
+  }
+
   await latency("fast");
-  const video = store.videos.find((item) => item.id === id);
-  if (!video) return [];
+  const video = store.videos.find((item) => item.id === id || item.slug === id);
+  if (!video) {
+    // If video not in mock store, return published videos as fallback so the rail is never empty
+    return clone(
+      store.videos
+        .filter((item) => item.status === "published" && item.id !== id)
+        .slice(0, limit),
+    );
+  }
   const scored = store.videos
     .filter((item) => item.id !== id && item.status === "published")
     .map((item) => {
