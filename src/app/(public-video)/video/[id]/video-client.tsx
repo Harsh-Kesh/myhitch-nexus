@@ -19,7 +19,12 @@ import {
   IconStarFilled,
   IconThumbUp,
 } from "@tabler/icons-react";
-import { downloadVideo, isDownloaded, removeDownload } from "@/lib/offline/downloadManager";
+import {
+  downloadVideo,
+  isDownloaded,
+  removeDownload,
+  getOfflinePlaybackUrl,
+} from "@/lib/offline/downloadManager";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
@@ -174,11 +179,20 @@ export function VideoDetailClient() {
   const [replyBody, setReplyBody] = React.useState("");
   const [liked, setLiked] = React.useState(false);
   const [downloaded, setDownloaded] = React.useState(false);
+  const [offlineUrl, setOfflineUrl] = React.useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     if (!video?.id) return;
-    isDownloaded(video.id).then(setDownloaded);
+    isDownloaded(video.id).then(async (isDl) => {
+      setDownloaded(isDl);
+      if (isDl) {
+        const url = await getOfflinePlaybackUrl(video.id);
+        setOfflineUrl(url);
+      } else {
+        setOfflineUrl(null);
+      }
+    });
   }, [video?.id]);
 
   const handleDownload = async () => {
@@ -189,6 +203,7 @@ export function VideoDetailClient() {
         if (video?.id) {
           await removeDownload(video.id);
           setDownloaded(false);
+          setOfflineUrl(null);
           toast({ title: "Download removed", description: "This title was removed from your device." });
         }
       }
@@ -234,6 +249,8 @@ export function VideoDetailClient() {
         (pct) => setDownloadProgress(pct),
       );
       setDownloaded(true);
+      const url = await getOfflinePlaybackUrl(video.id);
+      setOfflineUrl(url);
       toast({
         title: "Download complete",
         description: `"${video.title}" is now available offline in Account → Downloads.`,
@@ -315,6 +332,13 @@ export function VideoDetailClient() {
     });
   };
 
+  const effectiveEntitlement = React.useMemo(() => {
+    if (offlineUrl && entitlement) {
+      return { ...entitlement, granted: true, reason: "subscription" as const };
+    }
+    return entitlement;
+  }, [offlineUrl, entitlement]);
+
   return (
     <div className="mx-auto max-w-[110rem] px-0 pb-10 sm:px-6 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_25rem]">
@@ -322,7 +346,7 @@ export function VideoDetailClient() {
           {video.kind === "audio" ? (
             <AudioPlayer
               video={video}
-              entitlement={entitlement}
+              entitlement={effectiveEntitlement}
               resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
               onRequestPurchase={() => setPurchaseOpen(true)}
               onCommerceClick={(linkId) => {
@@ -338,7 +362,8 @@ export function VideoDetailClient() {
           ) : (
             <VideoPlayer
               video={video}
-              entitlement={entitlement}
+              entitlement={effectiveEntitlement}
+              offlineMediaUrl={offlineUrl}
               resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
               onRequestPurchase={() => setPurchaseOpen(true)}
               onCommerceClick={(linkId) => {

@@ -29,6 +29,7 @@ export interface VideoPlayerProps {
   onCommerceClick?: (linkId: string) => void;
   /** Live pages hide the scrubber affordances that imply seeking a VOD. */
   live?: boolean;
+  offlineMediaUrl?: string | null;
   className?: string;
 }
 
@@ -39,6 +40,7 @@ export function VideoPlayer({
   onRequestPurchase,
   onCommerceClick,
   live,
+  offlineMediaUrl,
   className,
 }: VideoPlayerProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -95,7 +97,7 @@ export function VideoPlayer({
    * (server-side, via GET /api/ads/serve) whether this content/viewer/placement actually
    * has an eligible ad — most of the time it resolves immediately with nothing to show. */
   const beginPlayback = () => {
-    if (!adShownRef.current) {
+    if (!adShownRef.current && !offlineMediaUrl) {
       adShownRef.current = true;
       setAdGate(true);
       return;
@@ -107,6 +109,7 @@ export function VideoPlayer({
   React.useEffect(() => {
     if (
       !midRollShownRef.current &&
+      !offlineMediaUrl &&
       started &&
       state.playing &&
       video.durationSeconds >= 60 &&
@@ -116,12 +119,13 @@ export function VideoPlayer({
       controls.pause();
       setMidRollGate(true);
     }
-  }, [started, state.playing, state.currentTime, video.durationSeconds, controls]);
+  }, [started, state.playing, state.currentTime, video.durationSeconds, controls, offlineMediaUrl]);
 
   // Post-roll ad delivery (FR-6.8.2): triggers when video reaches completion for videos >= 30s
   React.useEffect(() => {
     if (
       !postRollShownRef.current &&
+      !offlineMediaUrl &&
       started &&
       video.durationSeconds >= 30 &&
       state.currentTime >= video.durationSeconds
@@ -129,7 +133,7 @@ export function VideoPlayer({
       postRollShownRef.current = true;
       setPostRollGate(true);
     }
-  }, [started, state.currentTime, video.durationSeconds]);
+  }, [started, state.currentTime, video.durationSeconds, offlineMediaUrl]);
 
   /* --------------------------- Fullscreen / PiP -------------------------- */
 
@@ -291,7 +295,7 @@ export function VideoPlayer({
   }
 
   // Paid content, never started: show the paywall in place of the player.
-  if (!entitlement.granted && !started) {
+  if (!entitlement.granted && !started && !offlineMediaUrl) {
     return (
       <PaywallSurface
         video={video}
@@ -389,7 +393,7 @@ export function VideoPlayer({
         poster=""
         // A local sample if one is present; the engine falls back cleanly when
         // it is not. No streaming manifest or DRM licence server is involved.
-        src={video.sampleSrc}
+        src={offlineMediaUrl || video.sampleSrc}
         onClick={controls.toggle}
       />
 
@@ -414,7 +418,13 @@ export function VideoPlayer({
         </div>
       ) : null}
 
-      {live ? (
+      {offlineMediaUrl ? (
+        <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
+          <Badge tone="accent" size="sm" className="bg-black/60 backdrop-blur-sm">
+            Offline playback
+          </Badge>
+        </div>
+      ) : live ? (
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
           <LiveBadge />
         </div>

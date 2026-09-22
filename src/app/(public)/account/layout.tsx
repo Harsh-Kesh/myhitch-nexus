@@ -4,6 +4,7 @@ import {
   IconBell,
   IconBookmark,
   IconCreditCard,
+  IconDownload,
   IconGavel,
   IconHistory,
   IconReceipt,
@@ -16,6 +17,7 @@ import { NavTabs } from "@/components/ui/tabs";
 const TABS = [
   { href: "/account/profile", label: "Profile", icon: <IconUser /> },
   { href: "/account/watchlist", label: "Watchlist", icon: <IconBookmark /> },
+  { href: "/account/downloads", label: "Downloads", icon: <IconDownload /> },
   { href: "/account/history", label: "History", icon: <IconHistory /> },
   { href: "/account/billing", label: "Billing", icon: <IconReceipt /> },
   { href: "/account/subscriptions", label: "Subscriptions", icon: <IconCreditCard /> },

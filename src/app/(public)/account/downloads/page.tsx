@@ -207,7 +207,7 @@ export default function DownloadsPage() {
                     variant="primary"
                     size="sm"
                     className="flex-1"
-                    onClick={() => router.push(`/video/${item.videoId}?offline=true`)}
+                    onClick={() => router.push(`/video/${item.videoId}/?offline=true`)}
                   >
                     <IconPlayerPlay className="size-3.5" />
                     Watch Offline
