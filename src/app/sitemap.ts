@@ -93,9 +93,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "monthly",
       priority: 0.4,
     },
+    {
+      url: `${baseUrl}/switch-profile`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    },
     // Account routes
     {
       url: `${baseUrl}/account/profile`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.5,
+    },
+    {
+      url: `${baseUrl}/account/downloads`,
       lastModified: now,
       changeFrequency: "weekly",
       priority: 0.5,
