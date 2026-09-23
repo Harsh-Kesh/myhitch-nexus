@@ -76,10 +76,90 @@ export default function ProfilePage() {
   if (!user) return null;
 
   const isRealAccount = looksLikeRealId(user.id);
-  const activeSubscription = subscriptions.find((s) => s.status === "active" && s.kind === "platform");
   const hasFamilyPlan = subscriptions.some(
     (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
   );
+
+  const activePlanInfo = React.useMemo(() => {
+    const activeSub = subscriptions.find((s) => s.status === "active");
+    if (activeSub) {
+      return {
+        name: activeSub.name,
+        interval: activeSub.interval,
+        amount: activeSub.price.amount,
+        currency: activeSub.price.currency,
+        renewsAt: activeSub.renewsAt,
+        benefits: activeSub.benefits,
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("creator") || user.activeRole === "creator") {
+      return {
+        name: "Nexus Creator Plan",
+        interval: "monthly" as const,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Creator Studio Access",
+          "Video & Audio Asset Uploads",
+          "MYHitch Pass PPV & Ticketed Live Streaming",
+          "MYHitch Connect Brand Sponsorship Deals",
+          "Fan Super Thanks Tipping & Ad Revenue Share",
+        ],
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("business") || user.activeRole === "business") {
+      return {
+        name: "Nexus Business Plan",
+        interval: "monthly" as const,
+        amount: 2900,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Business Channel & Product Link Embedding",
+          "Customer Lead Generation Forms",
+          "Team Access & Role Management",
+          "Pre-roll & Mid-roll Ad Campaign Manager",
+        ],
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("enterprise") || user.roles.includes("producer") || user.activeRole === "enterprise") {
+      return {
+        name: "Nexus Enterprise Plan",
+        interval: "annual" as const,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Bulk CSV/XML Catalog Metadata Import",
+          "Client Review Links with Dynamic Watermarks",
+          "High-Capacity Secure File Transfers",
+          "Developer API Keys & Dedicated Support",
+        ],
+        isFree: false,
+      };
+    }
+
+    return {
+      name: "Nexus Free Tier",
+      interval: null,
+      amount: 0,
+      currency: "GBP",
+      renewsAt: null,
+      benefits: [
+        "Ad-Supported Catalog Access",
+        "Standard Quality Playback",
+        "1 Viewer Profile (Upgrade to Family for up to 5)",
+      ],
+      isFree: true,
+    };
+  }, [subscriptions, user]);
 
   const handleAddProfileClick = () => {
     if (!hasFamilyPlan && user.profiles.length >= 1) {
@@ -214,104 +294,106 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      {/* Profile switcher */}
-      <Card>
-        <CardHeader
-          title="Viewer profiles"
-          description="Up to five profiles share this account (Family Tier). Each keeps its own watchlist, history, parental ratings and recommendations."
-          action={
-            <div className="flex items-center gap-3">
-              <Badge tone={user.profiles.length >= 5 ? "warning" : "neutral"} size="sm">
-                {user.profiles.length} of 5 Profiles Used
-              </Badge>
-              {user.profiles.length < 5 && (
-                <Button variant="secondary" size="sm" onClick={handleAddProfileClick}>
-                  <IconUserPlus />
-                  Add profile
-                </Button>
-              )}
-            </div>
-          }
-        />
-        <CardBody>
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {user.profiles.map((profile) => {
-              const active = profile.id === user.activeProfileId;
-              const canDelete = user.profiles.length > 1 && !active;
-              return (
-                <div
-                  key={profile.id}
-                  className={cn(
-                    "relative flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors",
-                    active
-                      ? "border-accent bg-accent/[0.07]"
-                      : "border-border bg-surface-2 hover:border-border-strong",
-                  )}
-                >
-                  {canDelete && (
+      {/* Profile switcher — Exclusively for Family Plan subscribers */}
+      {hasFamilyPlan ? (
+        <Card>
+          <CardHeader
+            title="Viewer profiles"
+            description="Up to five profiles share this account (Family Tier). Each keeps its own watchlist, history, parental ratings and recommendations."
+            action={
+              <div className="flex items-center gap-3">
+                <Badge tone={user.profiles.length >= 5 ? "warning" : "neutral"} size="sm">
+                  {user.profiles.length} of 5 Profiles Used
+                </Badge>
+                {user.profiles.length < 5 && (
+                  <Button variant="secondary" size="sm" onClick={handleAddProfileClick}>
+                    <IconUserPlus />
+                    Add profile
+                  </Button>
+                )}
+              </div>
+            }
+          />
+          <CardBody>
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {user.profiles.map((profile) => {
+                const active = profile.id === user.activeProfileId;
+                const canDelete = user.profiles.length > 1 && !active;
+                return (
+                  <div
+                    key={profile.id}
+                    className={cn(
+                      "relative flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors",
+                      active
+                        ? "border-accent bg-accent/[0.07]"
+                        : "border-border bg-surface-2 hover:border-border-strong",
+                    )}
+                  >
+                    {canDelete && (
+                      <button
+                        type="button"
+                        aria-label={`Delete ${profile.name}`}
+                        disabled={actionProfileId === profile.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteProfile(profile.id, profile.name);
+                        }}
+                        className="absolute right-2 top-2 rounded p-1 text-fg-subtle transition-colors hover:bg-danger/10 hover:text-danger"
+                      >
+                        <IconTrash className="size-3.5" />
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      aria-label={`Delete ${profile.name}`}
-                      disabled={actionProfileId === profile.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteProfile(profile.id, profile.name);
+                      onClick={() => {
+                        switchProfile.mutate(profile.id);
+                        toast({ title: `Now viewing as ${profile.name}` });
                       }}
-                      className="absolute right-2 top-2 rounded p-1 text-fg-subtle transition-colors hover:bg-danger/10 hover:text-danger"
+                      className="flex flex-col items-center gap-2 w-full"
                     >
-                      <IconTrash className="size-3.5" />
+                      <Avatar
+                        name={profile.name}
+                        gradient={profile.avatarGradient}
+                        src={profile.avatarUrl}
+                        size="xl"
+                      />
+                      <span className="text-sm font-medium text-fg">{profile.name}</span>
+                      <span className="flex items-center gap-1.5">
+                        <Badge tone={profile.kind === "adult" ? "neutral" : "info"} size="sm">
+                          {profile.kind}
+                        </Badge>
+                        <Badge tone="outline" size="sm">
+                          {profile.maxAgeRating}
+                        </Badge>
+                      </span>
+                      {active ? (
+                        <Badge tone="accent" size="sm">
+                          <IconCheck />
+                          Active
+                        </Badge>
+                      ) : null}
                     </button>
-                  )}
+                  </div>
+                );
+              })}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      switchProfile.mutate(profile.id);
-                      toast({ title: `Now viewing as ${profile.name}` });
-                    }}
-                    className="flex flex-col items-center gap-2 w-full"
-                  >
-                    <Avatar
-                      name={profile.name}
-                      gradient={profile.avatarGradient}
-                      src={profile.avatarUrl}
-                      size="xl"
-                    />
-                    <span className="text-sm font-medium text-fg">{profile.name}</span>
-                    <span className="flex items-center gap-1.5">
-                      <Badge tone={profile.kind === "adult" ? "neutral" : "info"} size="sm">
-                        {profile.kind}
-                      </Badge>
-                      <Badge tone="outline" size="sm">
-                        {profile.maxAgeRating}
-                      </Badge>
-                    </span>
-                    {active ? (
-                      <Badge tone="accent" size="sm">
-                        <IconCheck />
-                        Active
-                      </Badge>
-                    ) : null}
-                  </button>
-                </div>
-              );
-            })}
-
-            {user.profiles.length < 5 ? (
-              <button
-                type="button"
-                onClick={handleAddProfileClick}
-                className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
-              >
-                <span className="flex size-20 items-center justify-center rounded bg-surface-2">
-                  <IconPlus className="size-6" />
-                </span>
-                <span className="text-sm font-medium">Add profile</span>
-              </button>
-            ) : null}
-          </div>
-        </CardBody>
-      </Card>
+              {user.profiles.length < 5 ? (
+                <button
+                  type="button"
+                  onClick={handleAddProfileClick}
+                  className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
+                >
+                  <span className="flex size-20 items-center justify-center rounded bg-surface-2">
+                    <IconPlus className="size-6" />
+                  </span>
+                  <span className="text-sm font-medium">Add profile</span>
+                </button>
+              ) : null}
+            </div>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Account details */}
       <Card>
@@ -477,42 +559,32 @@ export default function ProfilePage() {
             <div className="flex flex-wrap items-center gap-2">
               <IconCrown className="size-5 text-accent" />
               <span>Active Subscription Plan</span>
-              <Badge tone={activeSubscription ? "published" : "outline"} size="sm">
-                {activeSubscription ? activeSubscription.name : "Nexus Free Tier"}
+              <Badge tone={activePlanInfo.isFree ? "outline" : "published"} size="sm">
+                {activePlanInfo.name}
               </Badge>
             </div>
           }
           description={
-            activeSubscription
-              ? `Billed ${activeSubscription.interval} at ${formatCurrency(activeSubscription.price.amount, activeSubscription.price.currency)} — renews ${formatDate(activeSubscription.renewsAt, "long")}`
-              : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+            activePlanInfo.isFree
+              ? "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+              : activePlanInfo.renewsAt
+                ? `Billed ${activePlanInfo.interval} at ${formatCurrency(activePlanInfo.amount, activePlanInfo.currency)} — renews ${formatDate(activePlanInfo.renewsAt, "long")}`
+                : `Active plan included with your ${activePlanInfo.name} tier.`
           }
           action={
             <Button variant="primary" size="sm" href="/plans">
-              {activeSubscription ? "Manage Plan" : "Upgrade Plan"}
+              {activePlanInfo.isFree ? "Upgrade Plan" : "Manage Plan"}
             </Button>
           }
         />
         <CardBody className="border-t border-border/50 pt-4">
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-fg-muted">
-            {activeSubscription ? (
-              activeSubscription.benefits.map((b) => (
-                <li key={b} className="flex items-center gap-1.5">
-                  <IconCheck className="size-3.5 text-success" />
-                  {b}
-                </li>
-              ))
-            ) : (
-              <>
-                <li className="flex items-center gap-1.5">
-                  <IconCheck className="size-3.5 text-success" />
-                  Ad-Supported Catalog Access
-                </li>
-                <li className="flex items-center gap-1.5 text-fg-subtle">
-                  • 1 Viewer Profile (Upgrade to Family for up to 5)
-                </li>
-              </>
-            )}
+            {activePlanInfo.benefits.map((b) => (
+              <li key={b} className="flex items-center gap-1.5">
+                <IconCheck className="size-3.5 text-success" />
+                {b}
+              </li>
+            ))}
           </ul>
           <p className="mt-3 text-xs text-fg-subtle nx-tnum">
             Member since {formatDate(user.createdAt, "long")}
