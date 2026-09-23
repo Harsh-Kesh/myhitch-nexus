@@ -1,6 +1,7 @@
 // Server-only. Family Profiles & Parental Controls (Family Tier: "Up to 5 family profiles & parental controls")
 import "server-only";
 import { query, queryOne } from "./db";
+import { checkRealPlanActive } from "./subscriptions";
 
 export interface AccountProfile {
   id: string;
@@ -73,13 +74,21 @@ export async function createAccountProfile(
     throw new Error("Profile name is required");
   }
 
-  // Check 5 profile limit
+  // Check 5 profile limit and Family Plan subscription requirement
   const countRow = await queryOne<{ count: string }>(
     `select count(*)::text as count from account_profiles where account_id = $1`,
     [accountId],
   );
 
   const currentCount = parseInt(countRow?.count ?? "0", 10);
+  if (currentCount >= 1) {
+    const isFamilyPlan = await checkRealPlanActive(accountId, "family");
+    if (!isFamilyPlan) {
+      throw new Error(
+        "Adding additional household profiles requires an active Nexus Family Plan (£14.99/mo). Please upgrade your subscription.",
+      );
+    }
+  }
   if (currentCount >= 5) {
     throw new Error("Family plan includes up to 5 profiles. Please remove an existing profile to add a new one.");
   }

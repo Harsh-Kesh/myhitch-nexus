@@ -1,6 +1,6 @@
 "use client";
 
-import { IconAlertTriangle, IconCheck, IconCreditCard } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconCreditCard, IconCrown } from "@tabler/icons-react";
 import Link from "next/link";
 import * as React from "react";
 import { Avatar } from "@/components/ui/avatar";
@@ -33,6 +33,7 @@ export default function SubscriptionsPage() {
 
   const active = subscriptions.filter((item) => item.status !== "cancelled");
   const inactive = subscriptions.filter((item) => item.status === "cancelled");
+  const platformSubscription = active.find((item) => item.kind === "platform");
 
   const monthlyTotal = active
     .filter((item) => item.interval === "monthly")
@@ -40,6 +41,53 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Primary Active Subscription Plan Card */}
+      <Card className="border-accent/40 bg-accent/5">
+        <CardHeader
+          title={
+            <div className="flex flex-wrap items-center gap-2">
+              <IconCrown className="size-5 text-accent" />
+              <span>Active Subscription Plan</span>
+              <Badge tone={platformSubscription ? "published" : "outline"} size="sm">
+                {platformSubscription ? platformSubscription.name : "Nexus Free Tier"}
+              </Badge>
+            </div>
+          }
+          description={
+            platformSubscription
+              ? `Billed ${platformSubscription.interval} at ${formatCurrency(platformSubscription.price.amount, platformSubscription.price.currency)} — renews ${formatDate(platformSubscription.renewsAt, "long")}`
+              : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+          }
+          action={
+            <Button variant="primary" size="sm" href="/plans">
+              {platformSubscription ? "Change Plan" : "Upgrade Plan"}
+            </Button>
+          }
+        />
+        <CardBody className="border-t border-border/50 pt-4">
+          <ul className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-fg-muted">
+            {platformSubscription ? (
+              platformSubscription.benefits.map((b) => (
+                <li key={b} className="flex items-center gap-1.5">
+                  <IconCheck className="size-3.5 text-success" />
+                  {b}
+                </li>
+              ))
+            ) : (
+              <>
+                <li className="flex items-center gap-1.5">
+                  <IconCheck className="size-3.5 text-success" />
+                  Ad-Supported Catalog Access
+                </li>
+                <li className="flex items-center gap-1.5 text-fg-subtle">
+                  • 1 Viewer Profile (Upgrade to Family for up to 5)
+                </li>
+              </>
+            )}
+          </ul>
+        </CardBody>
+      </Card>
+
       <Card>
         <CardBody className="flex flex-wrap items-center gap-4">
           <span className="flex size-11 items-center justify-center rounded-full bg-accent-soft text-accent">

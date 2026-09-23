@@ -2,6 +2,7 @@
 
 import {
   IconCheck,
+  IconCrown,
   IconLock,
   IconPencil,
   IconPlus,
@@ -25,6 +26,7 @@ import { looksLikeRealId } from "@/lib/mock-api";
 import {
   qk,
   useCurrentUser,
+  useSubscriptions,
   useSwitchProfile,
   useUpdateUser,
 } from "@/lib/mock-api/hooks";
@@ -43,6 +45,7 @@ const PROFILE_GRADIENTS: Array<[string, string]> = [
 export default function SwitchProfilePage() {
   const router = useRouter();
   const { data: user } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const queryClient = useQueryClient();
   const switchProfile = useSwitchProfile();
   const updateUser = useUpdateUser();
@@ -50,6 +53,7 @@ export default function SwitchProfilePage() {
 
   const [isManaging, setIsManaging] = React.useState(false);
   const [addOpen, setAddOpen] = React.useState(false);
+  const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [editProfile, setEditProfile] = React.useState<ViewerProfile | null>(null);
 
   // Add profile form state
@@ -85,7 +89,22 @@ export default function SwitchProfilePage() {
 
   const isRealAccount = looksLikeRealId(user.id);
   const profiles = user.profiles || [];
+  const hasFamilyPlan = subscriptions.some(
+    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
+  );
   const canAddMore = profiles.length < 5;
+
+  const handleAddProfileClick = () => {
+    if (!hasFamilyPlan && profiles.length >= 1) {
+      setUpgradeOpen(true);
+      return;
+    }
+    setAddOpen(true);
+    setNewName("");
+    setNewIsKids(false);
+    setNewPin("");
+    setNewGradientIdx(profiles.length % PROFILE_GRADIENTS.length);
+  };
 
   const handleSelectProfile = (profile: ViewerProfile) => {
     if (isManaging) {
@@ -409,21 +428,24 @@ export default function SwitchProfilePage() {
               <div className="flex flex-col items-center">
                 <button
                   type="button"
-                  onClick={() => {
-                    setAddOpen(true);
-                    setNewName("");
-                    setNewIsKids(false);
-                    setNewPin("");
-                    setNewGradientIdx((profiles.length) % PROFILE_GRADIENTS.length);
-                  }}
-                  className="flex size-28 sm:size-32 md:size-36 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-surface-2/40 text-fg-subtle transition-all duration-200 hover:border-accent hover:bg-surface-2 hover:text-fg hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  onClick={handleAddProfileClick}
+                  className="group/add flex size-28 sm:size-32 md:size-36 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border bg-surface-2/40 text-fg-subtle transition-all duration-200 hover:border-accent hover:bg-surface-2 hover:text-fg hover:scale-105 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
-                  <IconPlus className="size-8 sm:size-10 stroke-[1.5]" />
+                  {!hasFamilyPlan && profiles.length >= 1 ? (
+                    <IconCrown className="size-8 sm:size-10 stroke-[1.5] text-accent group-hover/add:scale-110 transition-transform" />
+                  ) : (
+                    <IconPlus className="size-8 sm:size-10 stroke-[1.5]" />
+                  )}
                 </button>
-                <div className="mt-3 text-center">
+                <div className="mt-3 flex flex-col items-center gap-1 text-center">
                   <span className="text-sm sm:text-base font-medium text-fg-muted">
                     Add Profile
                   </span>
+                  {!hasFamilyPlan && profiles.length >= 1 ? (
+                    <Badge tone="pending" size="sm">
+                      Family Plan Required
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -665,6 +687,34 @@ export default function SwitchProfilePage() {
               </div>
             </div>
           </form>
+        </Modal>
+
+        {/* Upgrade to Family Plan Modal */}
+        <Modal
+          open={upgradeOpen}
+          onClose={() => setUpgradeOpen(false)}
+          title="Nexus Family Plan Required"
+        >
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 rounded-lg border border-accent/30 bg-accent/10 p-4">
+              <IconCrown className="mt-0.5 size-6 shrink-0 text-accent" />
+              <div>
+                <p className="font-semibold text-fg">Multi-Profile Household Switching</p>
+                <p className="mt-1 text-sm text-fg-muted leading-relaxed">
+                  Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan (£14.99/mo)</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setUpgradeOpen(false)}>
+                Maybe Later
+              </Button>
+              <Button variant="primary" href="/plans">
+                Upgrade to Family Plan — £14.99/mo
+              </Button>
+            </div>
+          </div>
         </Modal>
       </div>
     </AuthGuard>
