@@ -273,8 +273,8 @@ export default function EnterpriseHubPage() {
   return (
     <>
       <PageHeader
-        title="Enterprise & Developer Suite"
-        description="Private video workspaces, client review & approval workflows, large file delivery, and Partner API integrations (TPI-9)."
+        title="Enterprise Suite"
+        description="Secure media workspace, client review & approval workflows, large file transfers (up to 500GB), version control, Partner API integrations (TPI-9), and dedicated infrastructure."
         actions={
           <div className="flex items-center gap-2">
             <Button
