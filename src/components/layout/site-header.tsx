@@ -35,6 +35,7 @@ import {
   useCurrentUser,
   useLogout,
   useNotifications,
+  useSubscriptions,
   useSwitchProfile,
 } from "@/lib/mock-api/hooks";
 import { cn, relativeTime } from "@/lib/utils";
@@ -67,6 +68,7 @@ export function SiteHeader() {
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
   const { data: user } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const { data: notifications = [] } = useNotifications();
   const switchProfile = useSwitchProfile();
   const logout = useLogout();
@@ -77,6 +79,9 @@ export function SiteHeader() {
 
   const isGuest = !user;
   const unread = notifications.filter((item) => !item.read).length;
+  const hasFamilyPlan = subscriptions.some(
+    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
+  );
   // The Creators directory has its own local search that actually filters channels;
   // this header search only ever searches videos (BrowseView/Typesense), so showing
   // both boxes here — one that works for this page's content and one that doesn't —
@@ -292,7 +297,7 @@ export function SiteHeader() {
                     <p className="truncate text-sm font-medium text-fg">{user.name}</p>
                     <p className="truncate text-xs text-fg-subtle">{user.email}</p>
                   </div>
-                  {user.profiles.length > 1 ? (
+                  {hasFamilyPlan && user.profiles.length > 1 ? (
                     <>
                       <MenuSeparator />
                       <MenuLabel>Viewing as</MenuLabel>
@@ -322,10 +327,14 @@ export function SiteHeader() {
                       ))}
                     </>
                   ) : null}
-                  <MenuSeparator />
-                  <MenuItem href="/switch-profile" icon={<IconUsers />}>
-                    Switch Profile
-                  </MenuItem>
+                  {hasFamilyPlan ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem href="/switch-profile" icon={<IconUsers />}>
+                        Switch Profile
+                      </MenuItem>
+                    </>
+                  ) : null}
                   <MenuSeparator />
                 </>
                 <MenuItem href="/account/profile" icon={<IconUser />}>
