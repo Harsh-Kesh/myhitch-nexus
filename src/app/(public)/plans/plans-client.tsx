@@ -15,7 +15,13 @@ import { Card, CardBody } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { useCurrentUser, useStartSubscription } from "@/lib/mock-api/hooks";
+import { Badge } from "@/components/ui/badge";
+import {
+  useCurrentUser,
+  useStartSubscription,
+  useSubscriptions,
+  useUpdateUser,
+} from "@/lib/mock-api/hooks";
 
 type PlanId = "premium" | "family" | "business";
 type Interval = "month" | "year";
@@ -170,10 +176,52 @@ function formatGbp(minor: number): string {
 
 export function PlansClient() {
   const { data: currentUser } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const startSubscription = useStartSubscription();
+  const updateUser = useUpdateUser();
   const { toast } = useToast();
   const [interval, setIntervalValue] = React.useState<Interval>("month");
   const [salesOpen, setSalesOpen] = React.useState(false);
+
+  const isCreator = Boolean(currentUser?.roles.includes("creator") || currentUser?.activeRole === "creator");
+  const isBusiness = Boolean(currentUser?.roles.includes("business") || currentUser?.activeRole === "business");
+  const isEnterprise = Boolean(
+    currentUser?.roles.includes("enterprise") ||
+      currentUser?.roles.includes("producer") ||
+      currentUser?.activeRole === "enterprise",
+  );
+
+  const hasActiveSub = (planId: string) =>
+    subscriptions.some(
+      (s) => s.status === "active" && (s.id.includes(planId) || s.name.toLowerCase().includes(planId)),
+    );
+
+  const hasPaidViewerSub = hasActiveSub("family") || hasActiveSub("premium");
+
+  const handleBecomeCreator = () => {
+    if (!currentUser) return;
+    updateUser.mutate(
+      {
+        roles: Array.from(new Set([...(currentUser.roles || []), "creator"])),
+        activeRole: "creator",
+      },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Welcome to Nexus Creator!",
+            description: "You now have access to Creator Studio.",
+          });
+        },
+        onError: (err) => {
+          toast({
+            title: "Couldn't update role",
+            description: err instanceof Error ? err.message : undefined,
+            tone: "error",
+          });
+        },
+      },
+    );
+  };
 
   const handleSubscribe = async (plan: PlanId, planInterval: Interval) => {
     if (!currentUser) {
@@ -248,12 +296,135 @@ export function PlansClient() {
                 ? " / year"
                 : " / month";
 
+          let ctaContent = null;
+          let activeBadge: string | null = null;
+
+          if (plan.id === "free") {
+            if (!currentUser) {
+              ctaContent = (
+                <Button variant="secondary" block href="/auth/register">
+                  {plan.cta}
+                </Button>
+              );
+            } else {
+              const isBasePlan = !hasPaidViewerSub && !isCreator && !isBusiness && !isEnterprise;
+              activeBadge = isBasePlan ? "Current Plan" : "Included";
+              ctaContent = (
+                <Button variant="outline" block disabled className="opacity-70">
+                  {isBasePlan ? "Current Base Plan" : "Included Free"}
+                </Button>
+              );
+            }
+          } else if (plan.id === "creator") {
+            if (!currentUser) {
+              ctaContent = (
+                <Button variant="secondary" block href="/auth/register?role=creator">
+                  {plan.cta}
+                </Button>
+              );
+            } else if (isCreator) {
+              activeBadge = "Active Creator";
+              ctaContent = (
+                <Button variant="secondary" block href="/studio">
+                  Go to Creator Studio
+                </Button>
+              );
+            } else {
+              ctaContent = (
+                <Button
+                  variant="primary"
+                  block
+                  loading={updateUser.isPending}
+                  onClick={handleBecomeCreator}
+                >
+                  Become a Creator (Free)
+                </Button>
+              );
+            }
+          } else if (plan.id === "premium") {
+            const isSubbed = hasActiveSub("premium");
+            if (isSubbed) activeBadge = "Active Plan";
+            ctaContent = isSubbed ? (
+              <Button variant="outline" block disabled className="opacity-70">
+                Current Plan
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                block
+                loading={startSubscription.isPending}
+                onClick={() => handleSubscribe("premium", effectiveInterval)}
+              >
+                {currentUser ? "Upgrade to Premium" : plan.cta}
+              </Button>
+            );
+          } else if (plan.id === "family") {
+            const isSubbed = hasActiveSub("family");
+            if (isSubbed) activeBadge = "Active Plan";
+            ctaContent = isSubbed ? (
+              <Button variant="outline" block disabled className="opacity-70">
+                Current Plan
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                block
+                loading={startSubscription.isPending}
+                onClick={() => handleSubscribe("family", effectiveInterval)}
+              >
+                {currentUser ? "Upgrade to Family" : plan.cta}
+              </Button>
+            );
+          } else if (plan.id === "business") {
+            if (isBusiness || hasActiveSub("business")) {
+              activeBadge = "Active Role";
+              ctaContent = (
+                <Button variant="secondary" block href="/business">
+                  Go to Business Portal
+                </Button>
+              );
+            } else {
+              ctaContent = (
+                <Button
+                  variant="primary"
+                  block
+                  loading={startSubscription.isPending}
+                  onClick={() => handleSubscribe("business", effectiveInterval)}
+                >
+                  {currentUser ? "Upgrade to Business" : plan.cta}
+                </Button>
+              );
+            }
+          } else if (plan.id === "enterprise") {
+            if (isEnterprise) {
+              activeBadge = "Active Role";
+              ctaContent = (
+                <Button variant="secondary" block href="/business/enterprise">
+                  Enterprise Portal
+                </Button>
+              );
+            } else {
+              ctaContent = (
+                <Button variant="secondary" block onClick={() => setSalesOpen(true)}>
+                  {plan.cta}
+                </Button>
+              );
+            }
+          }
+
           return (
             <Card key={plan.id} className={`flex flex-col ${TONE_CLASSES[plan.tone]}`}>
               <CardBody className="flex flex-1 flex-col">
-                <span className="flex size-10 items-center justify-center rounded-full bg-surface-2 text-accent [&_svg]:size-5">
-                  {plan.icon}
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="flex size-10 items-center justify-center rounded-full bg-surface-2 text-accent [&_svg]:size-5">
+                    {plan.icon}
+                  </span>
+                  {activeBadge ? (
+                    <Badge tone="accent" size="sm">
+                      {activeBadge}
+                    </Badge>
+                  ) : null}
+                </div>
                 <h2 className="mt-3 font-display text-lg font-semibold text-fg">{plan.name}</h2>
                 <p className="text-sm text-fg-muted">{plan.tagline}</p>
 
@@ -274,30 +445,7 @@ export function PlansClient() {
                   ))}
                 </ul>
 
-                <div className="mt-5">
-                  {plan.id === "free" ? (
-                    <Button variant="secondary" block href="/auth/register">
-                      {plan.cta}
-                    </Button>
-                  ) : plan.id === "creator" ? (
-                    <Button variant="secondary" block href="/auth/register?role=creator">
-                      {plan.cta}
-                    </Button>
-                  ) : plan.id === "enterprise" ? (
-                    <Button variant="secondary" block onClick={() => setSalesOpen(true)}>
-                      {plan.cta}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      block
-                      loading={startSubscription.isPending}
-                      onClick={() => handleSubscribe(plan.id as PlanId, effectiveInterval)}
-                    >
-                      {plan.cta}
-                    </Button>
-                  )}
-                </div>
+                <div className="mt-5">{ctaContent}</div>
               </CardBody>
             </Card>
           );
