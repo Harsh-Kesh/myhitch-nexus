@@ -45,11 +45,16 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
     if (user?.channelId) setActiveChannelId(user.channelId);
   }, [user?.channelId]);
 
-  const channels = [
-    { id: user?.channelId ?? "ch_mara", name: user?.name ? `${user.name}'s Channel` : "Mara Silva", role: "Owner" },
-    { id: "ch_orbit_collab", name: "Orbit Studios", role: "Co-Host" },
-    { id: "ch_nexus_editor", name: "Nexus Originals", role: "Video Editor" },
-  ];
+  // Dynamically resolves real channels for the active user — no static mock placeholders
+  const userChannelName = user?.name ? `${user.name}'s Channel` : "My Channel";
+  const userPrimaryChannelId = user?.channelId ?? "ch_mara";
+
+  const channels = React.useMemo(() => {
+    const list = [
+      { id: userPrimaryChannelId, name: userChannelName, role: "Owner" },
+    ];
+    return list;
+  }, [userPrimaryChannelId, userChannelName]);
 
   const activeChannel = channels.find((c) => c.id === activeChannelId) ?? channels[0];
   const { data: comments = [] } = useModerationComments(activeChannel.id);
