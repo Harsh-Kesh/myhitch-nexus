@@ -31,9 +31,105 @@ export default function SubscriptionsPage() {
 
   if (isLoading) return <RailSkeleton count={3} />;
 
+  const activePlanInfo = React.useMemo(() => {
+    if (!user) {
+      return {
+        name: "Nexus Free Tier",
+        interval: null,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Ad-Supported Catalog Access",
+          "Standard Quality Playback",
+          "1 Viewer Profile (Upgrade to Family for up to 5)",
+        ],
+        isFree: true,
+      };
+    }
+
+    const activeSub = subscriptions.find((s) => s.status === "active");
+    if (activeSub) {
+      return {
+        name: activeSub.name,
+        interval: activeSub.interval,
+        amount: activeSub.price.amount,
+        currency: activeSub.price.currency,
+        renewsAt: activeSub.renewsAt,
+        benefits: activeSub.benefits,
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("creator") || user.activeRole === "creator") {
+      return {
+        name: "Nexus Creator Plan",
+        interval: "monthly" as const,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Creator Studio Access",
+          "Video & Audio Asset Uploads",
+          "MYHitch Pass PPV & Ticketed Live Streaming",
+          "MYHitch Connect Brand Sponsorship Deals",
+          "Fan Super Thanks Tipping & Ad Revenue Share",
+        ],
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("business") || user.activeRole === "business") {
+      return {
+        name: "Nexus Business Plan",
+        interval: "monthly" as const,
+        amount: 2900,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Business Channel & Product Link Embedding",
+          "Customer Lead Generation Forms",
+          "Team Access & Role Management",
+          "Pre-roll & Mid-roll Ad Campaign Manager",
+        ],
+        isFree: false,
+      };
+    }
+
+    if (user.roles.includes("enterprise") || user.roles.includes("producer") || user.activeRole === "enterprise") {
+      return {
+        name: "Nexus Enterprise Plan",
+        interval: "annual" as const,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Bulk CSV/XML Catalog Metadata Import",
+          "Client Review Links with Dynamic Watermarks",
+          "High-Capacity Secure File Transfers",
+          "Developer API Keys & Dedicated Support",
+        ],
+        isFree: false,
+      };
+    }
+
+    return {
+      name: "Nexus Free Tier",
+      interval: null,
+      amount: 0,
+      currency: "GBP",
+      renewsAt: null,
+      benefits: [
+        "Ad-Supported Catalog Access",
+        "Standard Quality Playback",
+        "1 Viewer Profile (Upgrade to Family for up to 5)",
+      ],
+      isFree: true,
+    };
+  }, [subscriptions, user]);
+
   const active = subscriptions.filter((item) => item.status !== "cancelled");
   const inactive = subscriptions.filter((item) => item.status === "cancelled");
-  const platformSubscription = active.find((item) => item.kind === "platform");
 
   const monthlyTotal = active
     .filter((item) => item.interval === "monthly")
@@ -48,42 +144,36 @@ export default function SubscriptionsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <IconCrown className="size-5 text-accent" />
               <span>Active Subscription Plan</span>
-              <Badge tone={platformSubscription ? "published" : "outline"} size="sm">
-                {platformSubscription ? platformSubscription.name : "Nexus Free Tier"}
+              <Badge tone={activePlanInfo.isFree ? "outline" : "published"} size="sm">
+                {activePlanInfo.name}
               </Badge>
             </div>
           }
           description={
-            platformSubscription
-              ? `Billed ${platformSubscription.interval} at ${formatCurrency(platformSubscription.price.amount, platformSubscription.price.currency)} — renews ${formatDate(platformSubscription.renewsAt, "long")}`
-              : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+            !activePlanInfo.isFree && activePlanInfo.renewsAt
+              ? `Billed ${activePlanInfo.interval} at ${formatCurrency(activePlanInfo.amount, activePlanInfo.currency)} — renews ${formatDate(activePlanInfo.renewsAt, "long")}`
+              : activePlanInfo.name === "Nexus Creator Plan"
+                ? "Nexus Creator Plan is active on your account with full Creator Studio, video uploading, and monetization access."
+                : activePlanInfo.name === "Nexus Business Plan"
+                  ? "Nexus Business Plan is active on your account with full commercial channels, campaign manager, and team access."
+                  : activePlanInfo.name === "Nexus Enterprise Plan"
+                    ? "Nexus Enterprise Plan is active on your account with enterprise media workspace and API keys."
+                    : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
           }
           action={
             <Button variant="primary" size="sm" href="/plans">
-              {platformSubscription ? "Change Plan" : "Upgrade Plan"}
+              {!activePlanInfo.isFree ? "Change Plan" : "Upgrade Plan"}
             </Button>
           }
         />
         <CardBody className="border-t border-border/50 pt-4">
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-fg-muted">
-            {platformSubscription ? (
-              platformSubscription.benefits.map((b) => (
-                <li key={b} className="flex items-center gap-1.5">
-                  <IconCheck className="size-3.5 text-success" />
-                  {b}
-                </li>
-              ))
-            ) : (
-              <>
-                <li className="flex items-center gap-1.5">
-                  <IconCheck className="size-3.5 text-success" />
-                  Ad-Supported Catalog Access
-                </li>
-                <li className="flex items-center gap-1.5 text-fg-subtle">
-                  • 1 Viewer Profile (Upgrade to Family for up to 5)
-                </li>
-              </>
-            )}
+            {activePlanInfo.benefits.map((benefit) => (
+              <li key={benefit} className="flex items-center gap-1.5">
+                <IconCheck className="size-3.5 text-success" />
+                {benefit}
+              </li>
+            ))}
           </ul>
         </CardBody>
       </Card>

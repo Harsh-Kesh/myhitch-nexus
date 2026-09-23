@@ -21,6 +21,7 @@ import {
   useCurrentUser,
   useRequestCountry,
   useSetRequestCountry,
+  useSubscriptions,
   useUpdateUser,
 } from "@/lib/mock-api/hooks";
 import type { AgeRating } from "@/lib/mock-api/types";
@@ -36,6 +37,7 @@ const COUNTRIES = ["GB", "IE", "DE", "FR", "PT", "ES", "US", "CA", "AU", "LK"];
 
 export default function SettingsPage() {
   const { data: user } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const updateUser = useUpdateUser();
   const { data: requestCountry } = useRequestCountry();
   const setRequestCountry = useSetRequestCountry();
@@ -45,6 +47,10 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = React.useState(false);
 
   if (!user) return null;
+
+  const hasFamilyPlan = subscriptions.some(
+    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
+  );
 
   return (
     <div className="space-y-6">
@@ -159,56 +165,75 @@ export default function SettingsPage() {
       </Card>
 
       {/* Parental controls */}
-      <Card>
-        <CardHeader
-          title="Parental controls"
-          description="Applies across profiles that are not PIN-protected."
-        />
-        <CardBody className="space-y-4">
-          <Switch
-            checked={user.parentalControls.enabled}
-            onCheckedChange={(value) =>
-              updateUser.mutate({
-                parentalControls: { ...user.parentalControls, enabled: value },
-              })
-            }
-            label="Restrict content by age rating"
+      {hasFamilyPlan ? (
+        <Card>
+          <CardHeader
+            title="Parental controls"
+            description="Applies across profiles that are not PIN-protected."
           />
-          {user.parentalControls.enabled ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Maximum age rating" htmlFor="max-age">
-                <Select
-                  id="max-age"
-                  value={user.parentalControls.maxAgeRating}
-                  onChange={(event) =>
-                    updateUser.mutate({
-                      parentalControls: {
-                        ...user.parentalControls,
-                        maxAgeRating: event.target.value as AgeRating,
-                      },
-                    })
-                  }
-                >
-                  {(["U", "PG", "12", "15", "18"] as AgeRating[]).map((rating) => (
-                    <option key={rating} value={rating}>
-                      {rating}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Parental PIN" htmlFor="pin" hint="Four digits. Never displayed once set.">
-                <Input
-                  id="pin"
-                  type="password"
-                  value={user.parentalControls.pin}
-                  readOnly
-                  leading={<IconLock />}
-                />
-              </Field>
-            </div>
-          ) : null}
-        </CardBody>
-      </Card>
+          <CardBody className="space-y-4">
+            <Switch
+              checked={user.parentalControls.enabled}
+              onCheckedChange={(value) =>
+                updateUser.mutate({
+                  parentalControls: { ...user.parentalControls, enabled: value },
+                })
+              }
+              label="Restrict content by age rating"
+            />
+            {user.parentalControls.enabled ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Maximum age rating" htmlFor="max-age">
+                  <Select
+                    id="max-age"
+                    value={user.parentalControls.maxAgeRating}
+                    onChange={(event) =>
+                      updateUser.mutate({
+                        parentalControls: {
+                          ...user.parentalControls,
+                          maxAgeRating: event.target.value as AgeRating,
+                        },
+                      })
+                    }
+                  >
+                    {(["U", "PG", "12", "15", "18"] as AgeRating[]).map((rating) => (
+                      <option key={rating} value={rating}>
+                        {rating}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Parental PIN" htmlFor="pin" hint="Four digits. Never displayed once set.">
+                  <Input
+                    id="pin"
+                    type="password"
+                    value={user.parentalControls.pin}
+                    readOnly
+                    leading={<IconLock />}
+                  />
+                </Field>
+              </div>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : (
+        <Card className="border-accent/30 bg-accent/5">
+          <CardHeader
+            title="Parental controls"
+            description="Parental controls, age rating filters, and profile PIN locks are exclusive to Nexus Family Plan subscribers."
+            action={
+              <Button variant="primary" size="sm" href="/plans">
+                Upgrade to Family
+              </Button>
+            }
+          />
+          <CardBody className="border-t border-border/50 pt-4">
+            <p className="text-xs text-fg-muted">
+              Upgrade your subscription to set up parental PIN locks, age rating filters (U, PG, 12, 15, 18+), and Kids Mode profiles for up to 5 family members.
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Security */}
       <Card>
