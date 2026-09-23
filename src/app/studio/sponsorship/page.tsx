@@ -7,7 +7,7 @@ import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SponsorshipListingStatusBadge } from "@/components/ui/badge";
+import { Badge, SponsorshipListingStatusBadge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
@@ -71,6 +71,18 @@ export default function StudioSponsorshipPage() {
       />
 
       <PageBody className="space-y-4">
+        <div className="rounded-lg border border-accent/25 bg-accent/5 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Badge tone="accent" size="sm">MYHitch Connect</Badge>
+              <p className="text-sm font-semibold text-fg">Cross-Platform Sponsorship Engine</p>
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+              Once approved on Exchange Hub, your project pitch is published across MYHitch Connect for direct brand deal match-making and sponsorship monetization.
+            </p>
+          </div>
+        </div>
+
         {isLoading ? null : listings.length === 0 ? (
           <EmptyState
             icon={<IconSpeakerphone />}

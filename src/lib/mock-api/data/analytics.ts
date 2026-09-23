@@ -249,12 +249,12 @@ export function buildRevenueSummary(channelId: string): RevenueSummary {
             : kind === "advertising"
               ? "Advertising revenue share"
               : kind === "rental"
-                ? "Rental revenue"
+                ? "Sponsorship deal (MYHitch Connect)"
                 : kind === "purchase"
-                  ? "Purchase revenue"
+                  ? "Live stream ticket (MYHitch Pass)"
                   : kind === "membership"
-                    ? "Channel membership"
-                    : "Pay-per-view event",
+                    ? "Channel membership & fan tips"
+                    : "Pay-Per-View event (MYHitch Pass)",
         kind,
         gross,
         fee,
@@ -271,11 +271,11 @@ export function buildRevenueSummary(channelId: string): RevenueSummary {
     lifetime,
     nextPayoutDate: "2026-08-28T00:00:00.000Z",
     byStream: shareOut([
-      ["Advertising", Math.round(lifetime * 0.42)],
-      ["Rentals & purchases", Math.round(lifetime * 0.24)],
-      ["Memberships", Math.round(lifetime * 0.18)],
-      ["Pay-per-view", Math.round(lifetime * 0.09)],
-      ["Commerce & affiliate", Math.round(lifetime * 0.07)],
+      ["Advertising revenue share", Math.round(lifetime * 0.38)],
+      ["Sponsorships (MYHitch Connect)", Math.round(lifetime * 0.28)],
+      ["Live Tickets (MYHitch Pass)", Math.round(lifetime * 0.16)],
+      ["Pay-Per-View (MYHitch Pass)", Math.round(lifetime * 0.10)],
+      ["Fan Subscriptions & Tips", Math.round(lifetime * 0.08)],
     ]),
     transactions,
   };

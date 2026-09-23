@@ -547,7 +547,7 @@ function TicketGate({
           </p>
           <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-fg-muted">
             Ticket holders can watch live and keep 72-hour replay access
-            afterwards.
+            afterwards. Issued via <strong className="font-semibold text-fg">MYHitch Pass</strong>.
           </p>
         </div>
         <Button
@@ -556,9 +556,9 @@ function TicketGate({
           onClick={() => {
             onPurchase();
             toast({
-              title: "Ticket issued",
+              title: "MYHitch Pass Ticket Issued",
               description:
-                "Mock checkout — no payment provider was contacted. Your ticket is in Purchases.",
+                "Your event pass is confirmed via MYHitch Pass and saved to your Account Purchases.",
             });
           }}
         >

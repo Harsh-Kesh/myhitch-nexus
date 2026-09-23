@@ -40,7 +40,7 @@ const ACCESS_TYPES: Array<{
 }> = [
   { value: "public", title: "Public", description: "Anyone on Nexus can watch." },
   { value: "private", title: "Private", description: "Only you and named collaborators." },
-  { value: "ticketed", title: "Ticketed", description: "Viewers buy a ticket to attend." },
+  { value: "ticketed", title: "Ticketed (MYHitch Pass)", description: "Viewers buy an event ticket issued via MYHitch Pass." },
   { value: "subscriber-only", title: "Subscribers only", description: "Your channel members only." },
   { value: "invitation-only", title: "Invitation only", description: "Access by invite link." },
 ];
@@ -282,7 +282,7 @@ export default function StudioLivePage() {
             </div>
             {accessType === "ticketed" ? (
               <div className="mt-3 max-w-xs">
-                <Field label="Ticket price (£)" htmlFor="live-price">
+                <Field label="Ticket price (£)" htmlFor="live-price" hint="Issued and processed via MYHitch Pass.">
                   <Input
                     id="live-price"
                     value={price}

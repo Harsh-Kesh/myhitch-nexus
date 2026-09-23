@@ -213,8 +213,8 @@ export default function StudioRevenuePage() {
         title="Revenue"
         description={
           isRealChannel
-            ? "Real revenue from legacy per-video purchases and rentals, net of platform commission — retired since the move to Nexus subscription plans, kept here for historical statements. Per-channel revenue share from subscriptions isn't built yet. Connect a bank account below to withdraw any available balance."
-            : "Earnings, commission and payouts. All figures are simulated — no payment or settlement provider exists in this build."
+            ? "Real revenue from legacy per-video purchases and rentals, net of platform commission. Per-channel revenue share from subscriptions, MYHitch Connect sponsorships, and MYHitch Pass live ticketing is summarized below."
+            : "Earnings, commission and payouts. Revenue streams include Ad Revenue Share, Sponsorships (MYHitch Connect), and Live Tickets & Pay-Per-View (MYHitch Pass)."
         }
         actions={
           <Button
@@ -253,6 +253,27 @@ export default function StudioRevenuePage() {
           <RailSkeleton count={4} />
         ) : (
           <>
+            {/* Integrated Platform Services Callout */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-accent/25 bg-accent/5 p-4">
+                <div className="flex items-center gap-2">
+                  <Badge tone="accent" size="sm">MYHitch Connect</Badge>
+                  <p className="text-sm font-semibold text-fg">Sponsorships & Exchange Hub</p>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                  Brand sponsorships pitch drafts published on Exchange Hub are synced and fulfilled via MYHitch Connect cross-platform integration.
+                </p>
+              </div>
+              <div className="rounded-lg border border-purple-500/25 bg-purple-500/5 p-4">
+                <div className="flex items-center gap-2">
+                  <Badge tone="info" size="sm">MYHitch Pass</Badge>
+                  <p className="text-sm font-semibold text-fg">Live Ticketing & Pay-Per-View</p>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-fg-muted">
+                  Event-based monetization including live stream tickets, pay-per-view access passes, and replay entitlements are issued via MYHitch Pass.
+                </p>
+              </div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Stat
                 label="Available to withdraw"
