@@ -55,34 +55,27 @@ const ROLES: Array<{
   {
     value: "viewer",
     title: "Viewer",
-    description: "Watch for free with ads, or subscribe to a plan. Set up profiles for your household.",
+    description: "Watch for free with ads, or subscribe to Premium / Family plans. Set up household profiles.",
     icon: <IconDeviceTv />,
   },
   {
     value: "creator",
     title: "Creator",
-    description: "Publish your own videos, go live, and earn from ads and subscriptions.",
+    description: "Publish content, go live, and earn from ads, subscriptions, & tipping. Upgrade to Business anytime for team & shop tools.",
     icon: <IconVideo />,
   },
   {
     value: "business",
-    title: "Business",
-    description: "Run a branded channel, attach product links and capture leads.",
+    title: "Business & Advertiser",
+    description: "Run branded channels, launch targeted ad campaigns, attach product links, capture leads, & manage team access.",
     icon: <IconBuildingStore />,
-    requiresOrg: true,
-  },
-  {
-    value: "advertiser",
-    title: "Advertiser",
-    description: "Buy placements across the catalogue and measure campaign performance.",
-    icon: <IconSpeakerphone />,
     requiresOrg: true,
     requiresMfa: true,
   },
   {
-    value: "producer",
-    title: "Producer / distributor",
-    description: "Distribute a catalogue with rights schedules and bulk metadata import.",
+    value: "enterprise",
+    title: "Enterprise",
+    description: "Distribute media catalogs with bulk metadata import, review links, high-capacity file transfers, & API access.",
     icon: <IconMovie />,
     requiresOrg: true,
     requiresMfa: true,
@@ -90,14 +83,14 @@ const ROLES: Array<{
   {
     value: "education",
     title: "Education provider",
-    description: "Publish accredited courses and issue completion records.",
+    description: "Publish accredited courses, tutorials, and issue completion records.",
     icon: <IconCertificate />,
     requiresOrg: true,
   },
   {
     value: "organisation",
     title: "Government / non-profit",
-    description: "Publish public information, meetings and impact reporting.",
+    description: "Publish official public information, council meetings, and impact reporting.",
     icon: <IconBuildingBank />,
     requiresOrg: true,
     requiresMfa: true,
@@ -276,7 +269,9 @@ export default function RegisterPage() {
           ? "/studio/dashboard"
           : role === "business" || role === "advertiser"
             ? "/business/channel"
-            : "/",
+            : role === "enterprise" || role === "producer" || role === "organisation"
+              ? "/business/enterprise"
+              : "/",
       );
     } catch (err) {
       toast({

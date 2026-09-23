@@ -25,6 +25,7 @@ const ALL_ROLES: UserRole[] = [
   "viewer",
   "creator",
   "business",
+  "enterprise",
   "advertiser",
   "producer",
   "education",

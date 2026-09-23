@@ -14,8 +14,9 @@ import { pickGradient } from "@/lib/utils";
 const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
   creator: "creator",
   business: "business",
-  advertiser: "advertiser",
-  producer: "producer",
+  advertiser: "business",
+  enterprise: "film-studio",
+  producer: "film-studio",
   education: "education",
   // account_roles has one combined "organisation" role where organizations.type still
   // distinguishes government/nonprofit (ChannelKind predates this role) — nonprofit is

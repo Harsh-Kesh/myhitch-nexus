@@ -19,24 +19,20 @@ import { createSession, setSessionCookie } from "@/lib/server/session";
 
 const ROLES_REQUIRING_VERIFICATION = new Set([
   "business",
+  "enterprise",
   "advertiser",
   "producer",
   "education",
   "organisation",
 ]);
 
-// The exact 7 self-service roles the registration wizard itself offers
-// (src/app/auth/register/page.tsx) — never "admin" or any other privileged/internal
-// role. `role` arrives as free text from the request body; without this allow-list a
-// request with `role: "admin"` would insert straight into account_roles (whose check
-// constraint does happen to permit "admin", since that table is shared with real admin
-// grants) and hand the caller a real, working admin account with no verification at
-// all. Found and fixed 2026-09-18 during an authorization audit — confirmed exploitable
-// against production before this fix landed.
+// The self-service roles the registration wizard offers
+// (src/app/auth/register/page.tsx) — never "admin" or any other privileged/internal role.
 const SELF_REGISTRABLE_ROLES = new Set([
   "viewer",
   "creator",
   "business",
+  "enterprise",
   "advertiser",
   "producer",
   "education",

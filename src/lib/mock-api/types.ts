@@ -62,6 +62,7 @@ export type UserRole =
   | "viewer"
   | "creator"
   | "business"
+  | "enterprise"
   | "advertiser"
   | "producer"
   | "education"
