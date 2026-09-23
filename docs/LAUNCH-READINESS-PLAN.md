@@ -143,6 +143,10 @@ Every video/audio file today is played back as a single uploaded source file. Th
 
 This is blocked on **Auth0 tenant access from the shared-identity team** (a people/access problem, not a code problem, per multiple `DEVELOPMENT-PLAN.md` entries) — worth escalating directly rather than waiting for it to resolve itself.
 
+### 4.3 Automated Cross-Platform Copyright Fingerprinting (ACRCloud / Audible Magic Vendor Dependency)
+
+While built-in statutory DMCA takedown claims (`/video/[id]`), creator counter-notice dashboards (`/account/copyright`), and admin legal panels (`/admin/reports`) are 100% working in code, real-time cross-platform scanning against external global YouTube, Spotify, and commercial media databases requires a vendor API key (**ACRCloud** developer tier $15–$50/mo or **Audible Magic**). Full details tracked in [EXTERNAL_VENDOR_BLOCKERS.md](file:///c:/Users/gimha/OneDrive/Desktop/MYHitch%20Nexus/EXTERNAL_VENDOR_BLOCKERS.md).
+
 ---
 
 ## 5. Remaining work by phase
