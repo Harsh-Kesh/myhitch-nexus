@@ -382,6 +382,8 @@ export interface ViewerProfile {
   avatarUrl?: string;
   maxAgeRating: AgeRating;
   language: string;
+  pinCode?: string | null;
+  isKids?: boolean;
 }
 
 export interface User {

@@ -3192,16 +3192,24 @@ export async function getCurrentUser(): Promise<User | null> {
           }>;
         };
         if (pData.profiles && pData.profiles.length > 0) {
-          store.user.profiles = pData.profiles.map((p) => ({
+          const profileGradients: Array<[string, string]> = [
+            ["#5B8DEF", "#243F80"],
+            ["#38A8E0", "#175E85"],
+            ["#34C77B", "#12694A"],
+            ["#9B7BF0", "#5B3BB0"],
+            ["#EC6AA8", "#9D2C6B"],
+            ["#E5A83B", "#96661A"],
+          ];
+          store.user.profiles = pData.profiles.map((p, idx) => ({
             id: p.id,
             name: p.name,
             kind: p.isKids ? "child" : p.maturityRating === "TEEN" ? "teen" : "adult",
-            avatarGradient: [
-              "#5B8DEF", "#243F80"
-            ],
+            avatarGradient: profileGradients[idx % profileGradients.length] ?? ["#5B8DEF", "#243F80"],
             avatarUrl: p.avatarUrl ?? undefined,
             maxAgeRating: p.maturityRating === "ALL" ? "U" : p.maturityRating === "PG" ? "PG" : p.maturityRating === "TEEN" ? "12" : "18",
             language: store.user.language,
+            pinCode: p.pinCode,
+            isKids: p.isKids,
           }));
           if (!store.user.profiles.some((p) => p.id === store.user.activeProfileId)) {
             store.user.activeProfileId = store.user.profiles[0].id;

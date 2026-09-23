@@ -49,7 +49,13 @@ export default function LoginPage() {
         remember: values.remember,
       });
       toast({ title: "Signed in" });
-      router.push(user.mustChangePassword ? "/auth/set-password" : "/");
+      if (user.mustChangePassword) {
+        router.push("/auth/set-password");
+      } else if (user.profiles && user.profiles.length > 1) {
+        router.push("/switch-profile");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
       toast({
         title: "Couldn't sign you in",

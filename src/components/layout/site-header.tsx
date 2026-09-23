@@ -18,6 +18,7 @@ import {
   IconShieldCog,
   IconStarFilled,
   IconSun,
+  IconUser,
   IconUsers,
   IconVideoPlus,
   IconX,
@@ -118,6 +119,11 @@ export function SiteHeader() {
 
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="MYHitch Nexus Home">
           <NexusMark className="h-10 w-auto" />
+          {activeProfile && (activeProfile.isKids || activeProfile.kind === "child") ? (
+            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-2xs font-extrabold uppercase tracking-wider text-accent border border-accent/40 shadow-xs">
+              Kids
+            </span>
+          ) : null}
         </Link>
 
         <nav aria-label="Primary" className="ml-2 hidden items-center gap-0.5 lg:flex">
@@ -317,8 +323,12 @@ export function SiteHeader() {
                     </>
                   ) : null}
                   <MenuSeparator />
+                  <MenuItem href="/switch-profile" icon={<IconUsers />}>
+                    Switch Profile
+                  </MenuItem>
+                  <MenuSeparator />
                 </>
-                <MenuItem href="/account/profile" icon={<IconUsers />}>
+                <MenuItem href="/account/profile" icon={<IconUser />}>
                   Profile &amp; settings
                 </MenuItem>
                 <MenuItem href="/account/watchlist" icon={<IconBookmark />}>
