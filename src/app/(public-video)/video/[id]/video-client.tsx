@@ -968,6 +968,22 @@ function AboutPanel({ video }: { video: Video }) {
         ) : null}
       </div>
 
+      {video.participants && video.participants.length > 0 ? (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+            Cast, Co-Hosts & Participants
+          </h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {video.participants.map((person: string) => (
+              <Badge key={person} tone="neutral" size="sm" className="flex items-center gap-1.5 py-1 px-2.5">
+                <Avatar name={person} size="xs" />
+                <span>{person}</span>
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {video.credits.length > 0 ? (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">

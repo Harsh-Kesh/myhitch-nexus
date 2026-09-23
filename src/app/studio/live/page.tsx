@@ -77,6 +77,8 @@ export default function StudioLivePage() {
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [accessType, setAccessType] = React.useState<LiveAccessType>("public");
+  const [collaborators, setCollaborators] = React.useState<string[]>(["@mara_silva", "editor@nexus.com"]);
+  const [collabDraft, setCollabDraft] = React.useState("");
   const [scheduledStart, setScheduledStart] = React.useState("2026-08-20T18:00");
   const [timezone, setTimezone] = React.useState("Europe/London");
   const [price, setPrice] = React.useState("12.00");
@@ -321,6 +323,50 @@ export default function StudioLivePage() {
                     inputMode="decimal"
                   />
                 </Field>
+              </div>
+            ) : null}
+
+            {accessType === "private" || accessType === "invitation-only" || accessType === "subscriber-only" ? (
+              <div className="mt-3 space-y-2">
+                <Field label="Named Collaborators & Co-Hosts" hint="Invite co-hosts or named accounts to access/stream this event">
+                  <div className="flex gap-2">
+                    <Input
+                      value={collabDraft}
+                      onChange={(e) => setCollabDraft(e.target.value)}
+                      placeholder="@cohost_alex or editor@nexus.com"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!collabDraft.trim()}
+                      onClick={() => {
+                        if (collabDraft.trim()) {
+                          setCollaborators((prev) => [...prev, collabDraft.trim()]);
+                          setCollabDraft("");
+                          toast({ title: "Collaborator added to stream" });
+                        }
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </Field>
+                {collaborators.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {collaborators.map((person, idx) => (
+                      <Badge key={idx} tone="neutral" size="sm" className="flex items-center gap-1.5">
+                        <span>{person}</span>
+                        <button
+                          type="button"
+                          className="hover:text-danger ml-1"
+                          onClick={() => setCollaborators((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          ✕
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

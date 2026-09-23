@@ -232,6 +232,7 @@ export interface Video {
   languageCode: string;
   country: string;
   productionCompany?: string;
+  participants?: string[];
   credits: CreditEntry[];
   subtitles: SubtitleTrack[];
   audioTracks: AudioTrack[];

@@ -1,6 +1,6 @@
 "use client";
 
-import { IconCheck, IconExternalLink, IconPencil } from "@tabler/icons-react";
+import { IconCheck, IconExternalLink, IconPencil, IconUserPlus } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Avatar } from "@/components/ui/avatar";
@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
@@ -57,6 +58,16 @@ export default function ChannelSettingsPage() {
 
   const [adsEnabled, setAdsEnabled] = React.useState(true);
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
+
+  // Collaborator & Team seat management state
+  const [inviteModalOpen, setInviteModalOpen] = React.useState(false);
+  const [inviteEmail, setInviteEmail] = React.useState("");
+  const [inviteRole, setInviteRole] = React.useState("Co-Host");
+  const [teamMembers, setTeamMembers] = React.useState<
+    Array<{ id: string; name: string; email: string; role: string; status: string }>
+  >([
+    { id: "tm_1", name: "Mara Silva", email: "mara@nexus.com", role: "Channel Manager", status: "Active" },
+  ]);
 
   const resetFromChannel = React.useCallback(() => {
     if (!channel) return;
@@ -283,6 +294,53 @@ export default function ChannelSettingsPage() {
           </CardBody>
         </Card>
 
+        {/* Team & Collaborators */}
+        <Card>
+          <CardHeader
+            title="Channel Team & Collaborators"
+            description="Invite co-creators, video editors, producers, and managers to collaborate on your channel."
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setInviteModalOpen(true)}>
+                <IconUserPlus className="size-4" />
+                Invite collaborator
+              </Button>
+            }
+          />
+          <CardBody className="space-y-4">
+            {teamMembers.length === 0 ? (
+              <p className="text-xs text-fg-muted">No co-creators or team members invited yet.</p>
+            ) : (
+              <div className="divide-y divide-border rounded-lg border border-border">
+                {teamMembers.map((member) => (
+                  <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={member.name} size="md" />
+                      <div>
+                        <p className="text-sm font-medium text-fg">{member.name}</p>
+                        <p className="text-2xs text-fg-muted">{member.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge tone="neutral" size="sm">{member.role}</Badge>
+                      <Badge tone={member.status === "Active" ? "published" : "pending"} size="sm">{member.status}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setTeamMembers((prev) => prev.filter((m) => m.id !== member.id));
+                          toast({ title: "Collaborator removed" });
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
         {/* Verification */}
         <Card>
           <CardHeader
@@ -349,6 +407,66 @@ export default function ChannelSettingsPage() {
           </CardBody>
         </Card>
       </PageBody>
+
+      {/* Invite Collaborator Modal */}
+      <Modal
+        open={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        title="Invite Channel Collaborator"
+        description="Grant a co-creator, editor, or manager access to collaborate on your channel."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setInviteModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              disabled={!inviteEmail.trim()}
+              onClick={() => {
+                const newMember = {
+                  id: `collab_${Date.now()}`,
+                  name: inviteEmail.split("@")[0] || "Co-Creator",
+                  email: inviteEmail.trim(),
+                  role: inviteRole,
+                  status: "Invited",
+                };
+                setTeamMembers((prev) => [...prev, newMember]);
+                setInviteEmail("");
+                setInviteModalOpen(false);
+                toast({
+                  title: "Invitation sent",
+                  description: `${newMember.name} has been invited as a ${inviteRole}.`,
+                });
+              }}
+            >
+              Send invitation
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Collaborator Email or Handle" htmlFor="collab-email" required>
+            <Input
+              id="collab-email"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder="editor@nexus.com or @alex_cohost"
+            />
+          </Field>
+          <Field label="Collaboration Role" htmlFor="collab-role">
+            <Select
+              id="collab-role"
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value)}
+            >
+              <option value="Co-Host">Co-Host (Full stream & upload access)</option>
+              <option value="Video Editor">Video Editor (Upload & metadata access)</option>
+              <option value="Producer">Producer (Content & scheduling access)</option>
+              <option value="Channel Manager">Channel Manager (Full studio access)</option>
+            </Select>
+          </Field>
+        </div>
+      </Modal>
     </>
   );
 }
