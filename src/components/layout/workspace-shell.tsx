@@ -30,11 +30,17 @@ export function WorkspaceShell({
   groups,
   children,
   accentLabel,
+  channels,
+  activeChannelId,
+  onSelectChannel,
 }: {
   workspace: { title: string; href: string; subtitle?: string };
   groups: WorkspaceNavGroup[];
   children: React.ReactNode;
   accentLabel?: string;
+  channels?: Array<{ id: string; name: string; role?: string }>;
+  activeChannelId?: string;
+  onSelectChannel?: (channelId: string) => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -53,14 +59,29 @@ export function WorkspaceShell({
         <Link href="/" className="flex items-center gap-2" aria-label="MYHitch Nexus home">
           <NexusMark className="h-10 w-auto" />
         </Link>
-        <Link href={workspace.href} className="min-w-0">
-          <p className="truncate font-display text-sm font-semibold text-fg">
-            {workspace.title}
-          </p>
-          {workspace.subtitle ? (
+        <div className="min-w-0 flex-1">
+          <Link href={workspace.href} className="block">
+            <p className="truncate font-display text-sm font-semibold text-fg">
+              {workspace.title}
+            </p>
+          </Link>
+          {channels && channels.length > 1 ? (
+            <select
+              aria-label="Switch channel"
+              value={activeChannelId}
+              onChange={(e) => onSelectChannel?.(e.target.value)}
+              className="mt-0.5 w-full rounded border border-border bg-surface-2 px-1 py-0.5 text-2xs text-fg font-medium focus:outline-none"
+            >
+              {channels.map((ch) => (
+                <option key={ch.id} value={ch.id}>
+                  {ch.name} {ch.role ? `(${ch.role})` : ""}
+                </option>
+              ))}
+            </select>
+          ) : workspace.subtitle ? (
             <p className="truncate text-2xs text-fg-subtle">{workspace.subtitle}</p>
           ) : null}
-        </Link>
+        </div>
       </div>
 
       <nav aria-label={workspace.title} className="nx-scrollbar flex-1 overflow-y-auto p-2.5">

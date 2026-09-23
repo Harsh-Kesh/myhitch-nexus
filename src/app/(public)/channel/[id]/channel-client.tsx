@@ -194,6 +194,7 @@ export function ChannelClient() {
             { value: "videos", label: "Videos", count: videos.length },
             { value: "playlists", label: "Playlists", count: playlists.length },
             { value: "live", label: "Live", count: liveEvents.length },
+            { value: "collaborations", label: "Collaborations" },
             { value: "community", label: "Community" },
             { value: "about", label: "About" },
           ]}
@@ -214,6 +215,22 @@ export function ChannelClient() {
               <EmptyState
                 title="No published videos yet"
                 description="When this channel publishes, its content will appear here."
+              />
+            )
+          ) : null}
+
+          {tab === "collaborations" ? (
+            videos.length ? (
+              <div>
+                <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-fg-subtle">
+                  Videos & Projects featuring {channel.name} as Co-Creator
+                </p>
+                <VideoGrid videos={videos.slice(0, 4)} />
+              </div>
+            ) : (
+              <EmptyState
+                title="No featured collaborations yet"
+                description="Videos where this creator is tagged as a co-host or participant will appear here."
               />
             )
           ) : null}

@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import {
   IconBroadcast,
   IconChartHistogram,
@@ -38,8 +39,20 @@ const STUDIO_ACCENTS: Array<{ role: string; accent: string }> = [
 
 export function StudioShell({ children }: { children: React.ReactNode }) {
   const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
-  const { data: comments = [] } = useModerationComments(channelId);
+  const [activeChannelId, setActiveChannelId] = React.useState<string>(user?.channelId ?? "ch_mara");
+
+  React.useEffect(() => {
+    if (user?.channelId) setActiveChannelId(user.channelId);
+  }, [user?.channelId]);
+
+  const channels = [
+    { id: user?.channelId ?? "ch_mara", name: user?.name ? `${user.name}'s Channel` : "Mara Silva", role: "Owner" },
+    { id: "ch_orbit_collab", name: "Orbit Studios", role: "Co-Host" },
+    { id: "ch_nexus_editor", name: "Nexus Originals", role: "Video Editor" },
+  ];
+
+  const activeChannel = channels.find((c) => c.id === activeChannelId) ?? channels[0];
+  const { data: comments = [] } = useModerationComments(activeChannel.id);
   const heldCount = comments.filter((comment) => comment.status === "held").length;
   const accentLabel =
     STUDIO_ACCENTS.find((entry) => user?.roles.includes(entry.role as (typeof user.roles)[number]))?.accent ??
@@ -50,10 +63,13 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
     <WorkspaceShell
       workspace={{
         title,
-        subtitle: user?.name ?? "Your channel",
+        subtitle: `${activeChannel.name} (${activeChannel.role})`,
         href: "/studio/dashboard",
       }}
       accentLabel={accentLabel}
+      channels={channels}
+      activeChannelId={activeChannel.id}
+      onSelectChannel={(id) => setActiveChannelId(id)}
       groups={[
         {
           items: [

@@ -64,7 +64,7 @@ export default function ChannelSettingsPage() {
   const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteRole, setInviteRole] = React.useState("Co-Host");
   const [teamMembers, setTeamMembers] = React.useState<
-    Array<{ id: string; name: string; email: string; role: string; status: string }>
+    Array<{ id: string; name: string; email: string; role: string; status: string; inviteLink?: string }>
   >([
     { id: "tm_1", name: "Mara Silva", email: "mara@nexus.com", role: "Channel Manager", status: "Active" },
   ]);
@@ -323,6 +323,18 @@ export default function ChannelSettingsPage() {
                     <div className="flex items-center gap-2">
                       <Badge tone="neutral" size="sm">{member.role}</Badge>
                       <Badge tone={member.status === "Active" ? "published" : "pending"} size="sm">{member.status}</Badge>
+                      {member.inviteLink ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard?.writeText(member.inviteLink!).catch(() => {});
+                            toast({ title: "Invite link copied", description: member.inviteLink });
+                          }}
+                        >
+                          Copy Link
+                        </Button>
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -413,7 +425,7 @@ export default function ChannelSettingsPage() {
         open={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
         title="Invite Channel Collaborator"
-        description="Grant a co-creator, editor, or manager access to collaborate on your channel."
+        description="Invite any Nexus user (or non-member) as a co-creator, editor, producer, or manager."
         footer={
           <>
             <Button variant="ghost" onClick={() => setInviteModalOpen(false)}>
@@ -423,36 +435,71 @@ export default function ChannelSettingsPage() {
               variant="primary"
               disabled={!inviteEmail.trim()}
               onClick={() => {
+                const isExistingUser = inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@");
+                const token = `inv_collab_${Date.now()}`;
+                const inviteLink = `${window.location.origin}/business/join?token=${token}&role=${encodeURIComponent(inviteRole)}&channel=${channelId}`;
+
                 const newMember = {
                   id: `collab_${Date.now()}`,
                   name: inviteEmail.split("@")[0] || "Co-Creator",
                   email: inviteEmail.trim(),
                   role: inviteRole,
-                  status: "Invited",
+                  status: isExistingUser ? "Active" : "Invite Link Sent",
+                  inviteLink,
                 };
                 setTeamMembers((prev) => [...prev, newMember]);
                 setInviteEmail("");
                 setInviteModalOpen(false);
-                toast({
-                  title: "Invitation sent",
-                  description: `${newMember.name} has been invited as a ${inviteRole}.`,
-                });
+
+                if (isExistingUser) {
+                  toast({
+                    title: "Active Account Verified & Invited",
+                    description: `${newMember.name} received an in-app invitation to join as ${inviteRole}.`,
+                  });
+                } else {
+                  navigator.clipboard?.writeText(inviteLink).catch(() => {});
+                  toast({
+                    title: "Registration Invite Link Copied",
+                    description: `Invite link copied to clipboard! Share it with ${newMember.email} to auto-join upon sign up.`,
+                  });
+                }
               }}
             >
-              Send invitation
+              {inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@")
+                ? "Invite Active Account"
+                : "Generate & Send Invite Link"}
             </Button>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Collaborator Email or Handle" htmlFor="collab-email" required>
+          <Field label="Collaborator Email or Handle" htmlFor="collab-email" required hint="Any role tier (Viewer, Creator, Business) can be added.">
             <Input
               id="collab-email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="editor@nexus.com or @alex_cohost"
+              placeholder="editor@nexus.com or external_creator@gmail.com"
             />
           </Field>
+
+          {inviteEmail.trim() ? (
+            <div className="rounded-lg border border-border bg-surface-2 p-3 text-xs">
+              {inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@") ? (
+                <div className="flex items-center gap-2 text-success font-medium">
+                  <IconCheck className="size-4" />
+                  Active Nexus Account Verified — Instant In-App Invite Ready
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <p className="font-medium text-warning">Non-Member Account Detected</p>
+                  <p className="text-fg-muted">
+                    An automated Nexus registration invite link will be generated. Once they sign up via the link, they will auto-join as a {inviteRole}.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+
           <Field label="Collaboration Role" htmlFor="collab-role">
             <Select
               id="collab-role"

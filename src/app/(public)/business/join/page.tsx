@@ -17,6 +17,8 @@ import { useCurrentUser } from "@/lib/mock-api/hooks";
 function JoinContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
+  const roleParam = searchParams.get("role") ?? "Collaborator";
+  const isCreatorInvite = token.startsWith("inv_collab_") || Boolean(searchParams.get("channel"));
   const router = useRouter();
   const { data: user, isLoading: userLoading } = useCurrentUser();
 
@@ -30,20 +32,22 @@ function JoinContent() {
     setError(null);
 
     try {
-      const res = await fetch("/api/business/team/accept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
+      if (!isCreatorInvite) {
+        const res = await fetch("/api/business/team/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to accept invitation");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to accept invitation");
+        }
       }
 
       setSuccess(true);
       setTimeout(() => {
-        router.push("/business/channel");
+        router.push(isCreatorInvite ? "/studio/dashboard" : "/business/channel");
       }, 2000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to accept invitation");
@@ -79,8 +83,12 @@ function JoinContent() {
     <div className="flex min-h-[60vh] items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader
-          title="Join Business Team"
-          description="You have been invited to collaborate on a MYHitch Nexus business channel."
+          title={isCreatorInvite ? "Join Creator Channel Team" : "Join Business Team"}
+          description={
+            isCreatorInvite
+              ? `You have been invited to collaborate as a ${roleParam} on a MYHitch Nexus Creator Channel.`
+              : "You have been invited to collaborate on a MYHitch Nexus business channel."
+          }
         />
         <CardBody className="space-y-6">
           {success ? (
@@ -89,8 +97,10 @@ function JoinContent() {
                 <IconCheck className="size-6" />
               </div>
               <h3 className="mt-3 text-lg font-semibold text-fg">Invitation Accepted!</h3>
-              <p className="mt-1 text-sm text-fg-muted">
-                You are now a team member. Redirecting you to Business Studio...
+              <p className="mt-1 text-xs text-fg-muted">
+                {isCreatorInvite
+                  ? `You are now assigned as a ${roleParam}. Redirecting to Creator Studio...`
+                  : "You are now a team member. Redirecting to Business Studio..."}
               </p>
             </div>
           ) : (
@@ -100,9 +110,13 @@ function JoinContent() {
                   <IconBuildingStore className="size-5" />
                 </div>
                 <div>
-                  <h4 className="font-medium text-fg">Business Studio Access</h4>
+                  <h4 className="font-medium text-fg">
+                    {isCreatorInvite ? `Creator Studio Access (${roleParam})` : "Business Studio Access"}
+                  </h4>
                   <p className="text-xs text-fg-muted">
-                    Collaborate on video publishing, advertising campaigns, and customer leads.
+                    {isCreatorInvite
+                      ? `Collaborate on uploads, scheduling, live streams, and channel analytics as a ${roleParam}.`
+                      : "Collaborate on video publishing, advertising campaigns, and customer leads."}
                   </p>
                 </div>
               </div>

@@ -975,10 +975,12 @@ function AboutPanel({ video }: { video: Video }) {
           </h3>
           <div className="mt-2 flex flex-wrap gap-2">
             {video.participants.map((person: string) => (
-              <Badge key={person} tone="neutral" size="sm" className="flex items-center gap-1.5 py-1 px-2.5">
-                <Avatar name={person} size="xs" />
-                <span>{person}</span>
-              </Badge>
+              <Link key={person} href={`/search?q=${encodeURIComponent(person)}`}>
+                <Badge tone="neutral" size="sm" className="flex items-center gap-1.5 py-1 px-2.5 transition-colors hover:border-accent hover:text-accent">
+                  <Avatar name={person} size="xs" />
+                  <span>{person}</span>
+                </Badge>
+              </Link>
             ))}
           </div>
         </div>

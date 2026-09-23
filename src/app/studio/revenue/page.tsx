@@ -249,6 +249,17 @@ export default function StudioRevenuePage() {
       />
 
       <PageBody className="space-y-6">
+        {/* Role Scoped Permission Banner */}
+        <div className="rounded-lg border border-info/30 bg-info/5 p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-info">Collaborator Role Scoping Active</p>
+            <p className="mt-0.5 text-xs text-fg-muted">
+              You are accessing studio tools under assigned permissions. <span className="font-medium text-fg">Co-Host / Manager</span> roles hold full withdrawal rights; <span className="font-medium text-fg">Video Editors</span> have view-only financial analytics.
+            </p>
+          </div>
+          <Badge tone="info" size="sm">Role Scoped</Badge>
+        </div>
+
         {isLoading || !data ? (
           <RailSkeleton count={4} />
         ) : (
