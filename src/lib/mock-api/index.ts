@@ -1241,6 +1241,26 @@ export async function publishReplay(eventId: string): Promise<LiveEvent | null> 
   return clone(event);
 }
 
+export async function startLiveEvent(eventId: string): Promise<LiveEvent | null> {
+  await latency();
+  const event = store.liveEvents.find((item) => item.id === eventId);
+  if (!event) return null;
+  event.status = "live";
+  event.actualStart = new Date().toISOString();
+  event.viewerCount = Math.floor(Math.random() * 45) + 15;
+  event.peakViewers = event.viewerCount;
+  recordAudit({
+    actor: store.user.name,
+    actorRole: "creator",
+    action: "live.started",
+    targetType: "live_event",
+    targetId: eventId,
+    reason: `Started live broadcast for "${event.title}".`,
+    severity: "info",
+  });
+  return clone(event);
+}
+
 export async function endLiveEvent(eventId: string): Promise<LiveEvent | null> {
   await latency();
   const event = store.liveEvents.find((item) => item.id === eventId);

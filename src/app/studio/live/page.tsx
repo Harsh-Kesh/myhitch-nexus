@@ -29,6 +29,7 @@ import {
   useEndLiveEvent,
   usePublishReplay,
   useRegenerateStreamKey,
+  useStartLiveEvent,
 } from "@/lib/mock-api/hooks";
 import type { LiveAccessType, LiveEvent } from "@/lib/mock-api/types";
 import { compactNumber, formatCurrency, formatDateTime } from "@/lib/utils";
@@ -61,12 +62,14 @@ export default function StudioLivePage() {
   const channelId = user?.channelId ?? "ch_mara";
   const { data: events = [] } = useChannelLiveEvents(channelId);
   const createEvent = useCreateLiveEvent();
+  const startEvent = useStartLiveEvent();
   const regenerateKey = useRegenerateStreamKey();
   const publishReplay = usePublishReplay();
   const endEvent = useEndLiveEvent();
   const { toast } = useToast();
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [isInstantLive, setIsInstantLive] = React.useState(false);
   const [tab, setTab] = React.useState("all");
   const [revealKey, setRevealKey] = React.useState<string | null>(null);
 
@@ -84,13 +87,14 @@ export default function StudioLivePage() {
     tab === "all" ? events : events.filter((event) => event.status === tab);
 
   const submit = async () => {
+    const isNow = isInstantLive;
     await createEvent.mutateAsync({
       channelId,
-      title: title.trim() || "Untitled stream",
+      title: title.trim() || (isNow ? "Live Broadcast" : "Untitled stream"),
       description,
-      status: "upcoming",
+      status: isNow ? "live" : "upcoming",
       accessType,
-      scheduledStart: new Date(scheduledStart).toISOString(),
+      scheduledStart: isNow ? new Date().toISOString() : new Date(scheduledStart).toISOString(),
       timezone,
       posterGradient: ["#2E5B4A", "#0A1712"],
       price:
@@ -104,8 +108,10 @@ export default function StudioLivePage() {
     setTitle("");
     setDescription("");
     toast({
-      title: "Stream scheduled",
-      description: "Your stream key is ready in the event card.",
+      title: isNow ? "Broadcast started!" : "Stream scheduled",
+      description: isNow
+        ? "Your live stream is on air. Viewers can join now!"
+        : "Your stream key is ready in the event card.",
     });
   };
 
@@ -113,12 +119,30 @@ export default function StudioLivePage() {
     <>
       <PageHeader
         title="Live"
-        description="Schedule streams, manage access and publish replays. No RTMP or WebRTC ingest exists in this build — the stream key is illustrative."
+        description="Go live instantly, schedule upcoming broadcasts, manage viewer access rules, and publish replays."
         actions={
-          <Button variant="primary" onClick={() => setCreateOpen(true)}>
-            <IconVideoPlus />
-            Schedule a stream
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setIsInstantLive(true);
+                setCreateOpen(true);
+              }}
+            >
+              <IconBroadcast />
+              Go live now
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setIsInstantLive(false);
+                setCreateOpen(true);
+              }}
+            >
+              <IconVideoPlus />
+              Schedule a stream
+            </Button>
+          </div>
         }
       />
 
@@ -169,6 +193,13 @@ export default function StudioLivePage() {
                     title: "Stream key rotated",
                     description: "The old key stops working immediately.",
                     tone: "warning",
+                  });
+                }}
+                onStart={async () => {
+                  await startEvent.mutateAsync(event.id);
+                  toast({
+                    title: "Broadcast started!",
+                    description: "Your stream is now live and on air.",
                   });
                 }}
                 onEnd={async () => {
@@ -311,6 +342,7 @@ function EventCard({
   revealed,
   onToggleReveal,
   onRegenerate,
+  onStart,
   onEnd,
   onPublishReplay,
 }: {
@@ -318,6 +350,7 @@ function EventCard({
   revealed: boolean;
   onToggleReveal: () => void;
   onRegenerate: () => void;
+  onStart: () => void;
   onEnd: () => void;
   onPublishReplay: () => void;
 }) {
@@ -363,6 +396,12 @@ function EventCard({
             <Button variant="secondary" size="sm" href={`/live/${event.id}`}>
               View page
             </Button>
+            {event.status === "upcoming" ? (
+              <Button variant="primary" size="sm" onClick={onStart}>
+                <IconBroadcast />
+                Go live now
+              </Button>
+            ) : null}
             {event.status === "live" ? (
               <Button variant="danger" size="sm" onClick={onEnd}>
                 <IconPlayerStop />

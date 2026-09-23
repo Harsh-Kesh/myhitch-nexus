@@ -429,6 +429,18 @@ export function usePublishReplay() {
   });
 }
 
+export function useStartLiveEvent() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.startLiveEvent,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["live-event"] });
+      client.invalidateQueries({ queryKey: ["live-events"] });
+      client.invalidateQueries({ queryKey: ["channel-live"] });
+    },
+  });
+}
+
 export function useEndLiveEvent() {
   const client = useQueryClient();
   return useMutation({
