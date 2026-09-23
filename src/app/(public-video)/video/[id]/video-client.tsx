@@ -266,6 +266,13 @@ export function VideoDetailClient() {
     }
   };
 
+  const effectiveEntitlement = React.useMemo(() => {
+    if (offlineUrl && entitlement) {
+      return { ...entitlement, granted: true, reason: "subscription" as const };
+    }
+    return entitlement;
+  }, [offlineUrl, entitlement]);
+
   if (isLoading || !entitlement) {
     return (
       <div className="mx-auto max-w-[110rem] px-4 py-6 sm:px-6 lg:px-8">
@@ -332,13 +339,6 @@ export function VideoDetailClient() {
     });
   };
 
-  const effectiveEntitlement = React.useMemo(() => {
-    if (offlineUrl && entitlement) {
-      return { ...entitlement, granted: true, reason: "subscription" as const };
-    }
-    return entitlement;
-  }, [offlineUrl, entitlement]);
-
   return (
     <div className="mx-auto max-w-[110rem] px-0 pb-10 sm:px-6 lg:px-8">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_25rem]">
@@ -346,7 +346,7 @@ export function VideoDetailClient() {
           {video.kind === "audio" ? (
             <AudioPlayer
               video={video}
-              entitlement={effectiveEntitlement}
+              entitlement={effectiveEntitlement!}
               resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
               onRequestPurchase={() => setPurchaseOpen(true)}
               onCommerceClick={(linkId) => {
@@ -362,7 +362,7 @@ export function VideoDetailClient() {
           ) : (
             <VideoPlayer
               video={video}
-              entitlement={effectiveEntitlement}
+              entitlement={effectiveEntitlement!}
               offlineMediaUrl={offlineUrl}
               resumeAt={progress && !progress.completed ? progress.positionSeconds : 0}
               onRequestPurchase={() => setPurchaseOpen(true)}

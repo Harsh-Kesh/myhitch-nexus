@@ -11,7 +11,6 @@ import {
   IconDeviceTv,
   IconFileUpload,
   IconMovie,
-  IconSpeakerphone,
   IconUpload,
   IconUser,
   IconVideo,
