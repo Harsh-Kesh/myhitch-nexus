@@ -2,6 +2,7 @@
 
 import {
   IconCheck,
+  IconCrown,
   IconLock,
   IconPencil,
   IconPlus,
@@ -21,11 +22,12 @@ import { looksLikeRealId } from "@/lib/mock-api";
 import {
   qk,
   useCurrentUser,
+  useSubscriptions,
   useSwitchProfile,
   useUpdateUser,
 } from "@/lib/mock-api/hooks";
 import type { AgeRating, ViewerProfile } from "@/lib/mock-api/types";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatCurrency, formatDate } from "@/lib/utils";
 
 const GRADIENTS: Array<[string, string]> = [
   ["#5B8DEF", "#243F80"],
@@ -38,6 +40,7 @@ const GRADIENTS: Array<[string, string]> = [
 
 export default function ProfilePage() {
   const { data: user } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const queryClient = useQueryClient();
   const updateUser = useUpdateUser();
   const switchProfile = useSwitchProfile();
@@ -46,6 +49,7 @@ export default function ProfilePage() {
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
 
   const [addOpen, setAddOpen] = React.useState(false);
+  const [upgradeOpen, setUpgradeOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [newKind, setNewKind] = React.useState<ViewerProfile["kind"]>("adult");
   const [newRating, setNewRating] = React.useState<AgeRating>("18");
@@ -72,6 +76,18 @@ export default function ProfilePage() {
   if (!user) return null;
 
   const isRealAccount = looksLikeRealId(user.id);
+  const activeSubscription = subscriptions.find((s) => s.status === "active" && s.kind === "platform");
+  const hasFamilyPlan = subscriptions.some(
+    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
+  );
+
+  const handleAddProfileClick = () => {
+    if (!hasFamilyPlan && user.profiles.length >= 1) {
+      setUpgradeOpen(true);
+      return;
+    }
+    setAddOpen(true);
+  };
 
   const saveProfile = () => {
     updateUser.mutate(
@@ -209,7 +225,7 @@ export default function ProfilePage() {
                 {user.profiles.length} of 5 Profiles Used
               </Badge>
               {user.profiles.length < 5 && (
-                <Button variant="secondary" size="sm" onClick={() => setAddOpen(true)}>
+                <Button variant="secondary" size="sm" onClick={handleAddProfileClick}>
                   <IconUserPlus />
                   Add profile
                 </Button>
@@ -284,7 +300,7 @@ export default function ProfilePage() {
             {user.profiles.length < 5 ? (
               <button
                 type="button"
-                onClick={() => setAddOpen(true)}
+                onClick={handleAddProfileClick}
                 className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border p-4 text-fg-subtle transition-colors hover:border-border-strong hover:text-fg"
               >
                 <span className="flex size-20 items-center justify-center rounded bg-surface-2">
@@ -454,20 +470,50 @@ export default function ProfilePage() {
         </CardBody>
       </Card>
 
-      {/* Roles */}
-      <Card>
+      {/* Active Subscription Plan */}
+      <Card className="border-accent/30 bg-accent/5">
         <CardHeader
-          title="Roles on this account"
-          description="Roles unlock workspaces. Business, advertiser and organisation roles require verification."
-        />
-        <CardBody>
-          <div className="flex flex-wrap gap-2">
-            {user.roles.map((role) => (
-              <Badge key={role} tone="accent">
-                {role}
+          title={
+            <div className="flex flex-wrap items-center gap-2">
+              <IconCrown className="size-5 text-accent" />
+              <span>Active Subscription Plan</span>
+              <Badge tone={activeSubscription ? "published" : "outline"} size="sm">
+                {activeSubscription ? activeSubscription.name : "Nexus Free Tier"}
               </Badge>
-            ))}
-          </div>
+            </div>
+          }
+          description={
+            activeSubscription
+              ? `Billed ${activeSubscription.interval} at ${formatCurrency(activeSubscription.price.amount, activeSubscription.price.currency)} — renews ${formatDate(activeSubscription.renewsAt, "long")}`
+              : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+          }
+          action={
+            <Button variant="primary" size="sm" href="/plans">
+              {activeSubscription ? "Manage Plan" : "Upgrade Plan"}
+            </Button>
+          }
+        />
+        <CardBody className="border-t border-border/50 pt-4">
+          <ul className="flex flex-wrap gap-x-6 gap-y-2 text-xs font-medium text-fg-muted">
+            {activeSubscription ? (
+              activeSubscription.benefits.map((b) => (
+                <li key={b} className="flex items-center gap-1.5">
+                  <IconCheck className="size-3.5 text-success" />
+                  {b}
+                </li>
+              ))
+            ) : (
+              <>
+                <li className="flex items-center gap-1.5">
+                  <IconCheck className="size-3.5 text-success" />
+                  Ad-Supported Catalog Access
+                </li>
+                <li className="flex items-center gap-1.5 text-fg-subtle">
+                  • 1 Viewer Profile (Upgrade to Family for up to 5)
+                </li>
+              </>
+            )}
+          </ul>
           <p className="mt-3 text-xs text-fg-subtle nx-tnum">
             Member since {formatDate(user.createdAt, "long")}
           </p>
@@ -577,6 +623,34 @@ export default function ProfilePage() {
               or access the Studio and Admin workspaces.
             </p>
           ) : null}
+        </div>
+      </Modal>
+
+      {/* Upgrade to Family Plan Modal */}
+      <Modal
+        open={upgradeOpen}
+        onClose={() => setUpgradeOpen(false)}
+        title="Nexus Family Plan Required"
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-lg border border-accent/30 bg-accent/10 p-4">
+            <IconCrown className="mt-0.5 size-6 shrink-0 text-accent" />
+            <div>
+              <p className="font-semibold text-fg">Multi-Profile Household Switching</p>
+              <p className="mt-1 text-sm text-fg-muted leading-relaxed">
+                Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan (£14.99/mo)</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setUpgradeOpen(false)}>
+              Maybe Later
+            </Button>
+            <Button variant="primary" href="/plans">
+              Upgrade to Family Plan — £14.99/mo
+            </Button>
+          </div>
         </div>
       </Modal>
     </div>
