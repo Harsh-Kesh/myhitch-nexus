@@ -533,6 +533,37 @@ export async function getEntitlement(
     return { ...base, granted: false, reason: "none", blockReason: "unavailable" };
   }
 
+  // Parental & profile-based age restriction guard (Nexus Family Tier)
+  const activeProfile = store.user.profiles?.find((p) => p.id === store.user.activeProfileId);
+  const profileMax = activeProfile?.maxAgeRating;
+  const parentalMax = store.user.parentalControls?.enabled
+    ? store.user.parentalControls.maxAgeRating
+    : null;
+  const effectiveMaxRating = profileMax || parentalMax;
+
+  if (effectiveMaxRating && video.rights?.ageRating) {
+    const RATING_WEIGHT: Record<string, number> = {
+      U: 0,
+      ALL: 0,
+      PG: 1,
+      "12": 2,
+      TEEN: 2,
+      "15": 3,
+      "18": 4,
+      "18+": 4,
+    };
+    const videoWeight = RATING_WEIGHT[video.rights.ageRating] ?? 0;
+    const maxWeight = RATING_WEIGHT[effectiveMaxRating] ?? 4;
+    if (videoWeight > maxWeight) {
+      return {
+        ...base,
+        granted: false,
+        reason: "none",
+        blockReason: "age-gate",
+      };
+    }
+  }
+
   const models = video.pricing.accessModels;
   if (models.includes("free")) return { ...base, granted: true, reason: "free" };
   if (models.includes("ad-supported"))

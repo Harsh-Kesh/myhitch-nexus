@@ -294,6 +294,28 @@ export function VideoPlayer({
     );
   }
 
+  if (entitlement.blockReason === "age-gate") {
+    return (
+      <BlockedSurface
+        video={video}
+        className={className}
+        icon={<IconLock />}
+        title="Age-restricted content"
+        description={
+          <>
+            This title is rated <strong className="text-fg">{video.rights.ageRating}</strong>,
+            which exceeds the maximum age rating permitted for this viewer profile.
+          </>
+        }
+        action={
+          <Button variant="secondary" href="/account/profile">
+            Switch or manage profiles
+          </Button>
+        }
+      />
+    );
+  }
+
   // Paid content, never started: show the paywall in place of the player.
   if (!entitlement.granted && !started && !offlineMediaUrl) {
     return (
