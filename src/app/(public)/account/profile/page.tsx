@@ -73,14 +73,28 @@ export default function ProfilePage() {
     setLanguage(user.language);
   }, [user]);
 
-  if (!user) return null;
-
-  const isRealAccount = looksLikeRealId(user.id);
+  const isRealAccount = user ? looksLikeRealId(user.id) : false;
   const hasFamilyPlan = subscriptions.some(
     (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
   );
 
   const activePlanInfo = React.useMemo(() => {
+    if (!user) {
+      return {
+        name: "Nexus Free Tier",
+        interval: null,
+        amount: 0,
+        currency: "GBP",
+        renewsAt: null,
+        benefits: [
+          "Ad-Supported Catalog Access",
+          "Standard Quality Playback",
+          "1 Viewer Profile (Upgrade to Family for up to 5)",
+        ],
+        isFree: true,
+      };
+    }
+
     const activeSub = subscriptions.find((s) => s.status === "active");
     if (activeSub) {
       return {
@@ -160,6 +174,8 @@ export default function ProfilePage() {
       isFree: true,
     };
   }, [subscriptions, user]);
+
+  if (!user) return null;
 
   const handleAddProfileClick = () => {
     if (!hasFamilyPlan && user.profiles.length >= 1) {
