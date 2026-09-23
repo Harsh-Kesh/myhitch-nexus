@@ -124,11 +124,42 @@ export default function BillingPage() {
   return (
     <>
       <PageHeader
-        title="Billing"
-        description="Advertising spend, invoices and payment method. No payment gateway is integrated — see the out-of-scope list."
+        title="Billing & Subscription"
+        description="Nexus Business subscription plan, commercial advertising spend, campaign invoices, and priority support status."
       />
 
       <PageBody className="space-y-6">
+        {/* Nexus Business Subscription Overview */}
+        <Card className="border-warning/30 bg-warning/5">
+          <CardHeader
+            title="Nexus Business Subscription"
+            description="Your active commercial plan and included enterprise features"
+            action={
+              <Badge tone="published" size="sm">
+                Active Plan
+              </Badge>
+            }
+          />
+          <CardBody className="space-y-3 text-sm">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <p className="text-xs text-fg-muted">Plan Tier</p>
+                <p className="font-semibold text-fg">Nexus Business</p>
+                <p className="text-xs text-fg-subtle">£29.00 / month (£290 / year option)</p>
+              </div>
+              <div>
+                <p className="text-xs text-fg-muted">Team Allocation</p>
+                <p className="font-semibold text-fg">Up to 5 Team Seats</p>
+                <p className="text-xs text-fg-subtle">Admin, Editor, Analyst roles</p>
+              </div>
+              <div>
+                <p className="text-xs text-fg-muted">Priority Business Support</p>
+                <p className="font-semibold text-fg">Active SLA Support</p>
+                <p className="text-xs text-fg-subtle">Priority ticket routing</p>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
         <div className="grid gap-3 sm:grid-cols-3">
           <Stat
             label="Outstanding"
