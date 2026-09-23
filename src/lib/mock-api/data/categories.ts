@@ -145,6 +145,17 @@ const rawCategories: Category[] = [
     imageUrl: "/images/categories/cat_conferences.svg",
   },
   {
+    id: "cat_sports_live",
+    slug: "sports-and-live-matches",
+    name: "Sports & Live Matches",
+    description: "Live sporting events, stadium broadcasts, and match replays via MYHitch Pass.",
+    contentType: "live",
+    featured: true,
+    videoCount: 3,
+    accentToken: 4,
+    imageUrl: "/images/categories/cat_conferences.svg",
+  },
+  {
     id: "cat_destinations",
     slug: "destinations",
     name: "Destinations & places",
