@@ -29,8 +29,6 @@ export default function SubscriptionsPage() {
   const { toast } = useToast();
   const [cancelling, setCancelling] = React.useState<Subscription | null>(null);
 
-  if (isLoading) return <RailSkeleton count={3} />;
-
   const activePlanInfo = React.useMemo(() => {
     if (!user) {
       return {
@@ -127,6 +125,8 @@ export default function SubscriptionsPage() {
       isFree: true,
     };
   }, [subscriptions, user]);
+
+  if (isLoading) return <RailSkeleton count={3} />;
 
   const active = subscriptions.filter((item) => item.status !== "cancelled");
   const inactive = subscriptions.filter((item) => item.status === "cancelled");
