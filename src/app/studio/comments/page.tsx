@@ -47,6 +47,16 @@ export default function StudioCommentsPage() {
     removed: comments.filter((c) => c.status === "removed").length,
   };
 
+  const reportReasonCounts = React.useMemo(() => {
+    const reasonMap: Record<string, number> = {};
+    comments.forEach((c) => {
+      if (c.heldReason) {
+        reasonMap[c.heldReason] = (reasonMap[c.heldReason] || 0) + 1;
+      }
+    });
+    return Object.entries(reasonMap).map(([label, count]) => ({ label, count }));
+  }, [comments]);
+
   const filtered = comments.filter((comment) => comment.status === tab);
 
   return (
@@ -297,24 +307,23 @@ export default function StudioCommentsPage() {
             <Card>
               <CardHeader title="Report reasons" description="What viewers reported" />
               <CardBody>
-                <ul className="space-y-2 text-sm">
-                  {[
-                    { label: "Harassment", count: 4 },
-                    { label: "Spam", count: 18 },
-                    { label: "Misinformation", count: 2 },
-                    { label: "Hate speech", count: 1 },
-                  ].map((reason) => (
-                    <li
-                      key={reason.label}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="text-fg-muted">{reason.label}</span>
-                      <Badge tone="outline" size="sm">
-                        {reason.count} {reason.count === 1 ? "report" : "reports"}
-                      </Badge>
-                    </li>
-                  ))}
-                </ul>
+                {reportReasonCounts.length === 0 ? (
+                  <p className="text-xs text-fg-muted">No comment reports yet. Viewers&rsquo; reported comments will appear here.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {reportReasonCounts.map((reason) => (
+                      <li
+                        key={reason.label}
+                        className="flex items-center justify-between gap-2"
+                      >
+                        <span className="text-fg-muted">{reason.label}</span>
+                        <Badge tone="outline" size="sm">
+                          {reason.count} {reason.count === 1 ? "report" : "reports"}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <p className="mt-3 flex items-start gap-2 text-2xs leading-relaxed text-fg-subtle">
                   <IconShieldCheck className="mt-0.5 size-3.5 shrink-0" />
                   Serious reports are escalated to platform moderation and appear
