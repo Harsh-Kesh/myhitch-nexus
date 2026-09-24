@@ -310,7 +310,7 @@ export default function StudioCommentsPage() {
                     >
                       <span className="text-fg-muted">{reason.label}</span>
                       <Badge tone="outline" size="sm">
-                        {reason.count}
+                        {reason.count} {reason.count === 1 ? "report" : "reports"}
                       </Badge>
                     </li>
                   ))}
