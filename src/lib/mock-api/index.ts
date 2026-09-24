@@ -3756,33 +3756,96 @@ async function verificationFetch<T>(path: string, init?: RequestInit): Promise<T
 }
 
 export async function getOrganizationVerification(organizationId: string): Promise<OrganizationVerification> {
-  return verificationFetch<OrganizationVerification>(
-    `/api/studio/organization/verification/?organizationId=${encodeURIComponent(organizationId)}`,
-  );
+  if (looksLikeRealId(organizationId)) {
+    return verificationFetch<OrganizationVerification>(
+      `/api/studio/organization/verification/?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+  }
+  const channel = store.channels.find((c) => c.id === organizationId || c.handle === organizationId);
+  return {
+    organizationId,
+    legalEntityName: "Nexus Enterprise Demo Pty Ltd",
+    tradingName: null,
+    abn: "51 824 753 556",
+    acn: null,
+    entityType: "Company",
+    gstRegistered: true,
+    businessRegistrationDate: null,
+    countryOfRegistration: "AU",
+    registeredAddress: null,
+    principalAddress: null,
+    operatingLocations: null,
+    addressSameAsRegistered: true,
+    contactFullName: null,
+    contactPosition: null,
+    contactEmail: null,
+    contactMobile: null,
+    authorisedPersonName: null,
+    authorisedPersonPosition: null,
+    industry: null,
+    businessDescription: null,
+    website: null,
+    platforms: [],
+    productsServices: null,
+    informationAccurate: false,
+    authorityConfirmed: false,
+    termsAccepted: false,
+    privacyAccepted: false,
+    abnLookupCheckedAt: null,
+    abnLookupStatus: null,
+    abnLookupEntityName: null,
+    abnLookupEntityType: null,
+    abnLookupGstEffectiveFrom: null,
+    abnLookupState: null,
+    abnLookupPostcode: null,
+    submittedAt: null,
+    status: channel?.verificationStatus ?? "unverified",
+  };
 }
 
 export async function saveOrganizationVerificationDraft(
   organizationId: string,
   draft: OrganizationVerificationDraft,
 ): Promise<void> {
-  await verificationFetch("/api/studio/organization/verification/", {
-    method: "PATCH",
-    body: JSON.stringify({ organizationId, ...draft }),
-  });
+  if (looksLikeRealId(organizationId)) {
+    await verificationFetch("/api/studio/organization/verification/", {
+      method: "PATCH",
+      body: JSON.stringify({ organizationId, ...draft }),
+    });
+  }
 }
 
 export async function runOrganizationAbnLookup(organizationId: string, abn: string): Promise<AbnLookupResult> {
-  return verificationFetch<AbnLookupResult>("/api/studio/organization/verification/abn-lookup/", {
-    method: "POST",
-    body: JSON.stringify({ organizationId, abn }),
-  });
+  if (looksLikeRealId(organizationId)) {
+    return verificationFetch<AbnLookupResult>("/api/studio/organization/verification/abn-lookup/", {
+      method: "POST",
+      body: JSON.stringify({ organizationId, abn }),
+    });
+  }
+  return {
+    found: true,
+    message: "Active ABN Found",
+    abn: abn || "51 824 753 556",
+    abnStatus: "Active",
+    abnStatusEffectiveFrom: "2020-07-01",
+    acn: "",
+    entityName: "Nexus Enterprise Demo Pty Ltd",
+    entityTypeCode: "IND",
+    entityTypeName: "Australian Private Company",
+    gstEffectiveFrom: "2020-07-01",
+    addressState: "NSW",
+    addressPostcode: "2000",
+  };
 }
 
 export async function getVerificationDocuments(organizationId: string): Promise<VerificationDocument[]> {
-  const data = await verificationFetch<{ items: VerificationDocument[] }>(
-    `/api/studio/organization/verification/documents/?organizationId=${encodeURIComponent(organizationId)}`,
-  );
-  return data.items;
+  if (looksLikeRealId(organizationId)) {
+    const data = await verificationFetch<{ items: VerificationDocument[] }>(
+      `/api/studio/organization/verification/documents/?organizationId=${encodeURIComponent(organizationId)}`,
+    );
+    return data.items;
+  }
+  return [];
 }
 
 export async function uploadVerificationDocument(
@@ -3790,16 +3853,19 @@ export async function uploadVerificationDocument(
   documentType: "business_registration" | "licence" | "insurance" | "other",
   file: File,
 ): Promise<{ id: string; fileName: string }> {
-  const formData = new FormData();
-  formData.append("organizationId", organizationId);
-  formData.append("documentType", documentType);
-  formData.append("file", file);
-  const res = await fetch("/api/studio/organization/verification/documents/", { method: "POST", body: formData });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `Failed to upload the document (${res.status}).`);
+  if (looksLikeRealId(organizationId)) {
+    const formData = new FormData();
+    formData.append("organizationId", organizationId);
+    formData.append("documentType", documentType);
+    formData.append("file", file);
+    const res = await fetch("/api/studio/organization/verification/documents/", { method: "POST", body: formData });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Failed to upload the document (${res.status}).`);
+    }
+    return res.json();
   }
-  return res.json();
+  return { id: `doc_${Date.now()}`, fileName: file.name };
 }
 
 export async function submitOrganizationVerification(organizationId: string): Promise<void> {

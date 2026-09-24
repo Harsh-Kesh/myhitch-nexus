@@ -221,7 +221,7 @@ export default function OrganizationVerificationPage() {
           </CardBody>
         </Card>
 
-        <fieldset disabled={!isRealChannel || isSubmitted} className="space-y-6 disabled:opacity-60">
+        <fieldset disabled={isSubmitted} className="space-y-6 disabled:opacity-60">
           {/* Business identity */}
           <Card>
             <CardHeader title="Business identity" description="Tell us who your business is." />
