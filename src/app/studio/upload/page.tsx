@@ -32,6 +32,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { ProgressBar } from "@/components/ui/progress";
 import { Stepper } from "@/components/ui/stepper";
 import { useToast } from "@/components/ui/toast";
+import { useUploadContext } from "@/components/upload/upload-provider";
 import * as api from "@/lib/mock-api";
 import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import {
@@ -117,6 +118,15 @@ export default function UploadPage() {
   const createStudioUpload = useCreateStudioUpload();
   const uploadThumbnailFile = useUploadThumbnailFile();
 
+  const {
+    activeUpload,
+    startUpload: startBgUpload,
+    updateDraftData,
+    setStep: setBgStep,
+    setFurthestStep: setBgFurthestStep,
+    clearUpload,
+  } = useUploadContext();
+
   const [mode, setMode] = React.useState<"single" | "bulk">("single");
   const [step, setStep] = React.useState(0);
   const [furthest, setFurthest] = React.useState(0);
@@ -127,6 +137,37 @@ export default function UploadPage() {
   const [dragging, setDragging] = React.useState(false);
   const [masterAssetPath, setMasterAssetPath] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Restore background upload session & step draft data
+  React.useEffect(() => {
+    if (!activeUpload) return;
+
+    if (activeUpload.step !== undefined) setStep(activeUpload.step);
+    if (activeUpload.furthestStep !== undefined) setFurthest(activeUpload.furthestStep);
+
+    const d = activeUpload.draftData;
+    if (d.title) setTitle(d.title);
+    if (d.description) setDescription(d.description);
+    if (d.contentType) setContentType(d.contentType as ContentType);
+    if (d.accessModel) setAccessModels([d.accessModel as AccessModel]);
+    if (d.tags && d.tags.length > 0) setTags(d.tags);
+    if (d.kind) setKind(d.kind);
+
+    const bytes = Math.round((activeUpload.progress / 100) * activeUpload.fileSize);
+    setSession((current) => {
+      if (current && current.phase === "complete") return current;
+      return {
+        id: activeUpload.id,
+        fileName: activeUpload.fileName,
+        fileSizeBytes: activeUpload.fileSize,
+        uploadedBytes: bytes,
+        phase: activeUpload.phase === "ready" ? "complete" : activeUpload.phase === "processing" ? "processing" : "uploading",
+        chunkIndex: activeUpload.phase === "ready" ? 1 : 0,
+        totalChunks: 1,
+        createdAt: activeUpload.startedAt,
+      };
+    });
+  }, [activeUpload]);
 
   // Drives the mock chunked transfer — real channels never reach this (see startUpload).
   React.useEffect(() => {
@@ -192,6 +233,7 @@ export default function UploadPage() {
   };
 
   const startUpload = (picked: { name: string; size: number; file?: File }) => {
+    startBgUpload({ name: picked.name, size: picked.size, kind });
     if (isRealChannel) {
       if (picked.file) void startRealUpload(picked.file);
       return;
@@ -321,7 +363,10 @@ export default function UploadPage() {
   const goNext = () => {
     const next = Math.min(step + 1, STEPS.length - 1);
     setStep(next);
-    setFurthest((current) => Math.max(current, next));
+    const nextFurthest = Math.max(furthest, next);
+    setFurthest(nextFurthest);
+    setBgStep(next);
+    setBgFurthestStep(nextFurthest);
   };
 
   const submit = async () => {
@@ -406,6 +451,7 @@ export default function UploadPage() {
           ? "Sponsored or age-rated content is held back from public view before it goes live."
           : "Your video is in Content.",
     });
+    clearUpload();
     router.push("/studio/content");
   };
 

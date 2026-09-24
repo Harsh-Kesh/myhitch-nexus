@@ -53,6 +53,8 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
+import { UploadProvider } from "@/components/upload/upload-provider";
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = React.useState(
     () =>
@@ -73,10 +75,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={client}>
       <ThemeProvider>
         <ToastProvider>
-          {/* NetworkStatus sits inside the query provider so a reconnect can
-              refetch, and outside the page so it can replace it when offline. */}
-          <NetworkStatus>{children}</NetworkStatus>
-          <BootSplash />
+          <UploadProvider>
+            {/* NetworkStatus sits inside the query provider so a reconnect can
+                refetch, and outside the page so it can replace it when offline. */}
+            <NetworkStatus>{children}</NetworkStatus>
+            <BootSplash />
+          </UploadProvider>
         </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>
