@@ -382,17 +382,25 @@ export default function ChannelSettingsPage() {
                   On Nexus since {formatDate(channel.joinedAt, "long")}
                 </p>
               </div>
-              <Badge
-                tone={
-                  channel.verificationStatus === "verified"
-                    ? "published"
-                    : channel.verificationStatus === "pending"
-                      ? "pending"
-                      : "draft"
-                }
-              >
-                {channel.verificationStatus}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge
+                  tone={
+                    channel.verificationStatus === "verified"
+                      ? "published"
+                      : channel.verificationStatus === "pending"
+                        ? "pending"
+                        : "draft"
+                  }
+                >
+                  {channel.verificationStatus}
+                </Badge>
+                {channel.verificationStatus !== "verified" ? (
+                  <Button variant="secondary" size="sm" href="/business/verification">
+                    <IconCheck className="size-4" />
+                    Verify Channel (Automated)
+                  </Button>
+                ) : null}
+              </div>
             </div>
           </CardBody>
         </Card>
