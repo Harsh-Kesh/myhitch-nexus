@@ -1,6 +1,6 @@
 "use client";
 
-import { IconBuildingBank, IconCheck, IconExternalLink, IconPencil, IconUserPlus } from "@tabler/icons-react";
+import { IconCheck, IconExternalLink, IconPencil, IconUserPlus } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Avatar } from "@/components/ui/avatar";
@@ -353,57 +353,29 @@ export default function ChannelSettingsPage() {
           </CardBody>
         </Card>
 
-        {/* Verification */}
-        <Card>
-          <CardHeader
-            title="Verification"
-            description="Verification badges are granted to verified business entities via ABN lookup and platform-assigned Creator Partners."
-          />
-          <CardBody>
-            <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border p-4">
-              <span
-                className={
-                  channel.verificationStatus === "verified"
-                    ? "flex size-10 items-center justify-center rounded-full bg-success/15 text-success"
-                    : "flex size-10 items-center justify-center rounded-full bg-warning/15 text-warning"
-                }
-              >
-                <IconCheck className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-fg">
-                  {channel.verificationStatus === "verified"
-                    ? "This channel is verified"
-                    : channel.verificationStatus === "pending"
-                      ? "Verification in progress"
-                      : "Not verified"}
-                </p>
-                <p className="mt-0.5 text-xs text-fg-muted">
-                  On Nexus since {formatDate(channel.joinedAt, "long")}
-                </p>
+        {/* Business Verification (Business Accounts Only) */}
+        {channel.kind !== "creator" ? (
+          <Card>
+            <CardHeader
+              title="Business Verification"
+              description="Verified legal entity status from registration ABN check."
+            />
+            <CardBody>
+              <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border p-4">
+                <span className="flex size-10 items-center justify-center rounded-full bg-success/15 text-success">
+                  <IconCheck className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-fg">Verified Business Entity</p>
+                  <p className="mt-0.5 text-xs text-fg-muted">
+                    Verified via ABN registration on account creation · On Nexus since {formatDate(channel.joinedAt, "long")}
+                  </p>
+                </div>
+                <Badge tone="published">Verified</Badge>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge
-                  tone={
-                    channel.verificationStatus === "verified"
-                      ? "published"
-                      : channel.verificationStatus === "pending"
-                        ? "pending"
-                        : "draft"
-                  }
-                >
-                  {channel.verificationStatus}
-                </Badge>
-                {channel.verificationStatus !== "verified" ? (
-                  <Button variant="secondary" size="sm" href="/business/verification">
-                    <IconBuildingBank className="size-4" />
-                    Verify Channel (ABN Lookup)
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          </CardBody>
-        </Card>
+            </CardBody>
+          </Card>
+        ) : null}
 
         {/* Policies */}
         <Card>
