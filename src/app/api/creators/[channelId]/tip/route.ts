@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getRequestAccount } from "@/lib/server/rbac";
 import { createTipCheckoutSession } from "@/lib/server/tipping";
+import { query } from "@/lib/server/db";
 
 const TipSchema = z.object({
   supporterName: z.string().min(1).default("Anonymous Fan"),
@@ -39,6 +40,18 @@ export async function POST(
   }
 
   const account = await getRequestAccount(request);
+  if (account) {
+    const membership = await query(
+      `select 1 from memberships where account_id = $1 and organization_id = $2`,
+      [account.id, channelId],
+    );
+    if (membership.length > 0 || account.id === channelId) {
+      return NextResponse.json(
+        { error: "Creators cannot tip or support their own channel." },
+        { status: 400 },
+      );
+    }
+  }
 
   try {
     const result = await createTipCheckoutSession({

@@ -29,9 +29,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You aren't a member of that channel." }, { status: 403 });
   }
   const returnPath = body.returnPath?.startsWith("/") ? body.returnPath : "/studio/revenue/";
+  const origin = request.headers.get("origin") || request.nextUrl.origin;
 
   try {
-    const url = await createConnectOnboardingLink(body.channelId, account.email, returnPath);
+    const url = await createConnectOnboardingLink(body.channelId, account.email, returnPath, origin);
     return NextResponse.json({ url });
   } catch (err) {
     if (err instanceof StripeNotConfiguredError) {

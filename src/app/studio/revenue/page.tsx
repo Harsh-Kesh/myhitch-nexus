@@ -98,9 +98,11 @@ export default function StudioRevenuePage() {
     if (!connect) return;
     if (connect === "return") {
       toast({ title: "Checking your bank account setup…", tone: "info" });
+    } else if (connect === "refresh") {
+      toast({ title: "Onboarding link expired", description: "Please click to restart bank setup.", tone: "warning" });
     }
     queryClient.invalidateQueries({ queryKey: ["payout-status", channelId] });
-    window.history.replaceState(null, "", "/studio/revenue/");
+    window.history.replaceState(null, "", window.location.pathname);
     // Only ever run once per real navigation to this exact query string.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

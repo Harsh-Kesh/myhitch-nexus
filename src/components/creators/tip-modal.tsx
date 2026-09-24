@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea, Switch } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 
+import { useCurrentUser } from "@/lib/mock-api/hooks";
+
 interface TipModalProps {
   open: boolean;
   onClose: () => void;
@@ -18,6 +20,7 @@ const PRESET_AMOUNTS = [5, 10, 25, 50];
 
 export function TipModal({ open, onClose, channelId, channelName }: TipModalProps) {
   const { toast } = useToast();
+  const { data: user } = useCurrentUser();
   const [selectedAmount, setSelectedAmount] = React.useState<number>(10);
   const [customAmount, setCustomAmount] = React.useState<string>("");
   const [isCustom, setIsCustom] = React.useState<boolean>(false);
@@ -31,6 +34,16 @@ export function TipModal({ open, onClose, channelId, channelName }: TipModalProp
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (user && (user.channelId === channelId || user.id === channelId)) {
+      toast({
+        title: "Action not allowed",
+        description: "You cannot tip or become a patron of your own channel.",
+        tone: "error",
+      });
+      return;
+    }
+
     if (finalAmount < 1) {
       toast({
         title: "Invalid amount",

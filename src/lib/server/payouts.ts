@@ -18,19 +18,38 @@ export interface PayoutAccountStatus {
 
 export async function getPayoutAccountStatus(organizationId: string): Promise<PayoutAccountStatus> {
   const row = await queryOne<{
+    stripe_account_id: string;
     charges_enabled: boolean;
     payouts_enabled: boolean;
     details_submitted: boolean;
   }>(
-    `select charges_enabled, payouts_enabled, details_submitted from payout_accounts where organization_id = $1`,
+    `select stripe_account_id, charges_enabled, payouts_enabled, details_submitted from payout_accounts where organization_id = $1`,
     [organizationId],
   );
   if (!row) return { connected: false, chargesEnabled: false, payoutsEnabled: false, detailsSubmitted: false };
+
+  let chargesEnabled = row.charges_enabled;
+  let payoutsEnabled = row.payouts_enabled;
+  let detailsSubmitted = row.details_submitted;
+
+  // Active sync with Stripe if connected so user landing back sees live verification state instantly
+  if (row.stripe_account_id) {
+    try {
+      const stripeAcc = await getStripe().accounts.retrieve(row.stripe_account_id);
+      chargesEnabled = stripeAcc.charges_enabled;
+      payoutsEnabled = stripeAcc.payouts_enabled;
+      detailsSubmitted = stripeAcc.details_submitted;
+      await upsertPayoutAccountFromStripe(stripeAcc);
+    } catch {
+      // Ignore Stripe retrieval errors if offline or mock
+    }
+  }
+
   return {
     connected: true,
-    chargesEnabled: row.charges_enabled,
-    payoutsEnabled: row.payouts_enabled,
-    detailsSubmitted: row.details_submitted,
+    chargesEnabled,
+    payoutsEnabled,
+    detailsSubmitted,
   };
 }
 
@@ -41,6 +60,7 @@ export async function createConnectOnboardingLink(
   organizationId: string,
   accountEmail: string,
   returnPath: string,
+  baseUrl?: string,
 ): Promise<string> {
   let stripeAccountId = (
     await queryOne<{ stripe_account_id: string }>(
@@ -62,10 +82,11 @@ export async function createConnectOnboardingLink(
     );
   }
 
+  const origin = baseUrl || SITE_URL;
   const link = await getStripe().accountLinks.create({
     account: stripeAccountId,
-    refresh_url: `${SITE_URL}${returnPath}?connect=refresh`,
-    return_url: `${SITE_URL}${returnPath}?connect=return`,
+    refresh_url: `${origin}${returnPath}?connect=refresh`,
+    return_url: `${origin}${returnPath}?connect=return`,
     type: "account_onboarding",
   });
   return link.url;

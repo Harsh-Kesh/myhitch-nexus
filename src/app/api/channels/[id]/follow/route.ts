@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { organizationExists } from "@/lib/server/catalogue";
 import { isFollowing, toggleFollow } from "@/lib/server/engagement";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { query } from "@/lib/server/db";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const account = await getRequestAccount(request);
@@ -28,6 +29,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       { error: "This channel isn't in the real catalogue yet." },
       { status: 404 },
     );
+  }
+
+  if (account.id === id) {
+    return NextResponse.json({ error: "Creators cannot follow their own channel." }, { status: 400 });
+  }
+  const membership = await query(`select 1 from memberships where account_id = $1 and organization_id = $2`, [account.id, id]);
+  if (membership.length > 0) {
+    return NextResponse.json({ error: "Creators cannot follow their own channel." }, { status: 400 });
   }
 
   const following = await toggleFollow(account.id, id);

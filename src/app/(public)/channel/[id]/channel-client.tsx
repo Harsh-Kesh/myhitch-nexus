@@ -99,6 +99,10 @@ export function ChannelClient() {
   const liveNow = liveEvents.find((event) => event.status === "live");
   const upcoming = liveEvents.filter((event) => event.status === "upcoming");
 
+  const isSelf = Boolean(
+    user && (user.channelId === channel.id || user.id === channel.id)
+  );
+
   return (
     <div>
       {/* Banner */}
@@ -153,13 +157,21 @@ export function ChannelClient() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 pb-1">
-            <Button variant={following ? "secondary" : "primary"} onClick={handleToggleFollow}>
-              {following ? "Following" : "Follow"}
-            </Button>
-            <Button variant="secondary" onClick={() => setTipModalOpen(true)}>
-              <IconHeart className="size-4 mr-1 text-red-400 fill-current" />
-              Tip / Patron
-            </Button>
+            {isSelf ? (
+              <Button variant="secondary" href="/studio/channel-settings">
+                Customize channel
+              </Button>
+            ) : (
+              <>
+                <Button variant={following ? "secondary" : "primary"} onClick={handleToggleFollow}>
+                  {following ? "Following" : "Follow"}
+                </Button>
+                <Button variant="secondary" onClick={() => setTipModalOpen(true)}>
+                  <IconHeart className="size-4 mr-1 text-red-400 fill-current" />
+                  Tip / Patron
+                </Button>
+              </>
+            )}
             {liveNow ? (
               <Button variant="live" href={`/live/${liveNow.id}`}>
                 <IconBroadcast />

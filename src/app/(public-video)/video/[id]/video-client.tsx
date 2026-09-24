@@ -568,16 +568,18 @@ export function VideoDetailClient() {
                         </span>
                       </span>
                     </Link>
-                    <Button
-                      variant={following ? "secondary" : "primary"}
-                      size="sm"
-                      onClick={() => {
-                        if (!requireSignIn("Sign in to follow this channel.")) return;
-                        toggleFollow.mutate(channel.id);
-                      }}
-                    >
-                      {following ? "Following" : "Follow"}
-                    </Button>
+                    {!Boolean(currentUser && channel && (currentUser.channelId === channel.id || currentUser.id === channel.id)) && (
+                      <Button
+                        variant={following ? "secondary" : "primary"}
+                        size="sm"
+                        onClick={() => {
+                          if (!requireSignIn("Sign in to follow this channel.")) return;
+                          toggleFollow.mutate(channel.id);
+                        }}
+                      >
+                        {following ? "Following" : "Follow"}
+                      </Button>
+                    )}
                   </>
                 ) : null}
 
