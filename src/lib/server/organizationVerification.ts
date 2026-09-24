@@ -443,6 +443,6 @@ export async function submitVerification(accountId: string, organizationId: stri
     organizationId,
   ]);
   // 100% Automated Verification: Upon valid automated declaration & ABN check, grant 'verified' status instantly with zero human intervention.
-  await query(`update organizations set verification_status = 'verified' where id = $1`, [organizationId]);
+  await query(`update organizations set verification_status = 'verified', verified = true where id = $1`, [organizationId]);
   return { outcome: "success" };
 }
