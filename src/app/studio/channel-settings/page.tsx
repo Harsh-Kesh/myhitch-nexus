@@ -7,7 +7,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
-import { Checkbox, Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
@@ -58,10 +58,6 @@ export default function ChannelSettingsPage() {
 
   const [adsEnabled, setAdsEnabled] = React.useState(true);
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
-
-  // Creator Channel Verification state
-  const [creatorVerifyModalOpen, setCreatorVerifyModalOpen] = React.useState(false);
-  const [creatorRightsDeclared, setCreatorRightsDeclared] = React.useState(true);
 
   // Collaborator & Team seat management state
   const [inviteModalOpen, setInviteModalOpen] = React.useState(false);
@@ -361,7 +357,7 @@ export default function ChannelSettingsPage() {
         <Card>
           <CardHeader
             title="Verification"
-            description="Verified channels get a badge and access to advanced monetisation."
+            description="Verification badges are granted to verified business entities via ABN lookup and platform-assigned Creator Partners."
           />
           <CardBody>
             <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border p-4">
@@ -399,16 +395,10 @@ export default function ChannelSettingsPage() {
                   {channel.verificationStatus}
                 </Badge>
                 {channel.verificationStatus !== "verified" ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="primary" size="sm" onClick={() => setCreatorVerifyModalOpen(true)}>
-                      <IconCheck className="size-4" />
-                      Verify Creator Channel
-                    </Button>
-                    <Button variant="secondary" size="sm" href="/business/verification">
-                      <IconBuildingBank className="size-4" />
-                      Business ABN Verification
-                    </Button>
-                  </div>
+                  <Button variant="secondary" size="sm" href="/business/verification">
+                    <IconBuildingBank className="size-4" />
+                    Verify Channel (ABN Lookup)
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -530,76 +520,6 @@ export default function ChannelSettingsPage() {
               <option value="Channel Manager">Channel Manager (Full studio access)</option>
             </Select>
           </Field>
-        </div>
-      </Modal>
-
-      {/* Instant Creator Verification Modal */}
-      <Modal
-        open={creatorVerifyModalOpen}
-        onClose={() => setCreatorVerifyModalOpen(false)}
-        title="Instant Creator Channel Verification"
-        description="100% automated identity & content declaration verification for individual creators. Zero manual admin delay."
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setCreatorVerifyModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!creatorRightsDeclared}
-              loading={updateChannel.isPending}
-              onClick={() => {
-                updateChannel.mutate(
-                  { verificationStatus: "verified", verified: true },
-                  {
-                    onSuccess: () => {
-                      toast({
-                        title: "Channel Verified!",
-                        description: "Automated check passed. Official blue badge is active across watch pages, search results, and public channel pages.",
-                      });
-                      setCreatorVerifyModalOpen(false);
-                    },
-                    onError: (err) => {
-                      toast({
-                        tone: "error",
-                        title: "Verification failed",
-                        description: err instanceof Error ? err.message : undefined,
-                      });
-                    },
-                  },
-                );
-              }}
-            >
-              <IconCheck className="size-4" />
-              Verify Creator Channel Now
-            </Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          <div className="rounded-lg border border-border bg-surface-2 p-3 space-y-2 text-xs">
-            <div className="flex items-center gap-2 text-success font-medium">
-              <IconCheck className="size-4" />
-              Account Email Verified ({contactEmail || user?.email || "creator@nexus.com"})
-            </div>
-            <div className="flex items-center gap-2 text-success font-medium">
-              <IconCheck className="size-4" />
-              Instant Security & Identity Clearance Passed
-            </div>
-            <div className="flex items-center gap-2 text-success font-medium">
-              <IconCheck className="size-4" />
-              Zero Manual Admin Review — 100% Automated
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border p-3 space-y-3">
-            <p className="text-xs font-medium text-fg">Creator Content Declaration</p>
-            <Checkbox
-              checked={creatorRightsDeclared}
-              onChange={(e) => setCreatorRightsDeclared(e.target.checked)}
-              label="I declare that I own or hold valid distribution rights for all content published on this channel, and I agree to abide by Nexus Creator Community Guidelines."
-            />
-          </div>
         </div>
       </Modal>
     </>
