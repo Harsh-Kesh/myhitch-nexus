@@ -12,6 +12,7 @@ import type {
   Campaign,
   Category,
   Channel,
+  Comment,
   LiveEvent,
   MediaKind,
   ModerationAction,
@@ -312,7 +313,59 @@ export function useModerateComment(channelId: string) {
       commentId: string;
       action: "publish" | "hold" | "remove" | "pin" | "heart";
     }) => api.moderateComment(commentId, action),
-    onSuccess: () => {
+    onMutate: async ({ commentId, action }) => {
+      await client.cancelQueries({ queryKey: qk.moderationComments(channelId) });
+      await client.cancelQueries({ queryKey: ["comments"] });
+
+      const previousModerationComments = client.getQueryData<Comment[]>(
+        qk.moderationComments(channelId),
+      );
+
+      if (previousModerationComments) {
+        client.setQueryData<Comment[]>(
+          qk.moderationComments(channelId),
+          previousModerationComments.map((item: Comment) => {
+            if (item.id === commentId) {
+              const updated = { ...item };
+              if (action === "publish") updated.status = "published";
+              if (action === "hold") updated.status = "held";
+              if (action === "remove") updated.status = "removed";
+              if (action === "pin") updated.pinned = !updated.pinned;
+              if (action === "heart") updated.heartedByCreator = !updated.heartedByCreator;
+              return updated;
+            }
+            return item;
+          }),
+        );
+      }
+
+      client.setQueriesData<Comment[]>({ queryKey: ["comments"] }, (oldComments) => {
+        if (!oldComments) return oldComments;
+        return oldComments.map((item: Comment) => {
+          if (item.id === commentId) {
+            const updated = { ...item };
+            if (action === "publish") updated.status = "published";
+            if (action === "hold") updated.status = "held";
+            if (action === "remove") updated.status = "removed";
+            if (action === "pin") updated.pinned = !updated.pinned;
+            if (action === "heart") updated.heartedByCreator = !updated.heartedByCreator;
+            return updated;
+          }
+          return item;
+        });
+      });
+
+      return { previousModerationComments };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousModerationComments) {
+        client.setQueryData(
+          qk.moderationComments(channelId),
+          context.previousModerationComments,
+        );
+      }
+    },
+    onSettled: () => {
       client.invalidateQueries({ queryKey: qk.moderationComments(channelId) });
       client.invalidateQueries({ queryKey: ["comments"] });
     },

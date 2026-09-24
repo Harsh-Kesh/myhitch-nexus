@@ -925,7 +925,6 @@ export async function moderateComment(
     return (await res.json()) as Comment;
   }
 
-  await latency("fast");
   const comment = store.comments.find((item) => item.id === commentId);
   if (!comment) return null;
   if (action === "publish") comment.status = "published";
