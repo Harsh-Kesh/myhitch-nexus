@@ -544,7 +544,7 @@ export default function OrganizationVerificationPage() {
             </Button>
             <Button variant="primary" loading={submit.isPending} disabled={!declarationsAccepted} onClick={doSubmit}>
               <IconCheck />
-              Verify Channel Automatically
+              Verify Channel
             </Button>
           </div>
         </fieldset>

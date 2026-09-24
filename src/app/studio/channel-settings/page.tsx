@@ -402,7 +402,7 @@ export default function ChannelSettingsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <Button variant="primary" size="sm" onClick={() => setCreatorVerifyModalOpen(true)}>
                       <IconCheck className="size-4" />
-                      Verify Creator Channel (Automated)
+                      Verify Creator Channel
                     </Button>
                     <Button variant="secondary" size="sm" href="/business/verification">
                       <IconBuildingBank className="size-4" />
