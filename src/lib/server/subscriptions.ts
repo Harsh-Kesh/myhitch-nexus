@@ -206,7 +206,15 @@ export async function recordSubscriptionPaymentFromInvoice(invoice: Stripe.Invoi
 /** Idempotent upsert keyed on stripe_subscription_id — the webhook's
  * customer.subscription.* handlers and the checkout-return page's verify call can both
  * reach this for the same subscription without creating duplicates, same pattern as
- * commerce.ts's fulfillCheckoutSession(). */
+ * commerce.ts's fulfillCheckoutSession(). The `on conflict` clause must set every column
+ * this function ever derives from the live Stripe object, `plan`/`billing_interval`
+ * included — found live 2026-09-25: it previously omitted both, so startOrChangePlan()'s
+ * real update-in-place (which changes exactly those two columns' Stripe-side meaning)
+ * updated `price_minor` correctly but left `plan` stuck on the account's old plan. The
+ * UI kept reading that stale `plan`, so it looked like the change silently failed and
+ * kept offering the same "upgrade" action — which re-ran the real Stripe update against
+ * a subscription already on the new price, correctly producing a $0 proration each time
+ * (never a double charge, just a confusing stream of $0 invoices). */
 export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscription): Promise<void> {
   const accountId = subscription.metadata?.accountId;
   const plan = (subscription.metadata?.plan as PlanId | undefined) ?? "premium";
@@ -227,8 +235,8 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
        status, price_minor, currency, current_period_end, cancel_at_period_end
      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (stripe_subscription_id) do update set
-       status = $6, price_minor = $7, currency = $8, current_period_end = $9,
-       cancel_at_period_end = $10`,
+       plan = $2, billing_interval = $3, status = $6, price_minor = $7, currency = $8,
+       current_period_end = $9, cancel_at_period_end = $10`,
     [
       accountId,
       plan,
@@ -359,6 +367,12 @@ export async function listRealPlanPurchases(accountId: string): Promise<PlanPurc
     }
     for (const invoice of invoices.data) {
       if (invoice.status !== "paid") continue;
+      // A $0 invoice isn't a purchase — under this pricing model (no trials, no
+      // coupons) the only way one exists is a redundant plan-change update that landed
+      // on a price already in effect (see upsertSubscriptionFromStripe()'s header for
+      // the bug that used to make that easy to trigger by accident). Real money moved
+      // zero times; nothing here is worth a receipt.
+      if (invoice.amount_paid === 0) continue;
       const subscriptionRef = invoice.parent?.subscription_details?.subscription;
       const subscriptionId =
         typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id;
