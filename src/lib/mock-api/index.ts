@@ -536,11 +536,20 @@ export async function getEntitlement(
         reason?: EntitlementReason;
         blockReason?: PlaybackBlockReason;
         expiresAt?: string;
+        detectedCountry?: string | null;
       };
+      // The real, server-detected country (cf-ipcountry) — not store.requestCountry's
+      // hardcoded "GB" mock default, which used to be shown here regardless of the real
+      // decision. A real geo-block against a real US visitor used to render as "not
+      // licensed for GB... available in GB, IE, FR" — a real, contradictory message,
+      // since GB genuinely was permitted; it just never named the visitor's real country.
+      // Falls back to the mock value only when the real one couldn't be detected at all
+      // (e.g. no cf-ipcountry header, such as local dev).
+      const realBase = { ...base, requestCountry: real.detectedCountry ?? base.requestCountry };
       if (!real.granted) {
-        return { ...base, granted: false, reason: "none", blockReason: real.blockReason ?? "unavailable" };
+        return { ...realBase, granted: false, reason: "none", blockReason: real.blockReason ?? "unavailable" };
       }
-      return { ...base, granted: true, reason: real.reason ?? "purchased", expiresAt: real.expiresAt };
+      return { ...realBase, granted: true, reason: real.reason ?? "purchased", expiresAt: real.expiresAt };
     }
     // The real gate is unreachable — the same honest "unavailable" state the not-found
     // branch above uses, rather than falling into the mock logic below with real video

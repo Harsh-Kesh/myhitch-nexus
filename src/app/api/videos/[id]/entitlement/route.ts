@@ -21,7 +21,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       profileId,
       country,
     });
-    return NextResponse.json(result);
+    // The real, server-detected country (cf-ipcountry) — the client used to always show
+    // its own mock store's hardcoded "GB" default here regardless of the real decision,
+    // so a real geo-block against, say, a real US visitor rendered the nonsensical "not
+    // licensed for GB... available in GB, IE, FR" (GB genuinely was one of the permitted
+    // countries — the message just never named the visitor's real one). Only meaningful
+    // when it resolved to something; null (no cf-ipcountry, e.g. local dev) is handled
+    // client-side same as before.
+    return NextResponse.json({ ...result, detectedCountry: country });
   } catch (err) {
     console.error(`GET /api/videos/${id}/entitlement failed`, err);
     return NextResponse.json({ granted: false, blockReason: "unavailable" as const });
