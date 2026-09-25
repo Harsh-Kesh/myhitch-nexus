@@ -82,6 +82,10 @@ export function SiteHeader() {
   const [searchOpen, setSearchOpen] = React.useState(false);
 
   const isGuest = !user;
+  // Upload only makes sense for an account that actually has a channel to publish to
+  // (Creator/Business/etc.) — a plain Viewer has nowhere for an upload to go. Was gated
+  // on "signed in" alone, so every viewer saw the button too.
+  const hasChannel = Boolean(user?.channelId);
   const unread = notifications.filter((item) => !item.read).length;
   // Real `plan` field, not string-matching id/name — see account/settings's identical fix.
   const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
@@ -210,16 +214,18 @@ export function SiteHeader() {
             </Button>
           ) : (
             <>
-              {/* Upload — authenticated only */}
-              <Button
-                variant="ghost"
-                size="sm"
-                href="/studio/upload"
-                className="hidden md:inline-flex"
-              >
-                <IconVideoPlus />
-                Upload
-              </Button>
+              {/* Upload — only for an account with a real channel to upload to */}
+              {hasChannel ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  href="/studio/upload"
+                  className="hidden md:inline-flex"
+                >
+                  <IconVideoPlus />
+                  Upload
+                </Button>
+              ) : null}
 
               {/* Notifications — authenticated only */}
               <Menu
@@ -440,12 +446,12 @@ export function SiteHeader() {
               <Button variant="primary" size="sm" href="/auth/login" block>
                 Sign in
               </Button>
-            ) : (
+            ) : hasChannel ? (
               <Button variant="primary" size="sm" href="/studio/upload" block>
                 <IconVideoPlus />
                 Upload
               </Button>
-            )}
+            ) : null}
             <Button variant="secondary" size="sm" onClick={toggleTheme}>
               {theme === "dark" ? <IconSun /> : <IconMoon />}
             </Button>
