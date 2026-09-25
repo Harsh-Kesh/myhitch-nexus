@@ -62,6 +62,12 @@
     overflow-x: auto;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
+    /* Without this, some browsers re-target the scroll offset as thumbnails/gradients
+       finish loading and shift layout during hydration — reported live as a rail with
+       more items than fit the viewport starting already scrolled a few cards in, so its
+       own left padding (now scrolled past) is invisible ("hugging the corner"). Paired
+       with useHorizontalScroller()'s explicit scrollLeft-reset in rail.tsx. */
+    overflow-anchor: none;
   }
   .nx-rail::-webkit-scrollbar {
     display: none;

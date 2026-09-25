@@ -15,7 +15,7 @@ import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RailSkeleton } from "@/components/ui/empty-state";
 import { Poster } from "@/components/video/poster";
-import { Rail } from "@/components/video/rail";
+import { Rail, useHorizontalScroller } from "@/components/video/rail";
 import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import { channelById } from "@/lib/mock-api/data/channels";
 import {
@@ -286,6 +286,10 @@ function LiveRail({
   const shown = events.filter(
     (event) => event.status === "live" || event.status === "upcoming",
   );
+  // Same scroll-position fix as every other rail (rail.tsx's useHorizontalScroller) — this
+  // one was hand-rolled separately and had neither the reset-to-start behavior nor scroll
+  // buttons, so a viewer stuck at a drifted scroll position had no way to get back to 0.
+  const { scrollerRef, canScrollLeft, canScrollRight, scrollBy } = useHorizontalScroller(shown.length);
   if (shown.length === 0) return null;
 
   return (
@@ -301,14 +305,39 @@ function LiveRail({
             Streaming now, plus what is scheduled
           </p>
         </div>
-        <Button variant="ghost" size="sm" href="/live" className="hidden sm:inline-flex">
-          See all
-        </Button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="sm" href="/live" className="hidden sm:inline-flex">
+            See all
+          </Button>
+          <div className="hidden gap-1 md:flex">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Scroll Live and upcoming left"
+              disabled={!canScrollLeft}
+              onClick={() => scrollBy(-1)}
+            >
+              <IconChevronLeft />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Scroll Live and upcoming right"
+              disabled={!canScrollRight}
+              onClick={() => scrollBy(1)}
+            >
+              <IconChevronRight />
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* justify-start — see rail.tsx's comment on the same class for why a short rail
           needs this to avoid CSS Grid auto-stretching its cards apart. */}
-      <div className="nx-rail justify-start gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8">
+      <div
+        ref={scrollerRef}
+        className="nx-rail justify-start gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8"
+      >
         {shown.map((event) => {
           const channel = channelById(event.channelId);
           return (

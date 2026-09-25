@@ -22,6 +22,66 @@ export interface RailProps {
 }
 
 /**
+ * Shared by every horizontal rail (this file's `<Rail>` and page.tsx's `LiveRail`) — a
+ * scrollable row's initial scroll position isn't reliably 0 on its own. Reported live: on
+ * some devices, any rail with more items than fit the viewport starts already scrolled a
+ * few cards in, so the row's own left padding (scrolled past) is invisible and the visible
+ * cards look flush against the edges ("hugging the corner") — clicking the back button
+ * "fixes" it by returning to position 0, which is exactly the state this hook forces
+ * before paint. Most likely cause: CSS scroll anchoring re-targeting the container's
+ * scroll offset as thumbnails/gradients finish loading and shift layout during
+ * hydration — `overflow-anchor: none` on `.nx-rail` (globals.css) addresses that
+ * directly; this hook is the second, belt-and-suspenders layer that makes the row start
+ * at 0 regardless of *why* a given browser drifted from it.
+ */
+export function useHorizontalScroller(itemCount: number) {
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
+
+  const updateScrollState = React.useCallback(() => {
+    const element = scrollerRef.current;
+    if (!element) return;
+    setCanScrollLeft(element.scrollLeft > 8);
+    setCanScrollRight(
+      element.scrollLeft + element.clientWidth < element.scrollWidth - 8,
+    );
+  }, []);
+
+  // Layout effect, not a plain effect — runs synchronously before the browser paints, so
+  // a drifted initial position is corrected before it's ever visible rather than flashing
+  // wrong-then-right.
+  React.useLayoutEffect(() => {
+    const element = scrollerRef.current;
+    if (!element) return;
+    element.scrollLeft = 0;
+    updateScrollState();
+  }, [updateScrollState, itemCount]);
+
+  React.useEffect(() => {
+    const element = scrollerRef.current;
+    if (!element) return;
+    element.addEventListener("scroll", updateScrollState, { passive: true });
+    window.addEventListener("resize", updateScrollState);
+    return () => {
+      element.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", updateScrollState);
+    };
+  }, [updateScrollState]);
+
+  const scrollBy = React.useCallback((direction: 1 | -1) => {
+    const element = scrollerRef.current;
+    if (!element) return;
+    element.scrollBy({
+      left: direction * Math.round(element.clientWidth * 0.85),
+      behavior: "smooth",
+    });
+  }, []);
+
+  return { scrollerRef, canScrollLeft, canScrollRight, scrollBy };
+}
+
+/**
  * Horizontal content rail. Scroll buttons appear on pointer devices; on touch
  * the native scroll with snap points does the work.
  */
@@ -36,39 +96,7 @@ export function Rail({
   showSponsored = true,
   className,
 }: RailProps) {
-  const scrollerRef = React.useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
-  const [canScrollRight, setCanScrollRight] = React.useState(false);
-
-  const updateScrollState = React.useCallback(() => {
-    const element = scrollerRef.current;
-    if (!element) return;
-    setCanScrollLeft(element.scrollLeft > 8);
-    setCanScrollRight(
-      element.scrollLeft + element.clientWidth < element.scrollWidth - 8,
-    );
-  }, []);
-
-  React.useEffect(() => {
-    updateScrollState();
-    const element = scrollerRef.current;
-    if (!element) return;
-    element.addEventListener("scroll", updateScrollState, { passive: true });
-    window.addEventListener("resize", updateScrollState);
-    return () => {
-      element.removeEventListener("scroll", updateScrollState);
-      window.removeEventListener("resize", updateScrollState);
-    };
-  }, [updateScrollState, videos.length]);
-
-  const scrollBy = (direction: 1 | -1) => {
-    const element = scrollerRef.current;
-    if (!element) return;
-    element.scrollBy({
-      left: direction * Math.round(element.clientWidth * 0.85),
-      behavior: "smooth",
-    });
-  };
+  const { scrollerRef, canScrollLeft, canScrollRight, scrollBy } = useHorizontalScroller(videos.length);
 
   if (videos.length === 0) return null;
 
