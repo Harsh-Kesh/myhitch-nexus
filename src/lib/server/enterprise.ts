@@ -9,21 +9,26 @@ import { SITE_URL } from "@/lib/utils";
 /*                            0. Organization Resolution                      */
 /* -------------------------------------------------------------------------- */
 
-export async function resolveOrgIdForAccount(accountId?: string | null): Promise<string> {
-  if (accountId) {
-    const memberRow = await queryOne<{ organization_id: string }>(
-      `select organization_id from memberships where account_id = $1 order by created_at asc limit 1`,
-      [accountId],
-    );
-    if (memberRow?.organization_id) return memberRow.organization_id;
-  }
+/** Thrown when the signed-in account has no organization of its own — every caller must
+ * catch this and respond 403, never fall back to some other real organization's data. */
+export class NoOrganizationError extends Error {}
 
-  const defaultOrg = await queryOne<{ id: string }>(
-    `select id from organizations order by created_at asc limit 1`,
+/** Resolves the signed-in account's OWN organization — never another account's, and
+ * never a "pick any org" fallback. The previous version of this function fell back to
+ * `select id from organizations order by created_at asc limit 1` (the platform's very
+ * first organization ever created) whenever `accountId` was absent or had no
+ * membership — meaning an anonymous request, or a signed-in account with no org of its
+ * own, was silently treated as a full member of that org across every enterprise/team
+ * route. Fixed to fail closed instead. */
+export async function resolveOrgIdForAccount(accountId: string): Promise<string> {
+  const memberRow = await queryOne<{ organization_id: string }>(
+    `select organization_id from memberships where account_id = $1 order by created_at asc limit 1`,
+    [accountId],
   );
-  if (defaultOrg?.id) return defaultOrg.id;
-
-  throw new Error("No organization found in database to attach enterprise assets");
+  if (!memberRow?.organization_id) {
+    throw new NoOrganizationError("This account is not a member of any organization.");
+  }
+  return memberRow.organization_id;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -50,6 +55,16 @@ export interface GeneratedApiKey {
   keyPrefix: string;
   scopes: string[];
   createdAt: string;
+}
+
+/** The only scopes a partner key may ever carry — in particular, "admin" is never a
+ * grantable scope (the Partner API routes treat it as a superuser bypass; it must never
+ * be something a client can simply ask for in a POST body). */
+const VALID_API_KEY_SCOPES = ["read:catalogue", "embed:player", "write:catalogue"];
+
+export function sanitizeApiKeyScopes(requested: string[] | undefined): string[] {
+  const filtered = (requested ?? []).filter((scope) => VALID_API_KEY_SCOPES.includes(scope));
+  return filtered.length > 0 ? filtered : ["read:catalogue", "embed:player"];
 }
 
 export async function generateApiKey(

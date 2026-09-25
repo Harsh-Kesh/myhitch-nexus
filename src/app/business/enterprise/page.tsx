@@ -397,17 +397,22 @@ export default function EnterpriseHubPage() {
               </CardBody>
             </Card>
 
-            {/* Regional Infrastructure & Compliance Notice */}
+            {/* Regional Infrastructure & Compliance Notice — deliberately no certification
+                claims here: this platform has not undergone a SOC 2, HIPAA or APP
+                compliance audit, and the database region below must match the real
+                Supabase project region, not an aspirational one. Update this copy only
+                when a real audit/region change has actually happened, not preemptively. */}
             <div className="flex items-start gap-4 rounded-xl border border-border/50 bg-bg-surface p-5">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-success/15 text-success">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning">
                 <IconShieldCheck className="size-5" />
               </span>
               <div className="space-y-1 text-sm">
-                <h4 className="font-semibold text-fg">
-                  Oceania Regional Data Residency (ap-southeast-2)
-                </h4>
+                <h4 className="font-semibold text-fg">Data residency and compliance</h4>
                 <p className="text-xs leading-relaxed text-fg-muted">
-                  All enterprise assets, private review links, and partner telemetry reside in Supabase PostgreSQL located in Sydney, Australia (<code>ap-southeast-2</code>). Client video reviews and API credentials satisfy SOC 2, HIPAA, and Australian Privacy Principles (APP) data compliance benchmarks.
+                  Enterprise assets and review data are stored in this platform&apos;s
+                  Postgres database. No SOC 2, HIPAA or formal regional-residency
+                  certification has been completed yet — talk to your account manager
+                  about compliance requirements before storing regulated data here.
                 </p>
               </div>
             </div>

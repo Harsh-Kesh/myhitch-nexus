@@ -5,7 +5,7 @@
 // frequency capping). Kept separate from campaigns.ts (lifecycle: create/approve/pause)
 // since this module is the hot, read-heavy delivery path with a different shape of query.
 import "server-only";
-import { query, queryOne } from "./db";
+import { query, queryOne, withTransaction } from "./db";
 import { getFrequencyCount, incrementFrequency } from "./adFrequency";
 import { getAdRevenueSharePct } from "./commissions";
 import { getAdCreativePublicUrl } from "./storage";
@@ -192,12 +192,6 @@ export async function recordAdImpression(input: {
   if (input.viewerAccountId && !UUID_PATTERN.test(input.viewerAccountId)) {
     return { outcome: "not_found" };
   }
-  const campaign = await queryOne<{ cpm_minor: number; budget_minor: number; spend_minor: number; currency: string; frequency_cap_hours: number }>(
-    `select cpm_minor, budget_minor, spend_minor, currency, frequency_cap_hours from campaigns where id = $1`,
-    [input.campaignId],
-  );
-  if (!campaign) return { outcome: "not_found" };
-
   let channelId: string | null = null;
   if (input.videoId) {
     const video = await queryOne<{ channel_id: string }>(`select channel_id from videos where id = $1`, [input.videoId]);
@@ -205,46 +199,72 @@ export async function recordAdImpression(input: {
     channelId = video.channel_id;
   }
 
-  const costMinor = Math.ceil(campaign.cpm_minor / 1000);
-  if (campaign.spend_minor + costMinor > campaign.budget_minor) {
-    return { outcome: "budget_exhausted" };
-  }
+  // The real 30% ad_revenue rate — read once, outside the row lock below, since it
+  // doesn't depend on the campaign row and there's no reason to hold the lock while
+  // waiting on it.
+  const sharePct = channelId ? await getAdRevenueSharePct() : 0;
 
-  let platformFeeMinor = costMinor;
-  let creatorNetMinor = 0;
-  if (channelId) {
-    const sharePct = await getAdRevenueSharePct();
-    platformFeeMinor = Math.round((costMinor * sharePct) / 100);
-    creatorNetMinor = costMinor - platformFeeMinor;
-  }
+  // check-then-act on budget was previously two separate statements outside any
+  // transaction (a plain SELECT, then later an UPDATE) — under concurrent requests for
+  // the same near-exhausted campaign, both could read the same spend_minor, both pass
+  // the budget check, and both insert, overspending the real budget. `select ... for
+  // update` inside a transaction serializes concurrent impressions for the same
+  // campaign: the second request's SELECT blocks until the first's transaction commits,
+  // then sees the already-incremented spend_minor and correctly re-evaluates the check.
+  const result = await withTransaction(async (tx) => {
+    const campaign = await tx.queryOne<{
+      cpm_minor: number;
+      budget_minor: number;
+      spend_minor: number;
+      currency: string;
+      frequency_cap_hours: number;
+    }>(
+      `select cpm_minor, budget_minor, spend_minor, currency, frequency_cap_hours
+       from campaigns where id = $1 for update`,
+      [input.campaignId],
+    );
+    if (!campaign) return { outcome: "not_found" as const };
 
-  const row = await queryOne<{ id: string }>(
-    `insert into ad_impressions (
-       campaign_id, creative_id, video_id, channel_id, viewer_account_id, placement,
-       cost_minor, platform_fee_minor, creator_net_minor, currency
-     ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     returning id`,
-    [
-      input.campaignId,
-      input.creativeId,
-      input.videoId ?? null,
-      channelId,
-      input.viewerAccountId,
-      input.placement,
-      costMinor,
-      platformFeeMinor,
-      creatorNetMinor,
-      campaign.currency,
-    ],
-  );
+    const costMinor = Math.ceil(campaign.cpm_minor / 1000);
+    if (campaign.spend_minor + costMinor > campaign.budget_minor) {
+      return { outcome: "budget_exhausted" as const };
+    }
 
-  await query(`update campaigns set spend_minor = spend_minor + $2 where id = $1`, [input.campaignId, costMinor]);
+    const platformFeeMinor = channelId ? Math.round((costMinor * sharePct) / 100) : costMinor;
+    const creatorNetMinor = channelId ? costMinor - platformFeeMinor : 0;
+
+    const row = await tx.queryOne<{ id: string }>(
+      `insert into ad_impressions (
+         campaign_id, creative_id, video_id, channel_id, viewer_account_id, placement,
+         cost_minor, platform_fee_minor, creator_net_minor, currency
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       returning id`,
+      [
+        input.campaignId,
+        input.creativeId,
+        input.videoId ?? null,
+        channelId,
+        input.viewerAccountId,
+        input.placement,
+        costMinor,
+        platformFeeMinor,
+        creatorNetMinor,
+        campaign.currency,
+      ],
+    );
+
+    await tx.query(`update campaigns set spend_minor = spend_minor + $2 where id = $1`, [input.campaignId, costMinor]);
+
+    return { outcome: "success" as const, impressionId: row!.id, frequencyCapHours: campaign.frequency_cap_hours };
+  });
+
+  if (result.outcome !== "success") return result;
 
   if (input.viewerAccountId) {
-    await incrementFrequency(input.viewerAccountId, input.campaignId, campaign.frequency_cap_hours);
+    await incrementFrequency(input.viewerAccountId, input.campaignId, result.frequencyCapHours);
   }
 
-  return { outcome: "success", impressionId: row!.id };
+  return { outcome: "success", impressionId: result.impressionId };
 }
 
 export type RecordClickResult = { outcome: "success" } | { outcome: "not_found" };

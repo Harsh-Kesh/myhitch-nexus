@@ -148,9 +148,14 @@ export default function BusinessTeamPage() {
   };
 
   const seatsUsed = data?.totalSeatsUsed ?? 0;
+  // null means unlimited seats — a real Enterprise plan has no self-service checkout (it's
+  // a sales-closed deal, see organizations.seat_limit's migration comment), set by a
+  // super-admin after that deal closes, not derived from anything the client can toggle.
   const maxSeats = data?.maxSeats ?? 5;
-  const seatsAvailable = Math.max(0, maxSeats - seatsUsed);
-  const seatsPercentage = Math.min(100, Math.round((seatsUsed / maxSeats) * 100));
+  const unlimitedSeats = maxSeats === null;
+  const seatsAvailable = unlimitedSeats ? null : Math.max(0, maxSeats - seatsUsed);
+  const seatsPercentage = unlimitedSeats ? 0 : Math.min(100, Math.round((seatsUsed / maxSeats) * 100));
+  const atSeatLimit = !unlimitedSeats && seatsUsed >= maxSeats;
 
   return (
     <>
@@ -170,16 +175,18 @@ export default function BusinessTeamPage() {
                   <h3 className="text-base font-semibold text-fg">
                     Business Plan Seat Allocation
                   </h3>
-                  <Badge tone={seatsUsed >= maxSeats ? "warning" : "success"}>
-                    {seatsUsed} of {maxSeats} Seats Used
+                  <Badge tone={atSeatLimit ? "warning" : "success"}>
+                    {unlimitedSeats ? `${seatsUsed} seats used` : `${seatsUsed} of ${maxSeats} Seats Used`}
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-fg-muted">
-                  The Business plan includes up to {maxSeats} employee seats with role-based permissions.
+                  {unlimitedSeats
+                    ? "Your Enterprise plan includes unlimited employee seats with role-based permissions."
+                    : `The Business plan includes up to ${maxSeats} employee seats with role-based permissions.`}
                 </p>
               </div>
 
-              {seatsUsed >= maxSeats ? (
+              {atSeatLimit ? (
                 <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
                   <span>Need more seats?</span>
                   <a href="/business/billing" className="font-semibold underline hover:text-fg">
@@ -189,22 +196,24 @@ export default function BusinessTeamPage() {
               ) : null}
             </div>
 
-            <div className="mt-4">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    seatsPercentage >= 100
-                      ? "bg-warning"
-                      : "bg-accent"
-                  }`}
-                  style={{ width: `${seatsPercentage}%` }}
-                />
+            {!unlimitedSeats && (
+              <div className="mt-4">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-2">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      seatsPercentage >= 100
+                        ? "bg-warning"
+                        : "bg-accent"
+                    }`}
+                    style={{ width: `${seatsPercentage}%` }}
+                  />
+                </div>
+                <div className="mt-1 flex justify-between text-xs text-fg-subtle">
+                  <span>{seatsAvailable} seat{seatsAvailable === 1 ? "" : "s"} remaining</span>
+                  <span>Max {maxSeats} seats</span>
+                </div>
               </div>
-              <div className="mt-1 flex justify-between text-xs text-fg-subtle">
-                <span>{seatsAvailable} seat{seatsAvailable === 1 ? "" : "s"} remaining</span>
-                <span>Max {maxSeats} seats</span>
-              </div>
-            </div>
+            )}
           </CardBody>
         </Card>
 
@@ -229,7 +238,7 @@ export default function BusinessTeamPage() {
                     placeholder="colleague@yourcompany.com"
                     value={inviteEmail}
                     onChange={(e) => setInviteEmail(e.target.value)}
-                    disabled={seatsUsed >= maxSeats || inviting}
+                    disabled={atSeatLimit || inviting}
                   />
                 </Field>
 
@@ -242,7 +251,7 @@ export default function BusinessTeamPage() {
                     id="invite-role"
                     value={inviteRole}
                     onChange={(e) => setInviteRole(e.target.value as "editor" | "analyst")}
-                    disabled={seatsUsed >= maxSeats || inviting}
+                    disabled={atSeatLimit || inviting}
                   >
                     <option value="editor">Editor (manage content, campaigns, leads)</option>
                     <option value="analyst">Analyst (view-only analytics & reports)</option>
@@ -255,7 +264,7 @@ export default function BusinessTeamPage() {
                     variant="primary"
                     className="w-full"
                     loading={inviting}
-                    disabled={seatsUsed >= maxSeats || !inviteEmail.trim()}
+                    disabled={atSeatLimit || !inviteEmail.trim()}
                   >
                     <IconPlus className="size-4" />
                     Invite
@@ -263,7 +272,7 @@ export default function BusinessTeamPage() {
                 </div>
               </div>
 
-              {seatsUsed >= maxSeats && (
+              {atSeatLimit && (
                 <p className="text-xs text-warning">
                   You have reached the maximum of {maxSeats} seats for your plan. Remove an existing member or invitation to invite someone new.
                 </p>

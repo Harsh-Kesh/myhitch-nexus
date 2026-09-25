@@ -28,10 +28,22 @@ export interface TeamOverview {
   members: TeamMember[];
   pendingInvitations: PendingInvitation[];
   totalSeatsUsed: number;
-  maxSeats: number;
+  /** null means unlimited (Enterprise) — see organizations.seat_limit's migration comment. */
+  maxSeats: number | null;
 }
 
 export async function listTeamMembers(orgId: string): Promise<TeamOverview> {
+  const orgRow = await queryOne<{ seat_limit: number | null }>(
+    `select seat_limit from organizations where id = $1`,
+    [orgId],
+  );
+  // Falls back to 5 only if the org row itself is somehow missing — every real org has
+  // this column populated (defaults to 5 for every existing and new row). A NULL here is
+  // real and deliberate: a super-admin explicitly cleared it for a sales-closed Enterprise
+  // deal (see the migration) — `??` would wrongly collapse that back to 5, so this checks
+  // for the row's absence specifically, not falsiness of the column.
+  const maxSeats = orgRow ? orgRow.seat_limit : 5;
+
   const memberRows = await query<{
     id: string;
     account_id: string;
@@ -93,8 +105,21 @@ export async function listTeamMembers(orgId: string): Promise<TeamOverview> {
     members,
     pendingInvitations,
     totalSeatsUsed: members.length + pendingInvitations.length,
-    maxSeats: 5,
+    maxSeats,
   };
+}
+
+/** Only the org's owner may invite, remove, or revoke — every other role (editor,
+ * analyst) previously had no restriction at all, meaning any team member could add or
+ * remove anyone, including the owner. */
+async function requireOwner(accountId: string, orgId: string): Promise<void> {
+  const row = await queryOne<{ org_role: string }>(
+    `select org_role from memberships where account_id = $1 and organization_id = $2`,
+    [accountId, orgId],
+  );
+  if (row?.org_role !== "owner") {
+    throw new Error("Only the organization owner can manage team members.");
+  }
 }
 
 export async function inviteTeamMember(
@@ -103,12 +128,13 @@ export async function inviteTeamMember(
   email: string,
   role: "editor" | "analyst" = "editor",
 ): Promise<{ invitation: PendingInvitation; inviteUrl: string }> {
+  await requireOwner(invitedBy, orgId);
   const normalizedEmail = email.trim().toLowerCase();
   const overview = await listTeamMembers(orgId);
 
-  if (overview.totalSeatsUsed >= 5) {
+  if (overview.maxSeats !== null && overview.totalSeatsUsed >= overview.maxSeats) {
     throw new Error(
-      "Business plan includes up to 5 team member seats. Upgrade to Enterprise for unlimited seats.",
+      `Business plan includes up to ${overview.maxSeats} team member seats. Upgrade to Enterprise for unlimited seats.`,
     );
   }
 
@@ -158,7 +184,9 @@ export async function inviteTeamMember(
 export async function revokeInvitation(
   invitationId: string,
   orgId: string,
+  actingAccountId: string,
 ): Promise<boolean> {
+  await requireOwner(actingAccountId, orgId);
   const result = await query(
     `update organization_invitations set status = 'revoked' where id = $1 and organization_id = $2`,
     [invitationId, orgId],
@@ -169,9 +197,11 @@ export async function revokeInvitation(
 export async function removeTeamMember(
   membershipId: string,
   orgId: string,
+  actingAccountId: string,
 ): Promise<boolean> {
+  await requireOwner(actingAccountId, orgId);
   const result = await query(
-    `delete from memberships where id = $1 and organization_id = $2`,
+    `delete from memberships where id = $1 and organization_id = $2 and org_role != 'owner'`,
     [membershipId, orgId],
   );
   return result.length > 0;
@@ -180,13 +210,15 @@ export async function removeTeamMember(
 export async function acceptInvitation(
   token: string,
   accountId: string,
+  accountEmail: string,
 ): Promise<{ success: boolean; organizationId: string }> {
   const invite = await queryOne<{
     id: string;
     organization_id: string;
     role: string;
+    email: string;
   }>(
-    `select id, organization_id, role
+    `select id, organization_id, role, email
      from organization_invitations
      where token = $1 and status = 'pending' and expires_at > now()`,
     [token],
@@ -196,7 +228,15 @@ export async function acceptInvitation(
     throw new Error("Invitation not found or has expired.");
   }
 
-  // Insert membership
+  // Identity binding: the invite was addressed to a specific email — without this check,
+  // anyone who obtains the invite link/token (a forwarded email, a browser-history entry,
+  // a leaked URL) could accept it as an entirely different account than the one invited.
+  if (invite.email.toLowerCase() !== accountEmail.trim().toLowerCase()) {
+    throw new Error("This invitation was sent to a different email address. Sign in as that account to accept it.");
+  }
+
+  // A client-supplied role can never reach here — invite.role was itself validated
+  // (INVITABLE_ROLES) at invitation time, so this insert is safe.
   await query(
     `insert into memberships (account_id, organization_id, org_role)
      values ($1, $2, $3)

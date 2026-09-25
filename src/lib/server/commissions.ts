@@ -60,7 +60,7 @@ export async function getAdRevenueSharePct(at: Date = new Date()): Promise<numbe
 }
 
 export type EntitlementKind = "buy" | "rent" | "ppv";
-export type RevenueEntryKind = EntitlementKind | "membership" | "ad";
+export type RevenueEntryKind = EntitlementKind | "membership" | "ad" | "tip";
 
 function scopeForEntitlementKind(kind: EntitlementKind): CommissionScope {
   return kind === "ppv" ? "ppv" : "purchase_rental";
@@ -137,6 +137,19 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
      order by created_at desc`,
     [organizationId],
   );
+  const tipRows = await query<{
+    id: string;
+    amount_cents: number;
+    platform_fee_cents: number;
+    creator_amount_cents: number;
+    currency: string;
+    created_at: string;
+  }>(
+    `select id, amount_cents, platform_fee_cents, creator_amount_cents, currency, created_at
+     from creator_tips where channel_id = $1 and status = 'completed'
+     order by created_at desc`,
+    [organizationId],
+  );
   const rates = await listCommissionRates();
 
   let grossMinor = 0;
@@ -193,6 +206,25 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
       grossMinor: row.cost_minor,
       feeMinor: row.platform_fee_minor,
       netMinor: row.creator_net_minor,
+      currency: row.currency,
+    });
+  }
+
+  // creator_tips is in cents, same minor-unit convention as every other Money value here
+  // (GBP/USD/AUD all use a 2-decimal minor unit) — no conversion needed, just a naming
+  // difference in that table's own columns.
+  for (const row of tipRows) {
+    grossMinor += row.amount_cents;
+    netMinor += row.creator_amount_cents;
+    entries.push({
+      id: row.id,
+      kind: "tip",
+      title: "Fan tip",
+      videoId: null,
+      createdAt: new Date(row.created_at).toISOString(),
+      grossMinor: row.amount_cents,
+      feeMinor: row.platform_fee_cents,
+      netMinor: row.creator_amount_cents,
       currency: row.currency,
     });
   }
@@ -267,6 +299,14 @@ export async function getPlatformRevenueSummary(): Promise<PlatformRevenueSummar
          coalesce(sum(creator_net_minor), 0) as ads_net_all_time_minor
        from ad_impressions
      ),
+     tips as (
+       -- Also already split at write time (see tipping.ts's splitTipAmount()) — summed
+       -- directly for the same reason as the ads CTE above.
+       select
+         coalesce(sum(platform_fee_cents) filter (where created_at >= now() - interval '30 days'), 0) as tips_fee_30d_minor,
+         coalesce(sum(creator_amount_cents), 0) as tips_net_all_time_minor
+       from creator_tips where status = 'completed'
+     ),
      paid as (
        select coalesce(sum(amount_minor), 0) as paid_minor from payouts where status = 'paid'
      )
@@ -274,9 +314,11 @@ export async function getPlatformRevenueSummary(): Promise<PlatformRevenueSummar
        coalesce(sum(case when rated.created_at >= now() - interval '30 days'
          then round(rated.amount_minor * rated.pct / 100.0) else 0 end), 0)
          + (select subs_30d_minor from subs)
-         + (select ads_fee_30d_minor from ads) as commission_30d_minor,
+         + (select ads_fee_30d_minor from ads)
+         + (select tips_fee_30d_minor from tips) as commission_30d_minor,
        coalesce(sum(rated.amount_minor - round(rated.amount_minor * rated.pct / 100.0)), 0)
-         + (select ads_net_all_time_minor from ads) as net_all_time_minor,
+         + (select ads_net_all_time_minor from ads)
+         + (select tips_net_all_time_minor from tips) as net_all_time_minor,
        (select paid_minor from paid) as paid_minor
      from rated`,
   );
@@ -315,7 +357,10 @@ export async function getPlatformRevenueByStream(days = 30): Promise<RevenueStre
        from membership_payments where created_at >= now() - ($1::int) * interval '1 day'
      union all
      select 'Advertising' as label, coalesce(sum(cost_minor), 0) as gross_minor
-       from ad_impressions where created_at >= now() - ($1::int) * interval '1 day'`,
+       from ad_impressions where created_at >= now() - ($1::int) * interval '1 day'
+     union all
+     select 'Fan tips' as label, coalesce(sum(amount_cents), 0) as gross_minor
+       from creator_tips where status = 'completed' and created_at >= now() - ($1::int) * interval '1 day'`,
     [days],
   );
   return rows.map((row) => ({ label: row.label, grossMinor: Number(row.gross_minor) })).filter((s) => s.grossMinor > 0);
@@ -360,6 +405,10 @@ export async function getPlatformRevenueTrend(days = 30): Promise<RevenueTrendPo
        select ai.cost_minor as amount_minor, ai.created_at,
          case when ai.cost_minor > 0 then ai.platform_fee_minor * 100.0 / ai.cost_minor else 0 end as pct
        from ad_impressions ai
+       union all
+       select ct.amount_cents as amount_minor, ct.created_at,
+         case when ct.amount_cents > 0 then ct.platform_fee_cents * 100.0 / ct.amount_cents else 0 end as pct
+       from creator_tips ct where ct.status = 'completed'
      )
      select
        d::date::text as date,

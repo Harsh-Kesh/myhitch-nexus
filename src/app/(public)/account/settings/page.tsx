@@ -48,9 +48,11 @@ export default function SettingsPage() {
 
   if (!user) return null;
 
-  const hasFamilyPlan = subscriptions.some(
-    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
-  );
+  // The real `plan` field (checkRealPlanActive()'s own source of truth), not string
+  // matching against `id`/`name` — the display name is just marketing copy
+  // (PLAN_DISPLAY[plan].name) and silently drifts from the real plan the moment that
+  // copy changes; found live as a real, if currently masked, correctness bug.
+  const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
 
   return (
     <div className="space-y-6">

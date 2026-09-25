@@ -5,19 +5,35 @@ import {
   createEnterpriseTransfer,
   listEnterpriseTransfers,
   resolveOrgIdForAccount,
+  NoOrganizationError,
 } from "@/lib/server/enterprise";
 
-export async function GET(request: NextRequest) {
+async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
-  const orgId = await resolveOrgIdForAccount(account?.id);
+  if (!account) {
+    return { error: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
+  }
+  try {
+    return { orgId: await resolveOrgIdForAccount(account.id) };
+  } catch (err) {
+    if (err instanceof NoOrganizationError) {
+      return { error: NextResponse.json({ error: "You aren't a member of any organization." }, { status: 403 }) };
+    }
+    throw err;
+  }
+}
 
-  const transfers = await listEnterpriseTransfers(orgId);
+export async function GET(request: NextRequest) {
+  const resolved = await requireOrg(request);
+  if ("error" in resolved) return resolved.error;
+
+  const transfers = await listEnterpriseTransfers(resolved.orgId);
   return NextResponse.json({ transfers });
 }
 
 export async function POST(request: NextRequest) {
-  const account = await getRequestAccount(request);
-  const orgId = await resolveOrgIdForAccount(account?.id);
+  const resolved = await requireOrg(request);
+  if ("error" in resolved) return resolved.error;
 
   let body: {
     title?: string;
@@ -41,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   const created = await createEnterpriseTransfer({
-    orgId,
+    orgId: resolved.orgId,
     title: body.title,
     fileName: body.fileName,
     fileSizeBytes: body.fileSizeBytes,

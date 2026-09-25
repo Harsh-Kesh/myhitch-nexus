@@ -253,6 +253,13 @@ export async function listPlatformPayouts(): Promise<OrgPayoutRow[]> {
            case when ai.cost_minor > 0 then ai.platform_fee_minor * 100.0 / ai.cost_minor else 0 end as pct
          from ad_impressions ai
          where ai.channel_id = o.id
+         union all
+         -- creator_tips.channel_id is text (not a hard FK — see tipping.ts's own note on
+         -- why), hence the explicit cast against o.id here.
+         select ct.amount_cents as amount_minor,
+           case when ct.amount_cents > 0 then ct.platform_fee_cents * 100.0 / ct.amount_cents else 0 end as pct
+         from creator_tips ct
+         where ct.status = 'completed' and ct.channel_id = o.id::text
        ) x
      ) rev on true
      left join lateral (

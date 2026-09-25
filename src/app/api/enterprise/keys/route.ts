@@ -1,24 +1,42 @@
 // Enterprise API: Keys Management (GET, POST, DELETE)
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { checkRateLimit } from "@/lib/server/rateLimit";
 import {
   generateApiKey,
   listApiKeys,
   revokeApiKey,
   resolveOrgIdForAccount,
+  sanitizeApiKeyScopes,
+  NoOrganizationError,
 } from "@/lib/server/enterprise";
 
-export async function GET(request: NextRequest) {
+async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
-  const orgId = await resolveOrgIdForAccount(account?.id);
+  if (!account) {
+    return { error: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
+  }
+  try {
+    return { orgId: await resolveOrgIdForAccount(account.id) };
+  } catch (err) {
+    if (err instanceof NoOrganizationError) {
+      return { error: NextResponse.json({ error: "You aren't a member of any organization." }, { status: 403 }) };
+    }
+    throw err;
+  }
+}
 
-  const keys = await listApiKeys(orgId);
+export async function GET(request: NextRequest) {
+  const resolved = await requireOrg(request);
+  if ("error" in resolved) return resolved.error;
+
+  const keys = await listApiKeys(resolved.orgId);
   return NextResponse.json({ keys });
 }
 
 export async function POST(request: NextRequest) {
-  const account = await getRequestAccount(request);
-  const orgId = await resolveOrgIdForAccount(account?.id);
+  const resolved = await requireOrg(request);
+  if ("error" in resolved) return resolved.error;
 
   let body: {
     name?: string;
@@ -36,12 +54,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Key name is required" }, { status: 400 });
   }
 
-  const scopes = Array.isArray(body.scopes) && body.scopes.length > 0
-    ? body.scopes
-    : ["read:catalogue", "embed:player"];
+  // Never trust client-supplied scopes directly — sanitizeApiKeyScopes() drops anything
+  // outside the real allow-list (in particular, a client could otherwise request
+  // ["admin"], which the Partner API routes used to treat as a superuser bypass).
+  const scopes = sanitizeApiKeyScopes(body.scopes);
+
+  const rateLimit = await checkRateLimit(`api-key-create:${resolved.orgId}`, 10, 60 * 60);
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "Too many API keys created. Try again later." }, { status: 429 });
+  }
 
   const created = await generateApiKey(
-    orgId,
+    resolved.orgId,
     body.name.trim(),
     scopes,
     body.expiresDays,
@@ -51,8 +75,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const account = await getRequestAccount(request);
-  const orgId = await resolveOrgIdForAccount(account?.id);
+  const resolved = await requireOrg(request);
+  if ("error" in resolved) return resolved.error;
 
   const { searchParams } = new URL(request.url);
   const keyId = searchParams.get("id");
@@ -61,6 +85,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "API key id is required" }, { status: 400 });
   }
 
-  const revoked = await revokeApiKey(keyId, orgId);
+  const revoked = await revokeApiKey(keyId, resolved.orgId);
   return NextResponse.json({ success: revoked });
 }

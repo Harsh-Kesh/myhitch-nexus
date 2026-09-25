@@ -384,7 +384,12 @@ export interface ViewerProfile {
   avatarUrl?: string;
   maxAgeRating: AgeRating;
   language: string;
+  /** Mock/demo profiles only — real profiles never carry the actual PIN or its hash to
+   * the client (see profilePin.ts); a real profile's PIN state is `hasPinSet` instead,
+   * and verification always goes through verifyProfilePin() (a real server call, not a
+   * client-side string comparison). */
   pinCode?: string | null;
+  hasPinSet?: boolean;
   isKids?: boolean;
 }
 
@@ -495,6 +500,15 @@ export interface Subscription {
   id: string;
   name: string;
   kind: "platform" | "channel-membership";
+  /** Real-only (a mock/channel-membership row has no real plan id) — the single source
+   * of truth for "which of the three paid platform tiers is this," e.g. gating
+   * Family-only features. Never derive that from `name`/`id` string-matching: `name` is
+   * just display copy (PLAN_DISPLAY[plan].name) and silently drifts from `plan` the
+   * moment marketing copy changes, which is exactly what happened before this field
+   * existed — found live 2026-09-24, an account with an active Business plan was told on
+   * one page it had "an active Nexus Business Plan" and on another that it needed to
+   * upgrade to unlock /business, because each page re-derived plan identity its own way. */
+  plan?: "premium" | "family" | "business";
   channelId?: string;
   price: Money;
   interval: "monthly" | "annual";

@@ -43,6 +43,7 @@ export default function SubscriptionsPage() {
           "1 Viewer Profile (Upgrade to Family for up to 5)",
         ],
         isFree: true,
+        notSubscribed: false,
       };
     }
 
@@ -56,6 +57,7 @@ export default function SubscriptionsPage() {
         renewsAt: activeSub.renewsAt,
         benefits: activeSub.benefits,
         isFree: false,
+        notSubscribed: false,
       };
     }
 
@@ -73,10 +75,21 @@ export default function SubscriptionsPage() {
           "MYHitch Connect Brand Sponsorship Deals",
           "Fan Super Thanks Tipping & Ad Revenue Share",
         ],
+        // Genuinely free (matches /plans's real "Nexus Creator — free to start") — no
+        // real subscription is needed to unlock Creator Studio, so there's nothing to
+        // subscribe to, unlike the Business/Enterprise cases below.
         isFree: false,
+        notSubscribed: false,
       };
     }
 
+    // Business and Enterprise are real, paid tiers (£29/mo and contact-sales
+    // respectively) — a "business"/"enterprise" role flag alone (set for free at
+    // registration, see auth/register/route.ts) is not a payment and must never be
+    // shown as an "active" plan here. Found live: this used to claim "Nexus Business
+    // Plan is active... £29/mo" for any business-role account with no real
+    // subscription, directly contradicting /business/layout.tsx's real
+    // checkRealPlanActive() gate one click away.
     if (user.roles.includes("business") || user.activeRole === "business") {
       return {
         name: "Nexus Business Plan",
@@ -90,7 +103,8 @@ export default function SubscriptionsPage() {
           "Team Access & Role Management",
           "Pre-roll & Mid-roll Ad Campaign Manager",
         ],
-        isFree: false,
+        isFree: true,
+        notSubscribed: true,
       };
     }
 
@@ -107,7 +121,8 @@ export default function SubscriptionsPage() {
           "High-Capacity Secure File Transfers",
           "Developer API Keys & Dedicated Support",
         ],
-        isFree: false,
+        isFree: true,
+        notSubscribed: true,
       };
     }
 
@@ -123,6 +138,7 @@ export default function SubscriptionsPage() {
         "1 Viewer Profile (Upgrade to Family for up to 5)",
       ],
       isFree: true,
+      notSubscribed: false,
     };
   }, [subscriptions, user]);
 
@@ -144,25 +160,23 @@ export default function SubscriptionsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <IconCrown className="size-5 text-accent" />
               <span>Active Subscription Plan</span>
-              <Badge tone={activePlanInfo.isFree ? "outline" : "published"} size="sm">
-                {activePlanInfo.name}
+              <Badge tone={activePlanInfo.notSubscribed ? "pending" : activePlanInfo.isFree ? "outline" : "published"} size="sm">
+                {activePlanInfo.notSubscribed ? `${activePlanInfo.name} (not subscribed)` : activePlanInfo.name}
               </Badge>
             </div>
           }
           description={
-            !activePlanInfo.isFree && activePlanInfo.renewsAt
-              ? `Billed ${activePlanInfo.interval} at ${formatCurrency(activePlanInfo.amount, activePlanInfo.currency)} — renews ${formatDate(activePlanInfo.renewsAt, "long")}`
-              : activePlanInfo.name === "Nexus Creator Plan"
-                ? "Nexus Creator Plan is active on your account with full Creator Studio, video uploading, and monetization access."
-                : activePlanInfo.name === "Nexus Business Plan"
-                  ? "Nexus Business Plan is active on your account with full commercial channels, campaign manager, and team access."
-                  : activePlanInfo.name === "Nexus Enterprise Plan"
-                    ? "Nexus Enterprise Plan is active on your account with enterprise media workspace and API keys."
-                    : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
+            activePlanInfo.notSubscribed
+              ? `Your account has ${activePlanInfo.name === "Nexus Enterprise Plan" ? "Enterprise" : "Business"} role access, but no active paid subscription — subscribe to unlock it.`
+              : !activePlanInfo.isFree && activePlanInfo.renewsAt
+                ? `Billed ${activePlanInfo.interval} at ${formatCurrency(activePlanInfo.amount, activePlanInfo.currency)} — renews ${formatDate(activePlanInfo.renewsAt, "long")}`
+                : activePlanInfo.name === "Nexus Creator Plan"
+                  ? "Nexus Creator Plan is active on your account with full Creator Studio, video uploading, and monetization access."
+                  : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
           }
           action={
             <Button variant="primary" size="sm" href="/plans">
-              {!activePlanInfo.isFree ? "Change Plan" : "Upgrade Plan"}
+              {!activePlanInfo.isFree || activePlanInfo.notSubscribed ? "Subscribe" : "Upgrade Plan"}
             </Button>
           }
         />

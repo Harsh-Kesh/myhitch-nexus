@@ -1,6 +1,8 @@
 // GET & POST /api/creators/[channelId]/posts/[postId]/comments — Post comments
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { checkRateLimit } from "@/lib/server/rateLimit";
+import { clientIpFromHeaders } from "@/lib/server/requestMeta";
 import {
   addPostComment,
   listPostComments,
@@ -35,6 +37,14 @@ export async function POST(
 
   if (!body.content || !body.content.trim()) {
     return NextResponse.json({ error: "Comment content is required" }, { status: 400 });
+  }
+
+  // Comments are reachable anonymously, so this keys on the account when signed in and
+  // falls back to IP — the same shape as the tip route's rate limit.
+  const rateLimitKey = `comment:${account?.id ?? clientIpFromHeaders(request.headers)}`;
+  const rateLimit = await checkRateLimit(rateLimitKey, 20, 60 * 60);
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "Too many comments. Try again later." }, { status: 429 });
   }
 
   try {

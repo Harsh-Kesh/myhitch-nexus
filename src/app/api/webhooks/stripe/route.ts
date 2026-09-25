@@ -11,6 +11,7 @@ import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/l
 import { recordSubscriptionPaymentFromInvoice, upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
 import { recordMembershipPaymentFromInvoice } from "@/lib/server/channelMemberships";
 import { upsertPayoutAccountFromStripe } from "@/lib/server/payouts";
+import { completeTip, recordPatronRenewalFromInvoice } from "@/lib/server/tipping";
 
 export async function POST(request: NextRequest) {
   const signature = request.headers.get("stripe-signature");
@@ -40,7 +41,16 @@ export async function POST(request: NextRequest) {
       // object itself, so the customer.subscription.created event below is
       // self-sufficient without this one.
       const session = event.data.object as Stripe.Checkout.Session;
-      if (session.mode === "payment") {
+      if (session.metadata?.nexus_action === "creator_tip") {
+        // A tip's session has no videoId/kind at all (fulfillCheckoutSession() would
+        // silently no-op on it), and covers both mode="payment" (one-time tip) and the
+        // first month of mode="subscription" (patron) — found live: real tip charges
+        // were succeeding in Stripe while this row sat at status='pending' forever,
+        // invisible to the creator's tip feed, revenue, and payout balance.
+        const paymentIntentId =
+          typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
+        await completeTip(session.metadata.tip_id, paymentIntentId);
+      } else if (session.mode === "payment") {
         await fulfillCheckoutSession(session);
       }
     } else if (
@@ -57,7 +67,11 @@ export async function POST(request: NextRequest) {
       // absence), so this event needs no mode check and the same invoice is never
       // recorded into both tables.
       const invoice = event.data.object as Stripe.Invoice;
-      await Promise.all([recordMembershipPaymentFromInvoice(invoice), recordSubscriptionPaymentFromInvoice(invoice)]);
+      await Promise.all([
+        recordMembershipPaymentFromInvoice(invoice),
+        recordSubscriptionPaymentFromInvoice(invoice),
+        recordPatronRenewalFromInvoice(invoice),
+      ]);
     } else if (event.type === "account.updated") {
       await upsertPayoutAccountFromStripe(event.data.object as Stripe.Account);
     }

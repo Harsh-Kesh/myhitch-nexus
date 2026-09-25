@@ -1,6 +1,7 @@
 // GET & POST /api/live/[id]/poll — Live stream polls & voting (FR-6.5.4)
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { canAccessLiveEvent, getLiveEventById, isLiveEventModerator } from "@/lib/server/liveEvents";
 import {
   createLivePoll,
   endLivePoll,
@@ -8,12 +9,26 @@ import {
   voteLivePoll,
 } from "@/lib/server/liveChat";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: streamId } = await params;
   const account = await getRequestAccount(request);
+
+  // Real events (created via /api/live/events) enforce the event's own access rule — a
+  // mock/demo stream id keeps its previous, unrestricted behavior.
+  if (UUID_PATTERN.test(streamId)) {
+    const event = await getLiveEventById(streamId);
+    if (!event) {
+      return NextResponse.json({ error: "Stream not found." }, { status: 404 });
+    }
+    if (!(await canAccessLiveEvent(event, account?.id ?? null))) {
+      return NextResponse.json({ error: "You don't have access to this stream's polls." }, { status: 403 });
+    }
+  }
 
   const poll = await getActivePoll(streamId, account?.id ?? null);
   return NextResponse.json({ poll });
@@ -38,6 +53,18 @@ export async function POST(
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if ((body.action === "create" || body.action === "end") && !account) {
+    return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+
+  // Real per-stream host enforcement for a real event — a mock/demo stream id keeps the
+  // same sign-in-only bar it always had.
+  if ((body.action === "create" || body.action === "end") && UUID_PATTERN.test(streamId)) {
+    if (!(await isLiveEventModerator(account!.id, streamId, account!.roles))) {
+      return NextResponse.json({ error: "You don't host this stream." }, { status: 403 });
+    }
   }
 
   if (body.action === "create") {
@@ -69,6 +96,19 @@ export async function POST(
         { error: "Sign in required to vote on live stream polls" },
         { status: 401 },
       );
+    }
+
+    if (UUID_PATTERN.test(streamId)) {
+      const event = await getLiveEventById(streamId);
+      if (!event) {
+        return NextResponse.json({ error: "Stream not found." }, { status: 404 });
+      }
+      if (!(await canAccessLiveEvent(event, account.id))) {
+        return NextResponse.json(
+          { error: "You don't have access to this stream's polls." },
+          { status: 403 },
+        );
+      }
     }
 
     try {

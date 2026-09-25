@@ -74,9 +74,8 @@ export default function ProfilePage() {
   }, [user]);
 
   const isRealAccount = user ? looksLikeRealId(user.id) : false;
-  const hasFamilyPlan = subscriptions.some(
-    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
-  );
+  // Real `plan` field, not string-matching id/name — see account/settings's identical fix.
+  const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
 
   const activePlanInfo = React.useMemo(() => {
     if (!user) {

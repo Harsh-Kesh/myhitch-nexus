@@ -48,6 +48,11 @@ const PRIMARY_NAV: Array<{
   exact?: boolean;
 }> = [
   { href: "/", label: "Home", exact: true },
+  // Right after Home, not last — Explore is the general browse/filter gateway for a
+  // visitor who doesn't already know which vertical they want; the specific verticals
+  // below it serve someone who does. Burying it after nine named verticals meant it was
+  // the one nav item most people would never scroll/tab to.
+  { href: "/explore", label: "Explore" },
   { href: "/films", label: "Films" },
   { href: "/commercial", label: "Commercial" },
   { href: "/live", label: "Live" },
@@ -57,7 +62,6 @@ const PRIMARY_NAV: Array<{
   { href: "/music", label: "Music" },
   { href: "/podcasts", label: "Podcasts" },
   { href: "/creators", label: "Creators" },
-  { href: "/explore", label: "Categories" },
 ];
 
 const isNavActive = (pathname: string, item: (typeof PRIMARY_NAV)[number]) =>
@@ -79,9 +83,8 @@ export function SiteHeader() {
 
   const isGuest = !user;
   const unread = notifications.filter((item) => !item.read).length;
-  const hasFamilyPlan = subscriptions.some(
-    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
-  );
+  // Real `plan` field, not string-matching id/name — see account/settings's identical fix.
+  const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
   // The Creators directory has its own local search that actually filters channels;
   // this header search only ever searches videos (BrowseView/Typesense), so showing
   // both boxes here — one that works for this page's content and one that doesn't —

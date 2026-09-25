@@ -50,7 +50,9 @@ export async function hashPassword(password: string): Promise<string> {
   return `scrypt:${salt.toString("hex")}:${derivedKey.toString("hex")}`;
 }
 
-async function matchesHash(password: string, stored: string): Promise<boolean> {
+/** Exported for profilePin.ts — a parental-controls PIN uses the exact same scrypt
+ * hash-and-compare shape as a real account password, just keyed differently. */
+export async function matchesHash(password: string, stored: string): Promise<boolean> {
   const [scheme, saltHex, hashHex] = stored.split(":");
   if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
   const salt = Buffer.from(saltHex, "hex");

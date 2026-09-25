@@ -13,7 +13,6 @@ import {
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
-import { VideoPlayer } from "@/components/player/video-player";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,7 +24,6 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { channelById } from "@/lib/mock-api/data/channels";
-import { videos } from "@/lib/mock-api/data/videos";
 import {
   useChatMessages,
   useCurrentUser,
@@ -36,7 +34,7 @@ import {
   useToggleFollow,
   useVotePoll,
 } from "@/lib/mock-api/hooks";
-import type { ChatMessage, Entitlement, LiveEvent } from "@/lib/mock-api/types";
+import type { ChatMessage, LiveEvent } from "@/lib/mock-api/types";
 import {
   cn,
   compactNumber,
@@ -103,14 +101,26 @@ export function LiveViewerClient() {
   }
 
   const channel = channelById(event.channelId);
+  // Real per-stream host/moderator check, mirroring liveEvents.ts's server-side
+  // isLiveEventModerator(): this account's own channel, or a platform moderator/
+  // super-admin — never a hardcoded email or a name substring match. Those two were a
+  // real, live security hole: any signed-in account named "Mara" (or literally
+  // "editor@nexus.com") got full moderation access to every stream, and the Moderation
+  // tab itself was rendered for every visitor, signed in or not, with no check at all —
+  // simply opening the tab and flipping "Show held & removed messages" let anyone hide,
+  // remove, or restore chat messages regardless of who they were.
   const isCoHost = Boolean(
     currentUser &&
-      (currentUser.email === "editor@nexus.com" ||
-        currentUser.channelId === event.channelId ||
-        currentUser.name?.toLowerCase().includes("mara"))
+      (currentUser.channelId === event.channelId ||
+        currentUser.roles?.includes("moderator") ||
+        currentUser.roles?.includes("super-admin")),
   );
   const needsTicket = event.accessType === "ticketed" && !ticketPurchased && !isCoHost;
-  const visibleMessages = moderatorMode || isCoHost
+  // Requires isCoHost, not moderatorMode alone — moderatorMode is only ever reachable
+  // through the Moderation tab's own switch, which now only renders for a real host, but
+  // this keeps the "held/removed messages are visible" decision itself tied to real
+  // authorization rather than to a plain, unguarded piece of component state.
+  const visibleMessages = isCoHost && moderatorMode
     ? messages
     : messages.filter((message) => message.status === "visible");
 
@@ -129,12 +139,7 @@ export function LiveViewerClient() {
           {needsTicket ? (
             <TicketGate event={event} onPurchase={() => setTicketPurchased(true)} />
           ) : event.status === "live" ? (
-            <VideoPlayer
-              video={syntheticLiveVideo(event)}
-              entitlement={liveEntitlement(event.id)}
-              live
-              className="sm:rounded-lg"
-            />
+            <LiveSignalPendingSurface event={event} />
           ) : (
             <ScheduledSurface event={event} />
           )}
@@ -237,7 +242,11 @@ export function LiveViewerClient() {
                 items={[
                   { value: "chat", label: "Chat", icon: <IconMessage />, count: visibleMessages.length },
                   { value: "polls", label: "Polls", icon: <IconChartBar />, count: polls.length },
-                  { value: "mod", label: "Moderation", icon: <IconShieldCheck /> },
+                  // Only ever offered to a real host/moderator (see isCoHost above) — this
+                  // tab used to render for every visitor, signed in or not.
+                  ...(isCoHost
+                    ? [{ value: "mod", label: "Moderation", icon: <IconShieldCheck /> }]
+                    : []),
                 ]}
               />
             </div>
@@ -259,7 +268,7 @@ export function LiveViewerClient() {
                       <ChatRow
                         key={message.id}
                         message={message}
-                        moderatorMode={moderatorMode}
+                        moderatorMode={isCoHost && moderatorMode}
                         onModerate={(action) =>
                           moderateMessage.mutate({ messageId: message.id, action })
                         }
@@ -374,7 +383,7 @@ export function LiveViewerClient() {
               </div>
             ) : null}
 
-            {tab === "mod" ? (
+            {tab === "mod" && isCoHost ? (
               <div className="nx-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
                 <p className="text-xs leading-relaxed text-fg-muted">
                   Moderation controls available to hosts and channel moderators.
@@ -670,34 +679,42 @@ function ScheduledSurface({ event }: { event: LiveEvent }) {
   );
 }
 
-/* --------------------------- Live playback shim --------------------------- */
+/* --------------------------- Live playback surface --------------------------- */
 
-function syntheticLiveVideo(event: LiveEvent) {
-  const template = videos[0];
-  return {
-    ...template,
-    id: event.id,
-    slug: event.id,
-    title: event.title,
-    synopsis: event.description,
-    channelId: event.channelId,
-    contentType: "live" as const,
-    categoryIds: event.categoryIds,
-    status: "published" as const,
-    posterGradient: event.posterGradient,
-    durationSeconds: 7_200,
-    pricing: { accessModels: ["free" as const] },
-    watermarkEnabled: false,
-    sampleSrc: "/media/sample-1.mp4",
-  };
-}
-
-function liveEntitlement(videoId: string): Entitlement {
-  return {
-    videoId,
-    userId: "usr_viewer",
-    granted: true,
-    reason: "free",
-    requestCountry: "GB",
-  };
+/** The honest "live" surface — this platform has no real RTMP/WebRTC ingest vendor
+ * connected yet (a disclosed, budget-gated blocker, see docs/EXTERNAL_VENDOR_BLOCKERS.md),
+ * so there is no real broadcast signal to show. Deliberately does NOT play a real,
+ * unrelated stock video file behind a LIVE badge (the previous behaviour) — a viewer
+ * would have no way to tell that footage apart from a genuine broadcast, which is a
+ * trust/honesty problem regardless of how the feature ships later, not just an
+ * unfinished one. Shows the real "LIVE" state (the creator genuinely did start this
+ * event) without implying a video signal exists. */
+function LiveSignalPendingSurface({ event }: { event: LiveEvent }) {
+  return (
+    <div
+      data-surface="cinema"
+      className="relative aspect-video w-full overflow-hidden bg-black sm:rounded-lg"
+    >
+      <Poster
+        src={event.thumbnailUrl}
+        alt={event.title}
+        gradient={event.posterGradient}
+        seed={event.id}
+        ratio="none"
+        className="absolute inset-0 size-full opacity-40"
+      />
+      <div className="absolute inset-0 nx-scrim" />
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <LiveBadge />
+        <p className="font-display text-lg font-semibold text-fg">
+          {event.title} is live
+        </p>
+        <p className="max-w-md text-sm text-fg-muted">
+          Real-time video broadcasting isn&apos;t connected on this platform yet — chat and
+          polls below are real and shared with every viewer, but there is no live video
+          signal to show here.
+        </p>
+      </div>
+    </div>
+  );
 }

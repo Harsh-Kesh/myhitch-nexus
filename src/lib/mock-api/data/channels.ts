@@ -71,7 +71,13 @@ const rawChannels: Channel[] = [
     tagline: "Cinematography breakdowns and camera craft.",
     about:
       "I shoot commercials for a living and take the rigs apart on this channel. Weekly breakdowns, lens tests and lighting diagrams. Memberships get the project files.",
-    verified: true,
+    // Creator channels don't go through the "Organisation" verification step every other
+    // registration role does at signup — a creator only earns the badge by separately
+    // passing the same real verification flow (organizationVerification.ts), which this
+    // demo channel hasn't. Was hardcoded true with no real basis (client-reported bug,
+    // 2026-09-25) — see catalogue.ts's computeVerifiedBadge() for the real-account version
+    // of this same rule.
+    verified: false,
     country: "GB",
     languages: ["English"],
     followers: 892_500,
@@ -83,7 +89,7 @@ const rawChannels: Channel[] = [
     avatarUrl: "/images/avatars/ch_mara.svg",
     bannerUrl: "/images/banners/ch_mara.svg",
     links: [{ label: "Kit list", href: "#" }],
-    verificationStatus: "verified",
+    verificationStatus: "unverified",
     contactEmail: "hello@marasolace.example",
   },
   {
@@ -235,7 +241,8 @@ const rawChannels: Channel[] = [
     tagline: "Live music, one take, no overdubs.",
     about:
       "A single room, a single take. Orbit Sessions records emerging artists live and publishes the full session plus a subscriber-only extended cut.",
-    verified: true,
+    // Same real rule as ch_mara above — a creator channel isn't verified by default.
+    verified: false,
     country: "US",
     languages: ["English"],
     followers: 671_300,
@@ -247,7 +254,7 @@ const rawChannels: Channel[] = [
     avatarUrl: "/images/avatars/ch_orbit.svg",
     bannerUrl: "/images/banners/ch_orbit.svg",
     links: [{ label: "Submit an artist", href: "#" }],
-    verificationStatus: "verified",
+    verificationStatus: "unverified",
     contactEmail: "bookings@orbitsessions.example",
   },
 ];

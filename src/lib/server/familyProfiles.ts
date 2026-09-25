@@ -2,6 +2,7 @@
 import "server-only";
 import { query, queryOne } from "./db";
 import { checkRealPlanActive } from "./subscriptions";
+import { hashPin } from "./profilePin";
 
 export interface AccountProfile {
   id: string;
@@ -10,7 +11,11 @@ export interface AccountProfile {
   avatarUrl: string | null;
   isKids: boolean;
   maturityRating: "ALL" | "PG" | "TEEN" | "18+";
-  pinCode: string | null;
+  /** Never the actual PIN or its hash — see profilePin.ts's verifyProfilePin() for the
+   * only real way to check a PIN. Exposing the hash to the client would let it be
+   * cracked offline; exposing the old plaintext value was worse still (this used to be
+   * returned in full and checked client-side — real critical finding, fixed 2026-09-24). */
+  hasPinSet: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -19,6 +24,20 @@ export interface ProfileOverview {
   profiles: AccountProfile[];
   totalProfiles: number;
   maxProfiles: number;
+}
+
+/** Same ownership bar as commerce.ts's isBlockedByProfileAgeRating() — a client can never
+ * scope a query to a profile it doesn't own by just supplying its id. Returns the id back
+ * unchanged when it checks out, or null (ignore rather than trust) otherwise — callers
+ * that key a query on the result get "no profile" instead of silently trusting a stranger's
+ * profile id, the same "ignore, don't error" stance the age-gate check already takes. */
+export async function verifyOwnProfileId(accountId: string, profileId: string | null | undefined): Promise<string | null> {
+  if (!profileId) return null;
+  const row = await queryOne<{ id: string }>(
+    `select id from account_profiles where id = $1 and account_id = $2`,
+    [profileId, accountId],
+  );
+  return row ? row.id : null;
 }
 
 export async function listAccountProfiles(accountId: string): Promise<ProfileOverview> {
@@ -47,7 +66,7 @@ export async function listAccountProfiles(accountId: string): Promise<ProfileOve
     avatarUrl: r.avatar_url,
     isKids: r.is_kids,
     maturityRating: r.maturity_rating,
-    pinCode: r.pin_code,
+    hasPinSet: r.pin_code !== null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -95,6 +114,7 @@ export async function createAccountProfile(
 
   const isKids = Boolean(input.isKids);
   const maturity = input.maturityRating ?? (isKids ? "ALL" : "18+");
+  const pinHash = input.pinCode?.trim() ? await hashPin(input.pinCode.trim()) : null;
 
   const row = await queryOne<{
     id: string;
@@ -111,14 +131,7 @@ export async function createAccountProfile(
       account_id, name, avatar_url, is_kids, maturity_rating, pin_code
     ) values ($1, $2, $3, $4, $5, $6)
     returning id, account_id, name, avatar_url, is_kids, maturity_rating, pin_code, created_at, updated_at`,
-    [
-      accountId,
-      name,
-      input.avatarUrl ?? null,
-      isKids,
-      maturity,
-      input.pinCode ? input.pinCode.trim() : null,
-    ],
+    [accountId, name, input.avatarUrl ?? null, isKids, maturity, pinHash],
   );
 
   if (!row) throw new Error("Failed to create profile");
@@ -130,7 +143,7 @@ export async function createAccountProfile(
     avatarUrl: row.avatar_url,
     isKids: row.is_kids,
     maturityRating: row.maturity_rating,
-    pinCode: row.pin_code,
+    hasPinSet: row.pin_code !== null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -174,8 +187,9 @@ export async function updateAccountProfile(
   }
 
   if (input.pinCode !== undefined) {
+    const pinHash = input.pinCode?.trim() ? await hashPin(input.pinCode.trim()) : null;
     updates.push(`pin_code = $${paramIdx++}`);
-    params.push(input.pinCode ? input.pinCode.trim() : null);
+    params.push(pinHash);
   }
 
   const row = await queryOne<{
@@ -205,7 +219,7 @@ export async function updateAccountProfile(
     avatarUrl: row.avatar_url,
     isKids: row.is_kids,
     maturityRating: row.maturity_rating,
-    pinCode: row.pin_code,
+    hasPinSet: row.pin_code !== null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

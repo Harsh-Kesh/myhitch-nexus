@@ -191,6 +191,41 @@ export interface RealEntitlementResult {
   granted: boolean;
   kind?: CheckoutKind | "subscription" | "membership";
   expiresAt?: string;
+  /** True only when the sole reason access was denied is the active profile's maturity
+   * rating — lets the client show "not appropriate for this profile" rather than a
+   * generic paywall, matching the age-gate UX getEntitlement() already had client-side. */
+  ageGated?: boolean;
+}
+
+const AGE_RATING_WEIGHT: Record<string, number> = { U: 0, ALL: 0, PG: 1, "12": 2, TEEN: 2, "15": 3, "18": 4, "18+": 4 };
+
+/** Real, server-side counterpart of the age-gate check getEntitlement() (mock-api) used
+ * to perform entirely client-side — found live as a critical gap: the PIN/profile state
+ * it read was plain browser state, so nothing stopped a signed-in account from granting
+ * itself access to an over-rated video regardless of the active kids/teen profile.
+ * `profileId`, if given, is ownership-checked against `accountId` before its rating is
+ * trusted — a client can never claim someone else's profile. Originally only reachable
+ * for a purchased/subscription-gated video via checkRealEntitlement() below; also called
+ * directly now from playbackAuthorization.ts's authorizeVideoAccess() for free/ad-
+ * supported content, closing the free-content half of the same gap (SRS FR-6.4.6). */
+export async function isBlockedByProfileAgeRating(
+  accountId: string,
+  videoId: string,
+  profileId: string | null | undefined,
+): Promise<boolean> {
+  if (!profileId) return false;
+  const profile = await queryOne<{ maturity_rating: string }>(
+    `select maturity_rating from account_profiles where id = $1 and account_id = $2`,
+    [profileId, accountId],
+  );
+  if (!profile) return false; // not this account's profile — ignore rather than trust it
+  const rights = await queryOne<{ age_rating: string | null }>(
+    `select age_rating from video_rights where video_id = $1`,
+    [videoId],
+  );
+  const videoWeight = AGE_RATING_WEIGHT[rights?.age_rating ?? "U"] ?? 0;
+  const maxWeight = AGE_RATING_WEIGHT[profile.maturity_rating] ?? 4;
+  return videoWeight > maxWeight;
 }
 
 /** A subscription-gated video (access_models includes "subscription") needs no per-video
@@ -199,7 +234,11 @@ export interface RealEntitlementResult {
  * that specific channel. Checked as a fallback, after the per-video entitlement lookup
  * finds nothing, so a video that's both individually owned *and* subscription/membership-
  * gated still reports the more specific reason. */
-export async function checkRealEntitlement(accountId: string, videoId: string): Promise<RealEntitlementResult> {
+export async function checkRealEntitlement(
+  accountId: string,
+  videoId: string,
+  profileId?: string | null,
+): Promise<RealEntitlementResult> {
   // Lazily expires a rental on read rather than needing a scheduled job — same pattern
   // as videoPublishing.ts's activateScheduledVideos(), correct at this app's read-heavy
   // scale.
@@ -209,6 +248,11 @@ export async function checkRealEntitlement(accountId: string, videoId: string): 
        and account_id = $1 and video_id = $2`,
     [accountId, videoId],
   );
+
+  if (await isBlockedByProfileAgeRating(accountId, videoId, profileId)) {
+    return { granted: false, ageGated: true };
+  }
+
   const row = await queryOne<{ kind: CheckoutKind; expires_at: string | null }>(
     `select kind, expires_at from entitlements
      where account_id = $1 and video_id = $2 and status in ('completed', 'active')
@@ -348,7 +392,7 @@ export interface RealRevenueTransaction {
   id: string;
   date: string;
   description: string;
-  kind: "rental" | "purchase" | "ppv" | "membership" | "ad";
+  kind: "rental" | "purchase" | "ppv" | "membership" | "ad" | "tip";
   grossMinor: number;
   feeMinor: number;
   netMinor: number;
@@ -370,6 +414,7 @@ const REVENUE_KIND_LABEL: Record<RevenueEntryKind, RealRevenueTransaction["kind"
   ppv: "ppv",
   membership: "membership",
   ad: "ad",
+  tip: "tip",
 };
 const REVENUE_STREAM_LABEL: Record<RevenueEntryKind, string> = {
   buy: "Purchases",
@@ -377,6 +422,7 @@ const REVENUE_STREAM_LABEL: Record<RevenueEntryKind, string> = {
   ppv: "Pay-per-view",
   membership: "Memberships",
   ad: "Advertising",
+  tip: "Fan tips",
 };
 
 /** Real gross-and-net revenue for a channel — the full "revenue ledger with

@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   }
 
   const scopes = auth.scopes ?? [];
-  if (!scopes.includes("read:catalogue") && !scopes.includes("admin")) {
+  if (!scopes.includes("read:catalogue")) {
     return NextResponse.json(
       { error: "Forbidden. 'read:catalogue' scope is required for this endpoint." },
       { status: 403 },
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
   }
 
   const scopes = auth.scopes ?? [];
-  if (!scopes.includes("write:catalogue") && !scopes.includes("admin")) {
+  if (!scopes.includes("write:catalogue")) {
     return NextResponse.json(
       { error: "Forbidden. 'write:catalogue' scope is required for this endpoint." },
       { status: 403 },

@@ -280,6 +280,26 @@ export async function saveVerificationDraft(
     return { outcome: "already_submitted" };
   }
 
+  // Editing the ABN invalidates any prior lookup result — otherwise a real Active lookup
+  // against one ABN would stay attached after the user typed in a different one, and
+  // submitVerification()'s gate (below) would wrongly treat the new, unchecked ABN as
+  // verified. Compared against the currently stored value, not just "was abn included in
+  // this save" — a save that repeats the already-verified ABN keeps its lookup intact.
+  if (input.abn !== undefined) {
+    const currentAbn = await queryOne<{ abn: string | null }>(
+      `select abn from organization_verification where organization_id = $1`,
+      [organizationId],
+    );
+    if (currentAbn && currentAbn.abn !== input.abn) {
+      await query(
+        `update organization_verification
+         set abn_lookup_status = null, abn_lookup_checked_at = null, abn_lookup_entity_name = null
+         where organization_id = $1`,
+        [organizationId],
+      );
+    }
+  }
+
   const entries = Object.entries(input).filter(([, value]) => value !== undefined) as Array<
     [keyof VerificationDraftInput, string | boolean | string[]]
   >;
@@ -405,6 +425,7 @@ export async function listVerificationDocuments(
 export type SubmitVerificationOutcome =
   | { outcome: "success" }
   | { outcome: "not_member" }
+  | { outcome: "not_eligible" }
   | { outcome: "already_submitted" }
   | { outcome: "invalid"; reason: string };
 
@@ -415,6 +436,15 @@ export type SubmitVerificationOutcome =
 export async function submitVerification(accountId: string, organizationId: string): Promise<SubmitVerificationOutcome> {
   if (!(await isOrgMember(accountId, organizationId))) {
     return { outcome: "not_member" };
+  }
+  // Client decision, 2026-09-25: no verification flow for creators — Nexus Creator is a
+  // free, open-signup tier (like YouTube/TikTok's regular creator accounts, not their
+  // separate manually-reviewed verification programs), so there's deliberately no path
+  // for a creator channel to earn a verified badge at all. See catalogue.ts's
+  // computeVerifiedBadge() for the display-side half of this same rule.
+  const org = await queryOne<{ type: string }>(`select type from organizations where id = $1`, [organizationId]);
+  if (org?.type === "creator") {
+    return { outcome: "not_eligible" };
   }
   const row = await queryOne<VerificationDbRow>(
     `select * from organization_verification where organization_id = $1`,
@@ -429,6 +459,17 @@ export async function submitVerification(accountId: string, organizationId: stri
   if (!row.abn?.trim()) {
     return { outcome: "invalid", reason: "An ABN is required." };
   }
+  // The automated verification badge is a real trust signal — it must be backed by a
+  // real, successful Australian Business Register lookup for the currently-declared ABN
+  // (see runAbnLookup()), not just a non-empty text field. saveVerificationDraft() clears
+  // these two columns whenever the ABN is edited, so a stale lookup from a different,
+  // previously-typed ABN can never satisfy this gate.
+  if (!row.abn_lookup_checked_at || row.abn_lookup_status?.trim().toLowerCase() !== "active") {
+    return {
+      outcome: "invalid",
+      reason: "Run the ABN lookup and confirm it returns an active business before submitting.",
+    };
+  }
   if (!row.contact_full_name?.trim() || !row.contact_email?.trim()) {
     return { outcome: "invalid", reason: "A primary contact name and email are required." };
   }
@@ -442,7 +483,9 @@ export async function submitVerification(accountId: string, organizationId: stri
   await query(`update organization_verification set submitted_at = now() where organization_id = $1`, [
     organizationId,
   ]);
-  // 100% Automated Verification: Upon valid automated declaration & ABN check, grant 'verified' status instantly with zero human intervention.
+  // Automated verification: instant "verified" status requires no human review, but only
+  // because the gate above already required a real, successful ABR lookup — this is not
+  // "any string that looks number-shaped."
   await query(`update organizations set verification_status = 'verified', verified = true where id = $1`, [organizationId]);
   return { outcome: "success" };
 }

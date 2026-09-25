@@ -364,9 +364,14 @@ export interface EngagementProgress {
 
 /** Full VideoSummary + progress pairs for everything a real account has a watch_progress
  * row for, most recently updated first — no completed filter, matching the mock's
- * getContinueWatching(), which doesn't drop finished titles from the list either. */
+ * getContinueWatching(), which doesn't drop finished titles from the list either.
+ * `profileId`, if given, must already be ownership-verified by the caller (see
+ * familyProfiles.ts's verifyOwnProfileId()) — `is not distinct from` matches only the
+ * no-profile-selected rows when it's null, not every row regardless of profile, so a kids
+ * profile no longer shares an adult profile's continue-watching rail on the same account. */
 export async function getContinueWatchingVideos(
   accountId: string,
+  profileId: string | null = null,
 ): Promise<Array<{ video: VideoSummary; progress: EngagementProgress }>> {
   const rows = await query<
     VideoSummaryRow & { position_seconds: number; wp_completed: boolean; wp_updated_at: string }
@@ -376,9 +381,9 @@ export async function getContinueWatchingVideos(
      from watch_progress wp
      join videos v on v.id = wp.video_id
      ${VIDEO_SUMMARY_JOINS}
-     where wp.account_id = $1
+     where wp.account_id = $1 and wp.profile_id is not distinct from $2
      order by wp.updated_at desc`,
-    [accountId],
+    [accountId, profileId],
   );
   return rows.map((row) => ({
     video: mapVideoSummary(row),
@@ -939,6 +944,24 @@ export interface ChannelDetail {
   totalViews: number;
 }
 
+/** The verified badge's real display rule (client decision, 2026-09-25, revised same day):
+ * every non-creator organization type (business, advertiser, producer, government,
+ * education, non_profit, news, film-studio) already goes through a real document/
+ * business-details step at registration (see auth/register's "Organisation" step, required
+ * for every role except creator/viewer) — that's the "verified at the point of
+ * registration" the client means, so these always show verified regardless of
+ * `organizations.verified`. Creators never show verified, full stop — no verification
+ * flow exists for Nexus Creator at all (like a regular YouTube/TikTok creator account, not
+ * their separate manually-reviewed programs), since it's a free, open-signup tier; see
+ * organizationVerification.ts's submitVerification(), which now rejects a creator-type org
+ * outright. This is a display rule only: the real `verified`/`verification_status` columns
+ * are untouched (still exist for non-creator types' real ABN-based flow), and
+ * /admin/organisations (adminOrganizations.ts, a separate query) still shows the real,
+ * unmodified status for review purposes. */
+function computeVerifiedBadge(type: string): boolean {
+  return type !== "creator";
+}
+
 export async function getChannelById(id: string): Promise<ChannelDetail | null> {
   const row = await queryOne<{
     id: string;
@@ -980,7 +1003,7 @@ export async function getChannelById(id: string): Promise<ChannelDetail | null> 
     kind: row.type,
     tagline: row.tagline,
     about: row.description,
-    verified: row.verified,
+    verified: computeVerifiedBadge(row.type),
     country: row.country,
     languages: row.languages,
     avatarUrl: row.avatar_url,
@@ -1038,7 +1061,7 @@ export async function listChannels(): Promise<ChannelDetail[]> {
     kind: row.type,
     tagline: row.tagline,
     about: row.description,
-    verified: row.verified,
+    verified: computeVerifiedBadge(row.type),
     country: row.country,
     languages: row.languages,
     avatarUrl: row.avatar_url,

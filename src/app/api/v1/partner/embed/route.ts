@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
   }
 
   const scopes = auth.scopes ?? [];
-  if (!scopes.includes("embed:player") && !scopes.includes("admin")) {
+  if (!scopes.includes("embed:player")) {
     return NextResponse.json(
       { error: "Forbidden. 'embed:player' scope is required for this endpoint." },
       { status: 403 },
@@ -57,9 +57,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "videoId is required" }, { status: 400 });
   }
 
-  // Check if video exists
+  // Only published content is embeddable — matches GET /api/v1/partner/videos's own
+  // filter. Without this, a partner key could embed another channel's draft, private, or
+  // restricted video simply by guessing/enumerating its id.
   const video = await queryOne<{ id: string; title: string }>(
-    `select id, title from videos where id = $1`,
+    `select id, title from videos where id = $1 and status = 'published'`,
     [body.videoId],
   );
 

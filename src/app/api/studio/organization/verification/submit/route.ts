@@ -28,6 +28,8 @@ export async function POST(request: NextRequest) {
     switch (result.outcome) {
       case "not_member":
         return NextResponse.json({ error: "You aren't a member of that organisation." }, { status: 403 });
+      case "not_eligible":
+        return NextResponse.json({ error: "Creator channels don't go through verification." }, { status: 403 });
       case "already_submitted":
         return NextResponse.json({ error: "This verification has already been submitted." }, { status: 409 });
       case "invalid":

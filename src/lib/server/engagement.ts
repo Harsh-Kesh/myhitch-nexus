@@ -438,10 +438,14 @@ export interface EngagementProgress {
 
 /** durationSeconds comes from the video row, not watch_progress (which doesn't store
  * one — see the migration) — a video's own length is a property of the video, not of any
- * one account's progress through it. */
+ * one account's progress through it. `profileId`, if given, must be ownership-verified by
+ * the caller (see familyProfiles.ts's verifyOwnProfileId()) — `is not distinct from` here
+ * is what makes a null profileId correctly match only the no-profile-selected rows, not
+ * every row regardless of profile (a plain `=` would never match a NULL column at all). */
 export async function getWatchProgress(
   accountId: string,
   videoId: string,
+  profileId: string | null = null,
 ): Promise<EngagementProgress | null> {
   const row = await queryOne<{
     position_seconds: number;
@@ -452,8 +456,8 @@ export async function getWatchProgress(
     `select wp.position_seconds, wp.completed, wp.updated_at, v.duration_seconds
      from watch_progress wp
      join videos v on v.id = wp.video_id
-     where wp.account_id = $1 and wp.video_id = $2`,
-    [accountId, videoId],
+     where wp.account_id = $1 and wp.video_id = $2 and wp.profile_id is not distinct from $3`,
+    [accountId, videoId, profileId],
   );
   if (!row) return null;
   return {
@@ -479,6 +483,7 @@ export async function saveWatchProgress(
   videoId: string,
   positionSeconds: number,
   meta: { country?: string | null; deviceType?: string | null; language?: string | null } = {},
+  profileId: string | null = null,
 ): Promise<EngagementProgress | null> {
   const video = await queryOne<{ duration_seconds: number }>(
     `select duration_seconds from videos where id = $1`,
@@ -489,30 +494,38 @@ export async function saveWatchProgress(
   const clampedPosition = Math.max(0, Math.round(positionSeconds));
   const completed = video.duration_seconds > 0 && clampedPosition / video.duration_seconds > 0.95;
 
-  // xmax = 0 is the standard Postgres idiom for "did this upsert just insert a brand new
-  // row, or update an existing one" from inside the same statement — a freshly inserted
-  // row has never had a transaction ID written to its xmax, an updated one always has.
-  const row = await queryOne<{ updated_at: string; inserted: boolean }>(
-    `insert into watch_progress (account_id, video_id, position_seconds, completed, updated_at, country, device_type, language)
-     values ($1, $2, $3, $4, now(), $5, $6, $7)
-     on conflict (account_id, video_id) do update set
+  // View-counting must stay anchored to (account, video), never to profile — a family
+  // account with 3 profiles watching the same title would otherwise create 3 distinct
+  // profile-scoped rows and triple-count the same account's view. Checked before the
+  // per-profile upsert below, which is a separate row per profile by design.
+  const hadAnyPriorRow = Boolean(
+    await queryOne<{ x: number }>(`select 1 as x from watch_progress where account_id = $1 and video_id = $2 limit 1`, [
+      accountId,
+      videoId,
+    ]),
+  );
+
+  const row = await queryOne<{ updated_at: string }>(
+    `insert into watch_progress (account_id, video_id, profile_id, position_seconds, completed, updated_at, country, device_type, language)
+     values ($1, $2, $3, $4, $5, now(), $6, $7, $8)
+     on conflict (account_id, video_id, coalesce(profile_id, '00000000-0000-0000-0000-000000000000'::uuid)) do update set
        position_seconds = excluded.position_seconds,
        completed = excluded.completed,
        updated_at = excluded.updated_at,
        country = coalesce(excluded.country, watch_progress.country),
        device_type = coalesce(excluded.device_type, watch_progress.device_type),
        language = coalesce(excluded.language, watch_progress.language)
-     returning updated_at, (xmax = 0) as inserted`,
-    [accountId, videoId, clampedPosition, completed, meta.country ?? null, meta.deviceType ?? null, meta.language ?? null],
+     returning updated_at`,
+    [accountId, videoId, profileId, clampedPosition, completed, meta.country ?? null, meta.deviceType ?? null, meta.language ?? null],
   );
 
   // The video page's own view count (videos.views) was never incremented anywhere —
   // Analytics reads it live from watch_progress directly, so it always looked current,
   // while the number shown on the video page itself was whatever the catalogue was
-  // seeded with and never changed. Counted once per (account, video), the first time this
-  // account's watch_progress row for it is created — not on every position update a
-  // playing video sends, which would inflate it every few seconds instead.
-  if (row!.inserted) {
+  // seeded with and never changed. Counted once per (account, video) ever, not on every
+  // position update a playing video sends, which would inflate it every few seconds
+  // instead, and not once per profile (see hadAnyPriorRow above).
+  if (!hadAnyPriorRow) {
     await query(`update videos set views = views + 1 where id = $1`, [videoId]);
   }
 
@@ -522,6 +535,6 @@ export async function saveWatchProgress(
     durationSeconds: video.duration_seconds,
     updatedAt: row!.updated_at,
     completed,
-    viewCounted: row!.inserted,
+    viewCounted: !hadAnyPriorRow,
   };
 }

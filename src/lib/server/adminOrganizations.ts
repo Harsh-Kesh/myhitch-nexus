@@ -175,6 +175,38 @@ export async function decideOrganisationVerification(
   return { outcome: "success" };
 }
 
+export type SetSeatLimitResult = { outcome: "success" } | { outcome: "not_found" };
+
+/** The real counterpart of "Upgrade to Enterprise for unlimited seats" — Enterprise has no
+ * self-service checkout (it's a "Contact Sales" lead, per pricing_plans.sql), so nothing
+ * in the product can raise this on its own; a super-admin sets it once a deal actually
+ * closes. `seatLimit: null` means unlimited. Restricted to super-admin (not moderator,
+ * unlike verification decisions above) since this changes what a paying customer can do,
+ * not a content/brand-safety call. */
+export async function setOrganizationSeatLimit(
+  admin: { id: string; name: string; roles: string[] },
+  organizationId: string,
+  seatLimit: number | null,
+): Promise<SetSeatLimitResult> {
+  const rows = await query<{ id: string }>(
+    `update organizations set seat_limit = $2 where id = $1 returning id`,
+    [organizationId, seatLimit],
+  );
+  if (rows.length === 0) return { outcome: "not_found" };
+
+  await recordAudit({
+    actorAccountId: admin.id,
+    actorName: admin.name,
+    actorRole: describeAdminTier(admin.roles),
+    action: "organisation.seat_limit_set",
+    targetType: "organisation",
+    targetId: organizationId,
+    reason: seatLimit === null ? "Seat limit set to unlimited (Enterprise)." : `Seat limit set to ${seatLimit}.`,
+    severity: "info",
+  });
+  return { outcome: "success" };
+}
+
 // Re-exported so the admin route doesn't need a second import of storage.ts just for
 // this one helper.
 export { createDocumentUrl };

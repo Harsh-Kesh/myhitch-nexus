@@ -1,6 +1,7 @@
 // Server-only. Creator Community Feed, Announcements & Discussions (Creator Tier)
 import "server-only";
 import { query, queryOne } from "./db";
+import { checkRealContentAccess } from "./subscriptions";
 
 export interface CreatorPost {
   id: string;
@@ -58,6 +59,30 @@ interface CommentRow {
   created_at: string;
 }
 
+/** Is `accountId` allowed to see a post with this audience level? "subscribers" maps to
+ * a real active platform subscription (Premium/Family) — per-channel subscriptions were
+ * retired under the six-tier pricing model (DEC-3), so platform tier is the only real
+ * "subscriber" concept left. "patrons" maps to a real completed recurring creator_tips
+ * row for this specific channel — there's no separate patron-membership table, and no
+ * sync for a since-cancelled Stripe patron subscription, so this is "ever became a
+ * patron of this channel," a disclosed simplification, not a currently-active-only check. */
+async function canViewAudience(
+  audience: "public" | "subscribers" | "patrons",
+  channelId: string,
+  viewerAccountId: string | null,
+): Promise<boolean> {
+  if (audience === "public") return true;
+  if (!viewerAccountId) return false;
+  if (audience === "subscribers") return checkRealContentAccess(viewerAccountId);
+  const patronRow = await queryOne<{ id: string }>(
+    `select id from creator_tips
+     where channel_id = $1 and account_id = $2 and is_patron = true and status = 'completed'
+     limit 1`,
+    [channelId, viewerAccountId],
+  );
+  return Boolean(patronRow);
+}
+
 export async function listChannelPosts(
   channelId: string,
   viewerAccountId?: string | null,
@@ -87,7 +112,19 @@ export async function listChannelPosts(
     params,
   );
 
-  return rows.map((r) => ({
+  // Audience gating happens here, not in SQL — the check itself spans two other real
+  // tables (subscriptions, creator_tips) with different shapes per audience level, and
+  // post volume per channel is small enough that this is simpler than folding both into
+  // one query. Previously missing entirely: any "Patrons Only"/"Subscribers Only" post
+  // was served in full to every viewer, including signed-out requests.
+  const filtered: PostRow[] = [];
+  for (const row of rows) {
+    if (await canViewAudience(row.audience, channelId, viewerAccountId ?? null)) {
+      filtered.push(row);
+    }
+  }
+
+  return filtered.map((r) => ({
     id: r.id,
     channelId: r.channel_id,
     authorId: r.author_id,

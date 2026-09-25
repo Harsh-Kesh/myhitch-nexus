@@ -1,9 +1,20 @@
 // Server-only. Creator Tipping & Patronage (Fan subscriptions & tips)
 // Supports one-time tips and recurring monthly patron contributions for creators.
 import "server-only";
+import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { SITE_URL } from "@/lib/utils";
+
+/** Same flat 10%/90% split used at checkout-creation time (createTipCheckoutSession) —
+ * kept as one function so a renewal invoice's split can never drift from the split
+ * quoted to the fan when they set up patronage. Not yet wired to the admin-configurable
+ * commission_rates table (unlike purchases/rentals/ad revenue) — a known, disclosed gap,
+ * not an oversight; tracked as follow-up work, not blocking real money reaching creators. */
+function splitTipAmount(amountCents: number): { platformFeeCents: number; creatorAmountCents: number } {
+  const platformFeeCents = Math.round(amountCents * 0.1);
+  return { platformFeeCents, creatorAmountCents: amountCents - platformFeeCents };
+}
 
 export interface CreateTipInput {
   channelId: string;
@@ -71,9 +82,21 @@ export async function createTipCheckoutSession(
     return { outcome: "invalid_amount", reason: "Minimum tip amount is 1.00" };
   }
 
-  // Calculate platform fee (10% platform share, 90% creator share)
-  const platformFeeCents = Math.round(amountCents * 0.1);
-  const creatorAmountCents = amountCents - platformFeeCents;
+  // A tip against a channel_id that doesn't exist as a real organization would still
+  // charge the fan's real card (when Stripe is configured) and create a row nothing
+  // could ever attribute or pay out — checked before any Stripe call, not after. The
+  // UUID-shape guard comes first since `organizations.id` is a real uuid column and a
+  // non-UUID channelId (e.g. a mock demo channel's "ch_mara"-style id) would otherwise
+  // make Postgres throw rather than just report "not found".
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(channelId);
+  const channel = isUuid
+    ? await queryOne<{ id: string }>(`select id from organizations where id = $1`, [channelId])
+    : null;
+  if (!channel) {
+    return { outcome: "channel_not_found" };
+  }
+
+  const { platformFeeCents, creatorAmountCents } = splitTipAmount(amountCents);
 
   // Insert pending tip record
   const tip = await queryOne<CreatorTipRow>(
@@ -144,6 +167,22 @@ export async function createTipCheckoutSession(
       account_id: accountId ?? "",
       is_patron: isPatron ? "true" : "false",
     },
+    // For patron (recurring) tips, the resulting Subscription object needs this same
+    // metadata — invoice.paid fires again every renewal month with no reference back to
+    // this Checkout Session, only to the Subscription, so recordPatronRenewalFromInvoice()
+    // has nothing to key off without it. Mirrors subscriptions.ts's own subscription_data
+    // pattern for platform plans.
+    ...(isPatron
+      ? {
+          subscription_data: {
+            metadata: {
+              nexus_action: "creator_tip",
+              channel_id: channelId,
+              account_id: accountId ?? "",
+            },
+          },
+        }
+      : {}),
     success_url: successUrl ?? defaultSuccess,
     cancel_url: cancelUrl ?? defaultCancel,
   });
@@ -177,6 +216,51 @@ export async function completeTip(
   );
 
   return tip;
+}
+
+/**
+ * Records a recurring patron payment from a renewal invoice (the 2nd+ month of a patron
+ * subscription). The first month is already handled by completeTip() off
+ * checkout.session.completed against the pending row createTipCheckoutSession() inserted
+ * — this function deliberately skips `billing_reason === 'subscription_create'` (that
+ * same first invoice) so it's never double-recorded, and inserts a brand-new completed
+ * `creator_tips` row per renewal instead, since each billing cycle is its own real
+ * payment that should show up in the creator's tip feed and revenue.
+ */
+export async function recordPatronRenewalFromInvoice(invoice: Stripe.Invoice): Promise<void> {
+  if (invoice.billing_reason === "subscription_create") return;
+  const subscriptionRef = invoice.parent?.subscription_details?.subscription;
+  const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id;
+  if (!subscriptionId) return;
+
+  const stripe = getStripe();
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  if (subscription.metadata?.nexus_action !== "creator_tip") return;
+
+  const channelId = subscription.metadata.channel_id;
+  const accountId = subscription.metadata.account_id || null;
+  if (!channelId) return;
+
+  const amountCents = invoice.amount_paid;
+  if (amountCents <= 0) return;
+  const { platformFeeCents, creatorAmountCents } = splitTipAmount(amountCents);
+
+  await query(
+    `insert into creator_tips (
+       channel_id, account_id, supporter_name, supporter_email,
+       amount_cents, currency, is_patron, stripe_session_id, stripe_payment_intent_id,
+       status, platform_fee_cents, creator_amount_cents
+     ) values ($1, $2, 'Patron', null, $3, $4, true, $5, null, 'completed', $6, $7)`,
+    [
+      channelId,
+      accountId,
+      amountCents,
+      (invoice.currency ?? "aud").toLowerCase(),
+      subscriptionId,
+      platformFeeCents,
+      creatorAmountCents,
+    ],
+  );
 }
 
 /**

@@ -212,7 +212,11 @@ export function VideoDetailClient() {
 
     if (!video) return;
 
-    // Check if user has Premium or Family subscription access
+    // Check if user has Premium or Family subscription access. The second clause used
+    // to check `s.kind === "platform" && s.status === "active"` alone — no `plan` check
+    // at all — so any active platform subscription row satisfied it; tightened to match
+    // checkRealContentAccess()'s own real definition (plan is premium or family
+    // specifically) exactly, rather than re-deriving a looser approximation of it here.
     const hasPremiumAccess =
       Boolean(
         entitlement?.granted &&
@@ -222,7 +226,7 @@ export function VideoDetailClient() {
             entitlement.reason === "owner"),
       ) ||
       subscriptions.some(
-        (s) => s.kind === "platform" && s.status === "active",
+        (s) => s.status === "active" && (s.plan === "premium" || s.plan === "family"),
       );
 
     if (!hasPremiumAccess) {

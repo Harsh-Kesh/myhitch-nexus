@@ -10,6 +10,28 @@ import "server-only";
 const countryNames = new Intl.DisplayNames(["en"], { type: "region" });
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 
+/** Real client IP behind Cloudflare — `cf-connecting-ip` is the one Cloudflare sets to
+ * the actual visitor IP (unlike `x-forwarded-for`, which it also passes through but which
+ * a client can prepend arbitrary values to). Used for rate-limiting requests that don't
+ * require sign-in (e.g. an anonymous tip) where there's no account id to key on instead. */
+export function clientIpFromHeaders(headers: Headers): string {
+  return headers.get("cf-connecting-ip") ?? headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+}
+
+/** The raw 2-letter ISO 3166-1 code itself (e.g. "GB"), not the display name
+ * `countryFromHeaders()` renders for analytics — this is what `video_rights`'
+ * `permitted_countries`/`blocked_countries` arrays are seeded and authored in (confirmed
+ * against mock-api/data/videos.ts and the rights-declaration upload step), so geo
+ * enforcement must compare against this, not a resolved name. Returns null for a missing
+ * or malformed header, or the "XX"/"T1" unknown/Tor sentinels — geo-restriction fails
+ * open on an unresolvable country rather than blocking every visitor whenever Cloudflare
+ * can't determine one (e.g. local/non-Cloudflare requests in dev). */
+export function countryCodeFromHeaders(headers: Headers): string | null {
+  const code = headers.get("cf-ipcountry");
+  if (!code || code.length !== 2 || code.toUpperCase() === "XX" || code.toUpperCase() === "T1") return null;
+  return code.toUpperCase();
+}
+
 /** `cf-ipcountry` is a 2-letter ISO 3166-1 code, or "XX"/"T1" for unknown/Tor — both of
  * which Intl.DisplayNames also can't resolve, so those collapse to null same as absent. */
 export function countryFromHeaders(headers: Headers): string | null {

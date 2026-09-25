@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Switch } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { looksLikeRealId } from "@/lib/mock-api";
+import { looksLikeRealId, verifyProfilePin } from "@/lib/mock-api";
 import {
   qk,
   useCurrentUser,
@@ -69,6 +69,7 @@ export default function SwitchProfilePage() {
   const [pinChallengeProfile, setPinChallengeProfile] = React.useState<ViewerProfile | null>(null);
   const [enteredPin, setEnteredPin] = React.useState("");
   const [pinError, setPinError] = React.useState("");
+  const [verifyingPin, setVerifyingPin] = React.useState(false);
 
   if (!user) {
     return (
@@ -85,9 +86,9 @@ export default function SwitchProfilePage() {
 
   const isRealAccount = looksLikeRealId(user.id);
   const profiles = user.profiles || [];
-  const hasFamilyPlan = subscriptions.some(
-    (s) => s.status === "active" && (s.id.includes("family") || s.name.toLowerCase().includes("family")),
-  );
+  // The real `plan` field, not string-matching id/name — see account/settings's
+  // identical fix for why that was a real, live bug.
+  const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
   const canAddMore = profiles.length < 5;
 
   const handleAddProfileClick = () => {
@@ -117,7 +118,7 @@ export default function SwitchProfilePage() {
     }
 
     // If profile has a PIN lock and isn't already active, prompt for PIN
-    if (profile.pinCode && profile.id !== user.activeProfileId) {
+    if ((profile.hasPinSet || profile.pinCode) && profile.id !== user.activeProfileId) {
       setPinChallengeProfile(profile);
       setEnteredPin("");
       setPinError("");
@@ -143,14 +144,26 @@ export default function SwitchProfilePage() {
     }
   };
 
-  const handleVerifyPin = () => {
+  const handleVerifyPin = async () => {
     if (!pinChallengeProfile) return;
-    if (enteredPin === pinChallengeProfile.pinCode) {
-      const p = pinChallengeProfile;
-      setPinChallengeProfile(null);
-      activateProfile(p);
-    } else {
-      setPinError("Incorrect PIN. Please try again.");
+    setVerifyingPin(true);
+    setPinError("");
+    try {
+      // Always a real server call now — the PIN (or its hash) never lives client-side
+      // for a real account, so there is nothing left to compare against locally. See
+      // profilePin.ts's verifyProfilePin() for the real, rate-limited check.
+      const correct = await verifyProfilePin(pinChallengeProfile.id, enteredPin);
+      if (correct) {
+        const p = pinChallengeProfile;
+        setPinChallengeProfile(null);
+        await activateProfile(p);
+      } else {
+        setPinError("Incorrect PIN. Please try again.");
+      }
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Couldn't verify the PIN. Try again.");
+    } finally {
+      setVerifyingPin(false);
     }
   };
 
@@ -385,7 +398,7 @@ export default function SwitchProfilePage() {
 
                     {/* Badges on Avatar */}
                     <div className="pointer-events-none absolute -top-1.5 -right-1.5 flex items-center gap-1">
-                      {profile.pinCode && (
+                      {(profile.hasPinSet || profile.pinCode) && (
                         <span
                           title="PIN Protected"
                           className="flex size-6 items-center justify-center rounded-full bg-surface-3 text-fg border border-border shadow-sm"
@@ -516,7 +529,7 @@ export default function SwitchProfilePage() {
               <Button variant="ghost" onClick={() => setPinChallengeProfile(null)}>
                 Cancel
               </Button>
-              <Button variant="primary" onClick={handleVerifyPin}>
+              <Button variant="primary" onClick={handleVerifyPin} loading={verifyingPin}>
                 Unlock Profile
               </Button>
             </div>

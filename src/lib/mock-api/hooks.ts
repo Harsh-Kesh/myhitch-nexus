@@ -541,7 +541,7 @@ export function useVotePoll(eventId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ pollId, optionId }: { pollId: string; optionId: string }) =>
-      api.votePoll(pollId, optionId),
+      api.votePoll(eventId, pollId, optionId),
     onSuccess: () => client.invalidateQueries({ queryKey: qk.polls(eventId) }),
   });
 }
@@ -953,8 +953,20 @@ export function useSwitchProfile() {
 export const usePurchases = () =>
   useQuery({ queryKey: qk.purchases, queryFn: api.getPurchases });
 
-export const useSubscriptions = () =>
-  useQuery({ queryKey: qk.subscriptions, queryFn: api.getSubscriptions });
+export const useSubscriptions = () => {
+  // Real, reproducible race found live: on a fresh page load, this query's queryFn reads
+  // store.user.id/store.loggedIn synchronously to decide mock-vs-real — but those are
+  // only made correct as a *side effect* of useCurrentUser()'s own queryFn resolving
+  // (applyRealAccount()/store.loggedIn = true|false, both in index.ts). Nothing
+  // previously stopped this query from firing (and getting cached) before that
+  // resolution landed, so a signed-in real account with zero real subscriptions could
+  // observe /plans still showing the seeded demo persona's "Active Plan" on Premium —
+  // whichever request won the race, not whichever was actually true. Gating on
+  // useCurrentUser() having settled (same qk.user cache entry, so this adds no extra
+  // request) closes the window without touching the mock/real branch logic itself.
+  const { isLoading: isUserLoading } = useCurrentUser();
+  return useQuery({ queryKey: qk.subscriptions, queryFn: api.getSubscriptions, enabled: !isUserLoading });
+};
 
 export function useCancelSubscription() {
   const client = useQueryClient();

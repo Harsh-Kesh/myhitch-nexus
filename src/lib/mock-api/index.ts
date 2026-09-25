@@ -9,7 +9,7 @@
    signatures and return types are the contract.
    ========================================================================= */
 
-import { sleep } from "@/lib/utils";
+import { pickGradient, sleep } from "@/lib/utils";
 import { buildAdminTrend, buildCampaignSeries, buildCreatorAnalytics, buildRevenueSummary } from "./data/analytics";
 import { NOW, daysAhead } from "./data/videos";
 import { nextId, persistLogin, recordAudit, store } from "./store";
@@ -34,6 +34,7 @@ import type {
   ContentType,
   CreatorAnalytics,
   Entitlement,
+  EntitlementReason,
   FeaturedContent,
   Lead,
   LiveEvent,
@@ -45,6 +46,7 @@ import type {
   Organisation,
   PlatformAnalyticsSummary,
   PlatformConfigTables,
+  PlaybackBlockReason,
   Playlist,
   Poll,
   ProductLink,
@@ -207,10 +209,13 @@ export async function getRelatedVideos(id: string, limit = 12): Promise<Video[]>
         if (searchRes.ok) {
           const data = (await searchRes.json()) as { items?: Video[] };
           const items = Array.isArray(data.items) ? data.items : [];
-          const filtered = items.filter((v) => v.id !== id);
-          if (filtered.length > 0) {
-            return filtered.slice(0, limit);
-          }
+          // A real, genuinely empty result (this channel has no other videos yet) must
+          // return empty, not fall through to the mock catalogue below — same "real empty
+          // result discarded for a fake fallback" bug already found and fixed twice
+          // elsewhere (getChatMessages/getPolls) — `.length > 0` used to gate this exactly
+          // the same way, so a real video with no real related videos yet showed
+          // fabricated mock titles in its "related" rail instead of an honest empty one.
+          return items.filter((v) => v.id !== id).slice(0, limit);
         }
       }
     } catch {
@@ -511,6 +516,37 @@ export async function getEntitlement(
 
   const base = { videoId, userId, requestCountry: country };
 
+  // Real videos: every gate (owner/geo/age/free/ad-supported/payment) is now enforced
+  // server-side, in one place (playbackAuthorization.ts's authorizeVideoAccess(), behind
+  // this route) — for every caller, signed in or not. This used to only be true for the
+  // one case that goes through a real payment; owner/geo/age/free/ad-supported below were
+  // read straight from client-side mock store state (store.user.channelId,
+  // store.requestCountry, store.user.profiles) for a real video too, which a client could
+  // simply spoof. Everything from here down the function is mock-store logic that stays
+  // exactly as it was, but only for a mock video now.
+  if (looksLikeRealId(videoId)) {
+    const profileParam = looksLikeRealId(store.user.activeProfileId ?? "")
+      ? `?profileId=${encodeURIComponent(store.user.activeProfileId!)}`
+      : "";
+    const res = await fetch(`/api/videos/${videoId}/entitlement/${profileParam}`);
+    if (res.ok) {
+      const real = (await res.json()) as {
+        granted: boolean;
+        reason?: EntitlementReason;
+        blockReason?: PlaybackBlockReason;
+        expiresAt?: string;
+      };
+      if (!real.granted) {
+        return { ...base, granted: false, reason: "none", blockReason: real.blockReason ?? "unavailable" };
+      }
+      return { ...base, granted: true, reason: real.reason ?? "purchased", expiresAt: real.expiresAt };
+    }
+    // The real gate is unreachable — the same honest "unavailable" state the not-found
+    // branch above uses, rather than falling into the mock logic below with real video
+    // data (exactly the bug this branch exists to close).
+    return { ...base, granted: false, reason: "none", blockReason: "unavailable" };
+  }
+
   // Owner always plays their own content, including drafts.
   if (store.user.channelId === video.channelId) {
     return { ...base, granted: true, reason: "owner" };
@@ -577,39 +613,6 @@ export async function getEntitlement(
       reason: unlocked.kind === "rent" ? "rented" : unlocked.kind === "buy" ? "purchased" : "ticket",
       expiresAt: unlocked.expiresAt ?? undefined,
     };
-  }
-
-  // Real Stripe-backed entitlements (docs/DEVELOPMENT-PLAN.md's P3 first slice) — for a
-  // real video and a real signed-in account, this is the actual "did they buy/rent/
-  // unlock it" answer; store.purchases below can never contain a real video's id, so it
-  // would otherwise just fall through to the honest preview state every real paid video
-  // used to hit unconditionally.
-  if (looksLikeRealId(videoId) && looksLikeRealId(userId)) {
-    const res = await fetch(`/api/videos/${videoId}/entitlement/`);
-    if (res.ok) {
-      const real = (await res.json()) as {
-        granted: boolean;
-        kind?: "buy" | "rent" | "ppv" | "subscription" | "membership";
-        expiresAt?: string;
-      };
-      if (real.granted) {
-        return {
-          ...base,
-          granted: true,
-          reason:
-            real.kind === "rent"
-              ? "rented"
-              : real.kind === "ppv"
-                ? "ticket"
-                : real.kind === "subscription"
-                  ? "subscription"
-                  : real.kind === "membership"
-                    ? "membership"
-                    : "purchased",
-          expiresAt: real.expiresAt,
-        };
-      }
-    }
   }
 
   const owned = store.purchases.find(
@@ -747,7 +750,10 @@ export async function getRequestCountry(): Promise<string> {
 // so the caller-supplied durationSeconds argument is only used on the mock branch.
 export async function getWatchProgress(videoId: string): Promise<WatchProgress | null> {
   if (looksLikeRealId(videoId)) {
-    const res = await fetch(`/api/videos/${videoId}/progress/`);
+    const profileParam = looksLikeRealId(store.user.activeProfileId ?? "")
+      ? `?profileId=${encodeURIComponent(store.user.activeProfileId!)}`
+      : "";
+    const res = await fetch(`/api/videos/${videoId}/progress/${profileParam}`);
     if (!res.ok) return null;
     const data = (await res.json()) as { progress: WatchProgress | null };
     return data.progress;
@@ -762,10 +768,11 @@ export async function saveWatchProgress(
   durationSeconds: number,
 ): Promise<WatchProgress> {
   if (looksLikeRealId(videoId)) {
+    const profileId = looksLikeRealId(store.user.activeProfileId ?? "") ? store.user.activeProfileId : undefined;
     const res = await fetch(`/api/videos/${videoId}/progress/`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ positionSeconds }),
+      body: JSON.stringify({ positionSeconds, profileId }),
     });
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -793,8 +800,11 @@ export async function saveWatchProgress(
 export async function getContinueWatching(): Promise<
   Array<{ video: Video; progress: WatchProgress }>
 > {
+  const profileParam = looksLikeRealId(store.user.activeProfileId ?? "")
+    ? `?profileId=${encodeURIComponent(store.user.activeProfileId!)}`
+    : "";
   const [real, mock] = await Promise.all([
-    fetch("/api/continue-watching/")
+    fetch(`/api/continue-watching/${profileParam}`)
       .then((res) => (res.ok ? res.json() : { items: [] }))
       .then((data) => (data as { items: Array<{ video: Video; progress: WatchProgress }> }).items)
       .catch(() => [] as Array<{ video: Video; progress: WatchProgress }>),
@@ -1102,6 +1112,59 @@ export async function getWatchlist(): Promise<Video[]> {
 
 /* ================================ Live =================================== */
 
+// Real live_events rows (liveEvents.ts) carry only identity/ownership/lifecycle/access —
+// no vendor exists for real ingest, so the display-only fields the mock LiveEvent shape
+// still requires (streamKey/ingestUrl/posterGradient/viewerCount/...) are synthesized the
+// same deterministic-placeholder way videoPublishing.ts's pickGradient() already does for
+// a real video's poster. LiveSignalPendingSurface (already built) is what actually tells
+// the viewer there's no real video signal — this mapping exists so the event's real
+// identity, ownership and chat/poll access-mode (the parts that don't need a vendor) are
+// reachable from the real UI at all, not to fake a stream that plays.
+const REAL_STATUS_TO_MOCK: Record<string, LiveEvent["status"]> = {
+  scheduled: "upcoming",
+  live: "live",
+  ended: "ended",
+  cancelled: "cancelled",
+};
+
+interface RealLiveEventShape {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string | null;
+  status: "scheduled" | "live" | "ended" | "cancelled";
+  accessType: LiveEvent["accessType"];
+  scheduledStart: string | null;
+  actualStart: string | null;
+  endedAt: string | null;
+  chatEnabled: boolean;
+  createdAt: string;
+}
+
+function mapRealLiveEvent(real: RealLiveEventShape): LiveEvent {
+  return {
+    id: real.id,
+    channelId: real.channelId,
+    title: real.title,
+    description: real.description ?? "",
+    status: REAL_STATUS_TO_MOCK[real.status] ?? "upcoming",
+    accessType: real.accessType,
+    scheduledStart: real.scheduledStart ?? real.createdAt,
+    actualStart: real.actualStart,
+    endedAt: real.endedAt,
+    timezone: "UTC",
+    posterGradient: pickGradient(real.id),
+    viewerCount: 0,
+    peakViewers: 0,
+    streamKey: "",
+    ingestUrl: "",
+    chatEnabled: real.chatEnabled,
+    replayVideoId: null,
+    replayPublished: false,
+    categoryIds: [],
+  };
+}
+
 export async function getLiveEvents(status?: LiveEvent["status"]): Promise<LiveEvent[]> {
   await latency("fast");
   const events = status
@@ -1124,11 +1187,22 @@ export async function getLiveEvents(status?: LiveEvent["status"]): Promise<LiveE
 }
 
 export async function getLiveEvent(id: string): Promise<LiveEvent | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/live/events/${id}/`);
+    if (!res.ok) return null;
+    return mapRealLiveEvent(await res.json());
+  }
   await latency("fast");
   return clone(store.liveEvents.find((event) => event.id === id) ?? null);
 }
 
 export async function getChannelLiveEvents(channelId: string): Promise<LiveEvent[]> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch(`/api/live/events/?channelId=${encodeURIComponent(channelId)}`);
+    if (!res.ok) return [];
+    const data = (await res.json()) as { events: RealLiveEventShape[] };
+    return data.events.map(mapRealLiveEvent);
+  }
   await latency("fast");
   return clone(store.liveEvents.filter((event) => event.channelId === channelId));
 }
@@ -1139,6 +1213,25 @@ export async function createLiveEvent(
     "id" | "streamKey" | "ingestUrl" | "viewerCount" | "peakViewers" | "replayVideoId" | "replayPublished" | "actualStart" | "endedAt"
   >,
 ): Promise<LiveEvent> {
+  if (looksLikeRealId(payload.channelId)) {
+    const res = await fetch("/api/live/events/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: payload.title,
+        description: payload.description,
+        accessType: payload.accessType,
+        scheduledStart: payload.scheduledStart,
+      }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as { error?: string }).error ?? "Failed to create live event");
+    }
+    const data = (await res.json()) as { event: RealLiveEventShape };
+    return mapRealLiveEvent(data.event);
+  }
+
   await latency("slow");
   const event: LiveEvent = {
     ...payload,
@@ -1241,13 +1334,23 @@ export async function publishReplay(eventId: string): Promise<LiveEvent | null> 
 }
 
 export async function startLiveEvent(eventId: string): Promise<LiveEvent | null> {
+  if (looksLikeRealId(eventId)) {
+    const res = await fetch(`/api/live/events/${eventId}/start/`, { method: "POST" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { event: RealLiveEventShape };
+    return mapRealLiveEvent(data.event);
+  }
   await latency();
   const event = store.liveEvents.find((item) => item.id === eventId);
   if (!event) return null;
   event.status = "live";
   event.actualStart = new Date().toISOString();
-  event.viewerCount = Math.floor(Math.random() * 45) + 15;
-  event.peakViewers = event.viewerCount;
+  // Honest 0, not a fabricated number — there is no real viewer-presence tracking behind
+  // this event (no real live-events backend exists at all yet), so any non-zero count
+  // here would be a made-up figure shown as fact across the homepage, live listing, the
+  // event page, channel pages, the studio dashboard and even the admin live panel.
+  event.viewerCount = 0;
+  event.peakViewers = 0;
   recordAudit({
     actor: store.user.name,
     actorRole: "creator",
@@ -1261,6 +1364,12 @@ export async function startLiveEvent(eventId: string): Promise<LiveEvent | null>
 }
 
 export async function endLiveEvent(eventId: string): Promise<LiveEvent | null> {
+  if (looksLikeRealId(eventId)) {
+    const res = await fetch(`/api/live/events/${eventId}/end/`, { method: "POST" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { event: RealLiveEventShape };
+    return mapRealLiveEvent(data.event);
+  }
   await latency();
   const event = store.liveEvents.find((item) => item.id === eventId);
   if (!event) return null;
@@ -1276,7 +1385,13 @@ export async function getChatMessages(eventId: string): Promise<ChatMessage[]> {
     const res = await fetch(`/api/live/${eventId}/chat`);
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.messages) && data.messages.length > 0) {
+      // A real (possibly genuinely empty) result must never fall through to the mock
+      // seed messages below — `.length > 0` used to gate that fallthrough, so a live
+      // event with real but zero chat messages silently showed fabricated seed-persona
+      // conversation instead of an honest empty state. Found live: sent a real chat
+      // message, then saw three messages from personas that never said anything, none of
+      // them the one just sent — the real (correctly empty) response was being discarded.
+      if (Array.isArray(data.messages)) {
         return data.messages.map((m: {
           id: string;
           streamId: string;
@@ -1365,21 +1480,23 @@ export async function getPolls(eventId: string): Promise<Poll[]> {
     const res = await fetch(`/api/live/${eventId}/poll`);
     if (res.ok) {
       const data = await res.json();
-      if (data.poll) {
-        const p = data.poll;
-        const realPoll: Poll = {
-          id: p.id,
-          liveEventId: p.streamId,
-          question: p.question,
-          options: (p.options as { text: string; votes: number }[]).map((opt, idx: number) => ({
-            id: `opt_${idx}`,
-            label: opt.text,
-            votes: opt.votes,
-          })),
-          status: p.status === "active" ? "open" : "closed",
-        };
-        return [realPoll];
-      }
+      // A successful real response with no active poll (data.poll === null, the honest,
+      // common case) must return an empty list, not fall through to fake seed polls —
+      // same class of bug as getChatMessages()'s identical fix just above.
+      if (!data.poll) return [];
+      const p = data.poll;
+      const realPoll: Poll = {
+        id: p.id,
+        liveEventId: p.streamId,
+        question: p.question,
+        options: (p.options as { text: string; votes: number }[]).map((opt, idx: number) => ({
+          id: `opt_${idx}`,
+          label: opt.text,
+          votes: opt.votes,
+        })),
+        status: p.status === "active" ? "open" : "closed",
+      };
+      return [realPoll];
     }
   } catch {
     // Fallback to store
@@ -1387,11 +1504,16 @@ export async function getPolls(eventId: string): Promise<Poll[]> {
   return clone(store.polls.filter((poll) => poll.liveEventId === eventId));
 }
 
-export async function votePoll(pollId: string, optionId: string): Promise<Poll | null> {
+export async function votePoll(eventId: string, pollId: string, optionId: string): Promise<Poll | null> {
   const optionIndex = parseInt(optionId.replace("opt_", ""), 10);
   if (!isNaN(optionIndex)) {
     try {
-      const res = await fetch(`/api/live/stream/poll`, {
+      // Was pointed at the literal path "/api/live/stream/poll" (a URL that doesn't
+      // exist — the real route is /api/live/[id]/poll), so every vote 404'd and silently
+      // fell back to the local-only store below. The real, correctly-built server-side
+      // vote aggregation in liveChat.ts was unreachable from the shipped UI because of
+      // this one wrong path.
+      const res = await fetch(`/api/live/${eventId}/poll`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "vote", pollId, optionIndex }),
@@ -3207,10 +3329,17 @@ export async function getCurrentUser(): Promise<User | null> {
             avatarUrl: string | null;
             isKids: boolean;
             maturityRating: "ALL" | "PG" | "TEEN" | "18+";
-            pinCode: string | null;
+            hasPinSet: boolean;
           }>;
         };
-        if (pData.profiles && pData.profiles.length > 0) {
+        // A real (possibly genuinely empty) profiles list must replace the seeded mock
+        // demo profiles, not leave them in place — `pData.profiles.length > 0` used to gate
+        // this assignment, so any real account with zero real profiles (most accounts —
+        // profiles are an opt-in Family Tier feature) kept showing the mock seed's fake
+        // demo family members in its profile switcher instead of an honest "no profiles
+        // yet" state. Same "real empty result discarded for a mock fallback" bug pattern
+        // already found and fixed twice elsewhere (getChatMessages/getPolls).
+        if (Array.isArray(pData.profiles)) {
           const profileGradients: Array<[string, string]> = [
             ["#5B8DEF", "#243F80"],
             ["#38A8E0", "#175E85"],
@@ -3227,12 +3356,12 @@ export async function getCurrentUser(): Promise<User | null> {
             avatarUrl: p.avatarUrl ?? undefined,
             maxAgeRating: p.maturityRating === "ALL" ? "U" : p.maturityRating === "PG" ? "PG" : p.maturityRating === "TEEN" ? "12" : "18",
             language: store.user.language,
-            pinCode: p.pinCode,
+            hasPinSet: p.hasPinSet,
             isKids: p.isKids,
           }));
-          if (!store.user.profiles.some((p) => p.id === store.user.activeProfileId)) {
-            store.user.activeProfileId = store.user.profiles[0].id;
-          }
+          store.user.activeProfileId = store.user.profiles.some((p) => p.id === store.user.activeProfileId)
+            ? store.user.activeProfileId
+            : store.user.profiles[0]?.id;
         }
       }
     } catch {
@@ -3284,6 +3413,29 @@ export async function switchProfile(profileId: string): Promise<User> {
   await latency("fast");
   store.user.activeProfileId = profileId;
   return clone(store.user);
+}
+
+/** The real check goes to the server (profilePin.ts) — the PIN itself never lived
+ * client-side for a real account to begin with, so there's nothing to compare locally.
+ * Mock/demo profiles keep the old local compare against `profile.pinCode`, consistent
+ * with the rest of this file's mock branches never enforcing real security. */
+export async function verifyProfilePin(profileId: string, pin: string): Promise<boolean> {
+  if (looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/account/profiles/${profileId}/verify-pin/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `Failed to verify PIN (${res.status}).`);
+    }
+    const data = (await res.json()) as { correct: boolean };
+    return data.correct;
+  }
+  await latency("fast");
+  const profile = store.user.profiles?.find((p) => p.id === profileId);
+  return Boolean(profile?.pinCode && profile.pinCode === pin);
 }
 
 export async function setActiveRole(role: User["activeRole"]): Promise<User> {
@@ -3397,6 +3549,7 @@ export async function getSubscriptions(): Promise<Subscription[]> {
     return data.items.map((item) => ({
       id: item.id,
       name: PLAN_DISPLAY[item.plan]?.name ?? "Nexus Premium",
+      plan: item.plan,
       kind: "platform",
       price: { amount: item.priceMinor, currency: item.currency as Money["currency"] },
       interval: item.billingInterval === "year" ? "annual" : "monthly",
@@ -3407,6 +3560,14 @@ export async function getSubscriptions(): Promise<Subscription[]> {
       cancelAtPeriodEnd: item.cancelAtPeriodEnd,
     }));
   }
+
+  // A guest (store.loggedIn === false) must never see the seeded demo persona's mock
+  // subscriptions — store.user stays pre-populated with that persona at all times (see
+  // store.ts's seed()), so looksLikeRealId(store.user.id) alone doesn't distinguish "a
+  // real signed-in account" from "nobody signed in yet." Found live: /plans showed an
+  // anonymous visitor an "Active Plan"/"Current Plan" badge on Nexus Premium — the exact
+  // same guard watchlist/following/watch-history already use, just missing here.
+  if (!store.loggedIn) return [];
 
   await latency("fast");
   return clone(store.subscriptions);

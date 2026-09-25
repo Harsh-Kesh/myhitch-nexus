@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getRequestAccount } from "@/lib/server/rbac";
 import { createTipCheckoutSession } from "@/lib/server/tipping";
 import { query } from "@/lib/server/db";
+import { checkRateLimit } from "@/lib/server/rateLimit";
+import { clientIpFromHeaders } from "@/lib/server/requestMeta";
 
 const TipSchema = z.object({
   supporterName: z.string().min(1).default("Anonymous Fan"),
@@ -39,7 +41,16 @@ export async function POST(
     );
   }
 
+  // Tips are reachable anonymously (no sign-in required to support a creator), so this
+  // keys on the account when signed in and falls back to IP — the one money-adjacent
+  // surface in this batch with no rate limiting of any kind before now.
   const account = await getRequestAccount(request);
+  const rateLimitKey = `tip:${account?.id ?? clientIpFromHeaders(request.headers)}`;
+  const rateLimit = await checkRateLimit(rateLimitKey, 10, 60 * 60);
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "Too many tip attempts. Try again later." }, { status: 429 });
+  }
+
   if (account) {
     const membership = await query(
       `select 1 from memberships where account_id = $1 and organization_id = $2`,
@@ -69,6 +80,9 @@ export async function POST(
 
     if (result.outcome === "invalid_amount") {
       return NextResponse.json({ error: result.reason }, { status: 400 });
+    }
+    if (result.outcome === "channel_not_found") {
+      return NextResponse.json({ error: "This channel doesn't exist." }, { status: 404 });
     }
 
     return NextResponse.json(result);
