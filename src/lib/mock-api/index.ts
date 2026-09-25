@@ -695,6 +695,30 @@ const MOCK_PLAN_PRICE: Record<"premium" | "family" | "business", { month: number
  * only ever starts one of the three paid platform plans. `interval` defaults to monthly;
  * Family has no yearly option in the pricing model, same restriction the real checkout
  * route enforces. */
+function buildSubscriptionSnapshot(
+  plan: "premium" | "family" | "business",
+  interval: "month" | "year",
+  renewsAt: string,
+): Subscription {
+  const display = PLAN_DISPLAY[plan];
+  const amount = MOCK_PLAN_PRICE[plan][interval] ?? MOCK_PLAN_PRICE[plan].month;
+  return {
+    id: nextId("sub"),
+    name: display.name,
+    kind: "platform",
+    price: { amount, currency: "AUD" },
+    interval: interval === "year" ? "annual" : "monthly",
+    status: "active",
+    renewsAt,
+    startedAt: new Date().toISOString(),
+    benefits: display.benefits,
+  };
+}
+
+/** Channel memberships are retired — see subscriptions.ts's header comment — so this now
+ * only ever starts or changes one of the three paid platform plans. `interval` defaults
+ * to monthly; Family has no yearly option in the pricing model, same restriction the
+ * real checkout route enforces. */
 export async function startSubscription(
   plan: "premium" | "family" | "business",
   interval: "month" | "year" = "month",
@@ -713,9 +737,15 @@ export async function startSubscription(
       body: JSON.stringify({ plan, interval, returnPath: window.location.pathname }),
     });
     if (res.ok) {
-      const { url } = (await res.json()) as { url: string };
-      window.location.href = url;
-      return new Promise<Subscription>(() => {});
+      const data = (await res.json()) as { url?: string; changed?: boolean; currentPeriodEnd?: string | null };
+      if (data.url) {
+        window.location.href = data.url;
+        return new Promise<Subscription>(() => {});
+      }
+      // A real plan change was applied in place against the account's existing Stripe
+      // subscription (see subscriptions.ts's startOrChangePlan) — no redirect, nothing
+      // more to do here beyond letting the caller's mutation resolve normally.
+      return buildSubscriptionSnapshot(plan, interval, data.currentPeriodEnd ?? daysAhead(interval === "year" ? 365 : 30));
     }
     // If Stripe is not configured on this environment (e.g. local dev, test runner),
     // fall through to the mock subscription so the UI and tests continue to work.
@@ -726,19 +756,7 @@ export async function startSubscription(
   }
 
   await latency("slow");
-  const display = PLAN_DISPLAY[plan];
-  const amount = MOCK_PLAN_PRICE[plan][interval] ?? MOCK_PLAN_PRICE[plan].month;
-  const subscription: Subscription = {
-    id: nextId("sub"),
-    name: display.name,
-    kind: "platform",
-    price: { amount, currency: "AUD" },
-    interval: interval === "year" ? "annual" : "monthly",
-    status: "active",
-    renewsAt: daysAhead(interval === "year" ? 365 : 30),
-    startedAt: new Date().toISOString(),
-    benefits: display.benefits,
-  };
+  const subscription = buildSubscriptionSnapshot(plan, interval, daysAhead(interval === "year" ? 365 : 30));
   store.subscriptions = [subscription, ...store.subscriptions];
   return subscription;
 }

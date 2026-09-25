@@ -2,7 +2,7 @@
 // plan (Premium/Family/Business). Real accounts only. `plan`/`interval` default to
 // Premium/monthly so an existing caller that only ever sent `returnPath` keeps working.
 import { NextResponse, type NextRequest } from "next/server";
-import { createPlanCheckoutSession, PLAN_CATALOG, type BillingInterval, type PlanId } from "@/lib/server/subscriptions";
+import { startOrChangePlan, PLAN_CATALOG, type BillingInterval, type PlanId } from "@/lib/server/subscriptions";
 import { StripeNotConfiguredError } from "@/lib/server/commerce";
 import { getRequestAccount } from "@/lib/server/rbac";
 
@@ -29,12 +29,17 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await createPlanCheckoutSession(account.id, account.email, plan, interval, returnPath);
+    const result = await startOrChangePlan(account.id, account.email, plan, interval, returnPath);
     if (result.outcome === "already_subscribed") {
-      return NextResponse.json({ error: "You already have an active subscription." }, { status: 409 });
+      return NextResponse.json({ error: "You're already on that plan." }, { status: 409 });
     }
     if (result.outcome === "invalid_interval") {
       return NextResponse.json({ error: "That plan doesn't offer that billing interval." }, { status: 400 });
+    }
+    if (result.outcome === "changed") {
+      // No redirect: an existing subscription was updated in place (see
+      // startOrChangePlan's header) rather than routed through Checkout again.
+      return NextResponse.json({ changed: true, plan: result.plan, currentPeriodEnd: result.currentPeriodEnd });
     }
     return NextResponse.json({ url: result.url });
   } catch (err) {

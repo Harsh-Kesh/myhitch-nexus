@@ -44,30 +44,104 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
   },
 };
 
-export type CreatePlanCheckoutResult =
-  | { outcome: "success"; url: string }
+export type StartOrChangePlanResult =
+  | { outcome: "checkout_required"; url: string }
+  | { outcome: "changed"; plan: PlanId; currentPeriodEnd: string | null }
   | { outcome: "already_subscribed" }
   | { outcome: "invalid_interval" };
 
-/** `returnPath` is where the page the request came from wants the checkout to land back
- * on — a plan can be started from more than one place (a video paywall, the plans page,
- * account settings), unlike a video purchase which always returns to that one video. */
-export async function createPlanCheckoutSession(
+/** A subscription-item update's `price_data.product` takes a real Stripe Product id —
+ * unlike a Checkout Session line item, there's no inline `product_data` shorthand for it
+ * — so a real plan change needs one stable product per plan to reference. Created once
+ * (a fixed, deterministic id per plan) and reused forever; `resource_missing` on the
+ * first real change for a given plan is the only time this ever calls
+ * `products.create()`. */
+async function getOrCreatePlanProduct(plan: PlanId): Promise<string> {
+  const productId = `nexus_plan_${plan}`;
+  try {
+    await getStripe().products.retrieve(productId);
+  } catch (err) {
+    if ((err as { code?: string }).code !== "resource_missing") throw err;
+    await getStripe().products.create({ id: productId, name: PLAN_CATALOG[plan].productName });
+  }
+  return productId;
+}
+
+/** The one place "subscribe" and "change plan" both go through. `returnPath` is where
+ * the page the request came from wants a Checkout redirect to land back on — unused for
+ * the in-place-change branch, which never redirects at all (the existing subscription's
+ * Stripe Customer already has a saved default payment method from its own original
+ * Checkout, so a change is charged/credited against that directly). A plan can be
+ * started or changed from more than one place (a video paywall, the plans page, account
+ * settings). */
+export async function startOrChangePlan(
   accountId: string,
   accountEmail: string,
   plan: PlanId,
   interval: BillingInterval,
   returnPath: string,
-): Promise<CreatePlanCheckoutResult> {
+): Promise<StartOrChangePlanResult> {
   const definition = PLAN_CATALOG[plan];
   const unitAmount = definition.prices[interval];
   if (!unitAmount) return { outcome: "invalid_interval" };
 
-  const existing = await queryOne<{ id: string }>(
-    `select id from subscriptions where account_id = $1 and plan = $2 and status in ('active', 'past_due')`,
-    [accountId, plan],
+  // Any existing active/past_due row for this account on ANY plan — not just this one.
+  // Whether this is a brand-new subscription or a change to one already running hinges
+  // on whether the account has a paid subscription at all, never on which plan it
+  // happens to be. Found live 2026-09-25: the previous version of this check only looked
+  // for an existing row on the SAME plan, so switching Premium -> Family sailed straight
+  // through to a brand-new Checkout Session — a second, independent Stripe subscription
+  // billing in parallel with the first, instead of replacing it.
+  const existing = await queryOne<{
+    id: string;
+    plan: PlanId;
+    billing_interval: BillingInterval;
+    stripe_subscription_id: string;
+  }>(
+    `select id, plan, billing_interval, stripe_subscription_id from subscriptions
+     where account_id = $1 and status in ('active', 'past_due') limit 1`,
+    [accountId],
   );
-  if (existing) return { outcome: "already_subscribed" };
+
+  if (existing && existing.plan === plan && existing.billing_interval === interval) {
+    return { outcome: "already_subscribed" };
+  }
+
+  if (existing) {
+    // A real change to an already-running subscription: swap its one line item's price
+    // in place (same subscription id, same items[0].id) rather than starting a second
+    // Stripe subscription. `always_invoice` settles the prorated difference immediately
+    // — charged now for an upgrade, credited now for a downgrade — instead of silently
+    // carrying it to the next renewal invoice, so what happened on screen matches what
+    // Stripe actually billed right away.
+    const stripeSubscription = await getStripe().subscriptions.retrieve(existing.stripe_subscription_id);
+    const itemId = stripeSubscription.items.data[0]?.id;
+    if (!itemId) throw new Error(`Stripe subscription ${existing.stripe_subscription_id} has no line item.`);
+    const productId = await getOrCreatePlanProduct(plan);
+
+    const updated = await getStripe().subscriptions.update(existing.stripe_subscription_id, {
+      items: [
+        {
+          id: itemId,
+          price_data: {
+            currency: definition.currency,
+            product: productId,
+            unit_amount: unitAmount,
+            recurring: { interval },
+          },
+        },
+      ],
+      proration_behavior: "always_invoice",
+      metadata: { accountId, plan },
+    });
+    await upsertSubscriptionFromStripe(updated);
+    const item = updated.items.data[0];
+    return {
+      outcome: "changed",
+      plan,
+      currentPeriodEnd: item?.current_period_end ? new Date(item.current_period_end * 1000).toISOString() : null,
+    };
+  }
 
   const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
@@ -92,7 +166,7 @@ export async function createPlanCheckoutSession(
     metadata: { accountId, plan },
   });
   if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
-  return { outcome: "success", url: session.url };
+  return { outcome: "checkout_required", url: session.url };
 }
 
 function mapStripeStatus(status: Stripe.Subscription.Status): "active" | "past_due" | "cancelled" | "incomplete" {
