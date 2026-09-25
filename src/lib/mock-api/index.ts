@@ -883,6 +883,29 @@ export async function postComment(videoId: string, body: string): Promise<Commen
   return clone(comment);
 }
 
+// Was static display text with no click handler anywhere in the code — see
+// engagement.ts's toggleCommentLike() for the real per-account toggle behind this.
+export async function toggleCommentLike(
+  videoId: string,
+  commentId: string,
+): Promise<{ liked: boolean; likes: number } | null> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/videos/${videoId}/comments/${commentId}/like/`, { method: "POST" });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not like this comment.");
+    }
+    return (await res.json()) as { liked: boolean; likes: number };
+  }
+
+  await latency("fast");
+  const comment = store.comments.find((item) => item.id === commentId);
+  if (!comment) return null;
+  comment.likedByMe = !comment.likedByMe;
+  comment.likes += comment.likedByMe ? 1 : -1;
+  return { liked: Boolean(comment.likedByMe), likes: comment.likes };
+}
+
 export async function replyToComment(
   commentId: string,
   body: string,

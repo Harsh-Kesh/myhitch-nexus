@@ -102,6 +102,9 @@ export interface EngagementComment {
   body: string;
   createdAt: string;
   likes: number;
+  /** Only meaningful when getComments() was called with a viewer account — whether *that*
+   * account has liked this comment. Undefined for an anonymous read. */
+  likedByMe?: boolean;
   pinned: boolean;
   heartedByCreator: boolean;
   status: "published" | "held" | "removed";
@@ -118,6 +121,7 @@ interface CommentRow {
   status: "published" | "held" | "removed";
   held_reason: string | null;
   likes: number;
+  liked_by_me: boolean;
   pinned: boolean;
   hearted_by_creator: boolean;
   created_at: string;
@@ -135,6 +139,7 @@ function mapCommentRow(row: CommentRow): Omit<EngagementComment, "replies"> {
     body: row.body,
     createdAt: row.created_at,
     likes: row.likes,
+    likedByMe: row.liked_by_me,
     pinned: row.pinned,
     heartedByCreator: row.hearted_by_creator,
     status: row.status,
@@ -155,6 +160,7 @@ function mapReplyRow(row: CommentRow): Omit<EngagementComment, "replies" | "vide
     body: comment.body,
     createdAt: comment.createdAt,
     likes: comment.likes,
+    likedByMe: comment.likedByMe,
     pinned: comment.pinned,
     heartedByCreator: comment.heartedByCreator,
     status: comment.status,
@@ -162,25 +168,30 @@ function mapReplyRow(row: CommentRow): Omit<EngagementComment, "replies" | "vide
   };
 }
 
-const COMMENT_COLUMNS = `
-  c.id, c.video_id, c.account_id, c.parent_comment_id, c.body, c.status, c.held_reason,
-  c.likes, c.pinned, c.hearted_by_creator, c.created_at, a.full_name, a.handle
-`;
 const COMMENT_JOIN = `join accounts a on a.id = c.account_id`;
 
-export async function getComments(videoId: string): Promise<EngagementComment[]> {
+function commentColumns(viewerAccountId?: string | null): string {
+  return `
+    c.id, c.video_id, c.account_id, c.parent_comment_id, c.body, c.status, c.held_reason,
+    c.likes, c.pinned, c.hearted_by_creator, c.created_at, a.full_name, a.handle,
+    ${viewerAccountId ? "exists(select 1 from video_comment_likes l where l.comment_id = c.id and l.account_id = $2)" : "false"} as liked_by_me
+  `;
+}
+
+export async function getComments(videoId: string, viewerAccountId?: string | null): Promise<EngagementComment[]> {
   // 'held' is deliberately excluded here too, not just 'removed' — a held comment is
   // awaiting moderation and shouldn't be publicly visible yet (the real gap the
   // comment-hold-rules slice of docs/DEVELOPMENT-PLAN.md's P2 entry closes: this
   // previously only excluded 'removed', so a real held comment was shown to every viewer
   // anyway, same as if it had never been held at all).
+  const params = viewerAccountId ? [videoId, viewerAccountId] : [videoId];
   const rows = await query<CommentRow>(
-    `select ${COMMENT_COLUMNS}
+    `select ${commentColumns(viewerAccountId)}
      from video_comments c
      ${COMMENT_JOIN}
      where c.video_id = $1 and c.status = 'published'
      order by c.created_at asc`,
-    [videoId],
+    params,
   );
 
   const repliesByParent = new Map<string, Array<Omit<EngagementComment, "replies" | "videoId">>>();
@@ -195,6 +206,34 @@ export async function getComments(videoId: string): Promise<EngagementComment[]>
     .filter((row) => !row.parent_comment_id)
     .map((row) => ({ ...mapCommentRow(row), replies: repliesByParent.get(row.id) ?? [] }))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.likes - a.likes);
+}
+
+export type ToggleCommentLikeResult = { liked: boolean; likes: number } | null;
+
+/** Real per-account toggle — the like button used to be static display text with no
+ * click handler anywhere in the code. `video_comments.likes` is the same kind of real,
+ * live counter videos.views/likes already are (seeded baseline, incremented/decremented
+ * by real actions from there); `video_comment_likes` is only the per-account uniqueness
+ * guard so the same account can't like a comment twice. */
+export async function toggleCommentLike(accountId: string, commentId: string): Promise<ToggleCommentLikeResult> {
+  const comment = await queryOne<{ id: string }>(`select id from video_comments where id = $1`, [commentId]);
+  if (!comment) return null;
+
+  const existing = await queryOne<{ comment_id: string }>(
+    `select comment_id from video_comment_likes where comment_id = $1 and account_id = $2`,
+    [commentId, accountId],
+  );
+
+  if (existing) {
+    await query(`delete from video_comment_likes where comment_id = $1 and account_id = $2`, [commentId, accountId]);
+    await query(`update video_comments set likes = greatest(likes - 1, 0) where id = $1`, [commentId]);
+  } else {
+    await query(`insert into video_comment_likes (comment_id, account_id) values ($1, $2)`, [commentId, accountId]);
+    await query(`update video_comments set likes = likes + 1 where id = $1`, [commentId]);
+  }
+
+  const row = await queryOne<{ likes: number }>(`select likes from video_comments where id = $1`, [commentId]);
+  return { liked: !existing, likes: row!.likes };
 }
 
 // A free, zero-vendor comment-hold rule (docs/DEVELOPMENT-PLAN.md's P2 entry): any link
@@ -282,7 +321,7 @@ export async function replyToComment(
   );
 
   const rows = await query<CommentRow>(
-    `select ${COMMENT_COLUMNS}
+    `select ${commentColumns()}
      from video_comments c
      ${COMMENT_JOIN}
      where c.id = $1 or c.parent_comment_id = $1
@@ -300,7 +339,7 @@ export async function replyToComment(
  * only one. No ownership check here; the route calling this is responsible for it. */
 export async function listChannelComments(channelId: string): Promise<EngagementComment[]> {
   const rows = await query<CommentRow>(
-    `select ${COMMENT_COLUMNS}
+    `select ${commentColumns()}
      from video_comments c
      ${COMMENT_JOIN}
      join videos v on v.id = c.video_id
@@ -376,7 +415,7 @@ export async function moderateComment(
   });
 
   const updated = await queryOne<CommentRow>(
-    `select ${COMMENT_COLUMNS} from video_comments c ${COMMENT_JOIN} where c.id = $1`,
+    `select ${commentColumns()} from video_comments c ${COMMENT_JOIN} where c.id = $1`,
     [commentId],
   );
   if (!updated) return { outcome: "not_found" };

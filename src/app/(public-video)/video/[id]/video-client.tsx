@@ -20,6 +20,7 @@ import {
   IconStar,
   IconStarFilled,
   IconThumbUp,
+  IconThumbUpFilled,
   IconTrash,
 } from "@tabler/icons-react";
 import {
@@ -62,6 +63,7 @@ import {
   useRemoveVideoFromPlaylist,
   useReplyToComment,
   useReportVideo,
+  useToggleCommentLike,
   useStartSubscription,
   useToggleFollow,
   useToggleWatchlist,
@@ -114,6 +116,7 @@ export function VideoDetailClient() {
   const rateVideo = useRateVideo(videoId);
   const postComment = usePostComment(videoId);
   const replyToComment = useReplyToComment(videoId);
+  const toggleCommentLike = useToggleCommentLike(videoId);
   const startSubscription = useStartSubscription();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -809,10 +812,26 @@ export function VideoDetailClient() {
                             {comment.body}
                           </p>
                           <div className="mt-1.5 flex items-center gap-3 text-xs text-fg-subtle">
-                            <span className="inline-flex items-center gap-1 nx-tnum">
-                              <IconThumbUp className="size-3.5" />
+                            <button
+                              type="button"
+                              aria-label={`Like this comment — ${compactNumber(comment.likes)} likes`}
+                              aria-pressed={Boolean(comment.likedByMe)}
+                              onClick={() => {
+                                if (!requireSignIn("Sign in to like a comment.")) return;
+                                toggleCommentLike.mutate(comment.id);
+                              }}
+                              className={cn(
+                                "inline-flex items-center gap-1 nx-tnum transition-colors hover:text-fg",
+                                comment.likedByMe && "text-accent",
+                              )}
+                            >
+                              {comment.likedByMe ? (
+                                <IconThumbUpFilled className="size-3.5" />
+                              ) : (
+                                <IconThumbUp className="size-3.5" />
+                              )}
                               {compactNumber(comment.likes)}
-                            </span>
+                            </button>
                             <button
                               type="button"
                               onClick={() =>
@@ -898,6 +917,26 @@ export function VideoDetailClient() {
                                     <p className="mt-0.5 text-sm leading-relaxed text-fg-muted">
                                       {reply.body}
                                     </p>
+                                    <button
+                                      type="button"
+                                      aria-label={`Like this reply — ${compactNumber(reply.likes)} likes`}
+                                      aria-pressed={Boolean(reply.likedByMe)}
+                                      onClick={() => {
+                                        if (!requireSignIn("Sign in to like a comment.")) return;
+                                        toggleCommentLike.mutate(reply.id);
+                                      }}
+                                      className={cn(
+                                        "mt-1 inline-flex items-center gap-1 text-xs text-fg-subtle nx-tnum transition-colors hover:text-fg",
+                                        reply.likedByMe && "text-accent",
+                                      )}
+                                    >
+                                      {reply.likedByMe ? (
+                                        <IconThumbUpFilled className="size-3.5" />
+                                      ) : (
+                                        <IconThumbUp className="size-3.5" />
+                                      )}
+                                      {compactNumber(reply.likes)}
+                                    </button>
                                   </div>
                                 </li>
                               ))}

@@ -6,9 +6,10 @@ import { videoExists } from "@/lib/server/catalogue";
 import { getComments, postComment } from "@/lib/server/engagement";
 import { getRequestAccount } from "@/lib/server/rbac";
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const items = await getComments(id);
+  const account = await getRequestAccount(request);
+  const items = await getComments(id, account?.id ?? null);
   return NextResponse.json({ items });
 }
 

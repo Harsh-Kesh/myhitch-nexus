@@ -336,6 +336,8 @@ export interface Comment {
   body: string;
   createdAt: string;
   likes: number;
+  /** Whether the current viewer has liked this comment. */
+  likedByMe?: boolean;
   pinned: boolean;
   heartedByCreator: boolean;
   status: "published" | "held" | "removed";

@@ -23,6 +23,7 @@ import type {
   User,
   Video,
   VideoDraft,
+  ViewerPlaylist,
 } from "./types";
 
 /**
@@ -298,6 +299,32 @@ export function useReplyToComment(videoId: string) {
   });
 }
 
+export function useToggleCommentLike(videoId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string) => api.toggleCommentLike(videoId, commentId),
+    // Optimistic, same reasoning as useToggleWatchlist above — waiting on the round trip
+    // for a like button makes it feel broken, not just slow. Patches both a top-level
+    // comment and one nested in `replies`, since a like can target either.
+    onMutate: async (commentId: string) => {
+      await client.cancelQueries({ queryKey: qk.comments(videoId) });
+      const previous = client.getQueryData<Comment[]>(qk.comments(videoId));
+      const flip = (c: Comment) =>
+        c.id === commentId
+          ? { ...c, likedByMe: !c.likedByMe, likes: c.likes + (c.likedByMe ? -1 : 1) }
+          : c;
+      client.setQueryData<Comment[]>(qk.comments(videoId), (current = []) =>
+        current.map((c) => ({ ...flip(c), replies: c.replies.map((r) => flip(r as Comment)) })),
+      );
+      return { previous };
+    },
+    onError: (_err, _commentId, context) => {
+      if (context?.previous) client.setQueryData(qk.comments(videoId), context.previous);
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: qk.comments(videoId) }),
+  });
+}
+
 export const useModerationComments = (channelId: string) =>
   useQuery({
     queryKey: qk.moderationComments(channelId),
@@ -483,28 +510,47 @@ export function useDeletePlaylist() {
   });
 }
 
-export function useAddVideoToPlaylist() {
+// Shared by add/remove below — the "Save to playlist" modal's checkbox otherwise only
+// flips once the round trip completes, which reads as slow/unresponsive even though the
+// request itself is fast. Patches the exact qk.myPlaylists(videoId) entry the modal reads
+// (the one query scoped to this video, carrying `containsVideo`), same shape as
+// useToggleWatchlist's optimistic update above.
+function useOptimisticPlaylistToggle(nowIn: boolean) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ playlistId, videoId }: { playlistId: string; videoId: string }) =>
-      api.addVideoToPlaylist(playlistId, videoId),
-    onSuccess: (_data, { playlistId }) => {
+      nowIn
+        ? api.addVideoToPlaylist(playlistId, videoId)
+        : api.removeVideoFromPlaylist(playlistId, videoId),
+    onMutate: async ({ playlistId, videoId }) => {
+      const key = qk.myPlaylists(videoId);
+      await client.cancelQueries({ queryKey: key });
+      const previous = client.getQueryData<ViewerPlaylist[]>(key);
+      client.setQueryData<ViewerPlaylist[]>(key, (current = []) =>
+        current.map((p) =>
+          p.id === playlistId
+            ? { ...p, containsVideo: nowIn, videoCount: p.videoCount + (nowIn ? 1 : -1) }
+            : p,
+        ),
+      );
+      return { previous, key };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) client.setQueryData(context.key, context.previous);
+    },
+    onSettled: (_data, _err, { playlistId }) => {
       client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
       client.invalidateQueries({ queryKey: qk.playlistDetail(playlistId) });
     },
   });
 }
 
+export function useAddVideoToPlaylist() {
+  return useOptimisticPlaylistToggle(true);
+}
+
 export function useRemoveVideoFromPlaylist() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: ({ playlistId, videoId }: { playlistId: string; videoId: string }) =>
-      api.removeVideoFromPlaylist(playlistId, videoId),
-    onSuccess: (_data, { playlistId }) => {
-      client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
-      client.invalidateQueries({ queryKey: qk.playlistDetail(playlistId) });
-    },
-  });
+  return useOptimisticPlaylistToggle(false);
 }
 
 /* -------------------------------- Live ---------------------------------- */
