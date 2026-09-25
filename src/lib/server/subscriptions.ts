@@ -133,6 +133,16 @@ export async function startOrChangePlan(
       ],
       proration_behavior: "always_invoice",
       metadata: { accountId, plan },
+      // "cancel at period end" belongs to the subscription object, not to whichever
+      // plan is currently attached to it — since a change re-prices that same
+      // subscription rather than replacing it, a pending cancellation from before the
+      // change would otherwise silently carry over. Found live 2026-09-25: a client
+      // cancelled while on Premium, then changed their mind and switched to Family —
+      // the switch went through, but the subscription was still scheduled to end,
+      // because nothing had told Stripe otherwise. Choosing to change plans is an
+      // unambiguous "I want to keep subscribing" signal, so it clears any pending
+      // cancellation as part of the same update.
+      cancel_at_period_end: false,
     });
     await upsertSubscriptionFromStripe(updated);
     const item = updated.items.data[0];

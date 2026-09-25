@@ -1089,3 +1089,11 @@ Read the real rows directly (this DB is the live one, see the incident above) in
 **Not yet resolved**: the account's `subscriptions` row still shows `cancel_at_period_end: true` from the original cancellation earlier this session — worth the client confirming whether that's intended (the Family upgrade doesn't itself cancel anything, but if the underlying subscription was already marked to cancel at period end before the upgrade, it still will unless resumed). Flagged to the client directly rather than guessed at or silently corrected.
 
 `tsc` clean.
+
+### Plan-change fix, round three: cancelling Premium, then switching to Family, silently kept the cancellation (2026-09-25)
+
+The client clarified the "still shows `cancel_at_period_end: true`" note above: they'd cancelled Premium earlier, then changed their mind and switched to Family — and the pending cancellation carried straight through.
+
+This is a real gap in the plan-change design, not a data mixup: "cancel at period end" belongs to the Stripe **subscription object**, not to whichever plan happens to be priced on it right now. `startOrChangePlan()`'s whole point is re-pricing that same subscription instead of replacing it (that's what stops the double-billing bug two entries up) — but that means a subscription already marked to cancel stays marked to cancel through a plan change unless something explicitly clears it. Nothing did.
+
+**Fix**: the in-place update call now also sends `cancel_at_period_end: false`. Choosing to change plans — as opposed to cancelling — is an unambiguous "I want to keep subscribing" signal, so a plan change now always clears any pending cancellation as part of the same Stripe update. `tsc` clean.
