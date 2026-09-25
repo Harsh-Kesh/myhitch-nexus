@@ -3,6 +3,7 @@
 import {
   IconBell,
   IconBookmark,
+  IconPlaylist,
   IconBroadcast,
   IconBuildingStore,
   IconChevronDown,
@@ -351,6 +352,9 @@ export function SiteHeader() {
                 </MenuItem>
                 <MenuItem href="/account/watchlist" icon={<IconBookmark />}>
                   Watchlist
+                </MenuItem>
+                <MenuItem href="/account/playlists" icon={<IconPlaylist />}>
+                  Playlists
                 </MenuItem>
                 <MenuItem href="/account/downloads" icon={<IconDownload />}>
                   Downloads

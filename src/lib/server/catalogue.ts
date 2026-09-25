@@ -348,6 +348,23 @@ export async function getWatchlistVideos(accountId: string): Promise<VideoSummar
   return rows.map(mapVideoSummary);
 }
 
+/** Full VideoSummary rows for a real viewer playlist's contents, most recently added
+ * first — same shape and same "no status filter" reasoning as getWatchlistVideos()
+ * above. Ownership/visibility is the caller's job (viewerPlaylists.ts) — this just
+ * hydrates whatever playlist_id it's given. */
+export async function getPlaylistVideos(playlistId: string): Promise<VideoSummary[]> {
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from viewer_playlist_items pi
+     join videos v on v.id = pi.video_id
+     ${VIDEO_SUMMARY_JOINS}
+     where pi.playlist_id = $1
+     order by pi.added_at desc`,
+    [playlistId],
+  );
+  return rows.map(mapVideoSummary);
+}
+
 /** Same FK guard as videoExists(), for channel_follows.organization_id. */
 export async function organizationExists(id: string): Promise<boolean> {
   const row = await queryOne<{ id: string }>(`select id from organizations where id = $1`, [id]);

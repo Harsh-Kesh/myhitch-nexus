@@ -47,6 +47,8 @@ export const qk = {
   moderationComments: (channelId: string) => ["moderation-comments", channelId] as const,
   myRating: (videoId: string) => ["my-rating", videoId] as const,
   watchlist: ["watchlist"] as const,
+  myPlaylists: (videoId?: string) => ["my-playlists", videoId] as const,
+  playlistDetail: (id: string) => ["playlist-detail", id] as const,
   continueWatching: ["continue-watching"] as const,
   watchProgress: (videoId: string) => ["watch-progress", videoId] as const,
   liveEvents: (status?: LiveEvent["status"]) => ["live-events", status] as const,
@@ -432,6 +434,76 @@ export function useToggleWatchlist() {
       if (context?.previous) client.setQueryData(qk.watchlist, context.previous);
     },
     onSettled: () => client.invalidateQueries({ queryKey: qk.watchlist }),
+  });
+}
+
+/* ------------------------------ Playlists -------------------------------- */
+
+// videoId, if given, adds a `containsVideo` flag per playlist (the "Save to playlist"
+// modal's checkbox state) computed server-side in the same query.
+export const useMyPlaylists = (videoId?: string) =>
+  useQuery({ queryKey: qk.myPlaylists(videoId), queryFn: () => api.getMyPlaylists(videoId) });
+
+// Prefix-only key, used for invalidation — invalidateQueries matches by prefix, so this
+// clears every useMyPlaylists() variant (with or without a videoId) in one call, not just
+// the exact no-videoId form qk.myPlaylists() would otherwise pin to.
+const MY_PLAYLISTS_PREFIX = ["my-playlists"] as const;
+
+export const usePlaylistDetail = (playlistId: string) =>
+  useQuery({
+    queryKey: qk.playlistDetail(playlistId),
+    queryFn: () => api.getPlaylistDetail(playlistId),
+    enabled: Boolean(playlistId),
+  });
+
+export function useCreateMyPlaylist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.createMyPlaylist,
+    onSuccess: () => client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX }),
+  });
+}
+
+export function useUpdateMyPlaylist(playlistId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Parameters<typeof api.updateMyPlaylist>[1]) => api.updateMyPlaylist(playlistId, patch),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
+      client.invalidateQueries({ queryKey: qk.playlistDetail(playlistId) });
+    },
+  });
+}
+
+export function useDeletePlaylist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletePlaylist,
+    onSuccess: () => client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX }),
+  });
+}
+
+export function useAddVideoToPlaylist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ playlistId, videoId }: { playlistId: string; videoId: string }) =>
+      api.addVideoToPlaylist(playlistId, videoId),
+    onSuccess: (_data, { playlistId }) => {
+      client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
+      client.invalidateQueries({ queryKey: qk.playlistDetail(playlistId) });
+    },
+  });
+}
+
+export function useRemoveVideoFromPlaylist() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ playlistId, videoId }: { playlistId: string; videoId: string }) =>
+      api.removeVideoFromPlaylist(playlistId, videoId),
+    onSuccess: (_data, { playlistId }) => {
+      client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
+      client.invalidateQueries({ queryKey: qk.playlistDetail(playlistId) });
+    },
   });
 }
 

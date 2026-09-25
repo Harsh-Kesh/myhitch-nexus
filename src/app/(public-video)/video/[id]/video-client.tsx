@@ -13,11 +13,14 @@ import {
   IconFlag,
   IconLink,
   IconLoader2,
+  IconPlaylist,
+  IconPlus,
   IconShare3,
   IconShoppingBag,
   IconStar,
   IconStarFilled,
   IconThumbUp,
+  IconTrash,
 } from "@tabler/icons-react";
 import {
   downloadVideo,
@@ -44,15 +47,19 @@ import { VideoCard } from "@/components/video/video-card";
 import { looksLikeRealId } from "@/lib/mock-api";
 import { CONTENT_TYPE_LABELS, categoryById } from "@/lib/mock-api/data/categories";
 import {
+  useAddVideoToPlaylist,
   useComments,
+  useCreateMyPlaylist,
   useCurrentUser,
   useEntitlement,
   useIsFollowing,
   useLikeVideo,
+  useMyPlaylists,
   useMyRating,
   usePostComment,
   useRateVideo,
   useRelatedVideos,
+  useRemoveVideoFromPlaylist,
   useReplyToComment,
   useReportVideo,
   useStartSubscription,
@@ -173,6 +180,7 @@ export function VideoDetailClient() {
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
+  const [playlistOpen, setPlaylistOpen] = React.useState(false);
   const [tab, setTab] = React.useState("about");
   const [commentBody, setCommentBody] = React.useState("");
   const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -484,6 +492,18 @@ export function VideoDetailClient() {
               >
                 {inWatchlist ? <IconBookmarkFilled /> : <IconBookmark />}
                 {inWatchlist ? "In watchlist" : "Watchlist"}
+              </Button>
+
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (!requireSignIn("Sign in to save titles to a playlist.")) return;
+                  setPlaylistOpen(true);
+                }}
+              >
+                <IconPlaylist />
+                Save to playlist
               </Button>
 
               <Button variant="secondary" size="sm" onClick={() => setShareOpen(true)}>
@@ -933,6 +953,7 @@ export function VideoDetailClient() {
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} video={video} />
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} videoId={video.id} />
+      <PlaylistModal open={playlistOpen} onClose={() => setPlaylistOpen(false)} videoId={video.id} />
     </div>
   );
 }
@@ -1457,6 +1478,124 @@ function ShareModal({
             {item.label}
           </Button>
         ))}
+      </div>
+    </Modal>
+  );
+}
+
+function PlaylistModal({
+  open,
+  onClose,
+  videoId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  videoId: string;
+}) {
+  const { toast } = useToast();
+  const { data: playlists = [], isLoading } = useMyPlaylists(open ? videoId : undefined);
+  const addVideo = useAddVideoToPlaylist();
+  const removeVideo = useRemoveVideoFromPlaylist();
+  const createPlaylist = useCreateMyPlaylist();
+  const [creating, setCreating] = React.useState(false);
+  const [newTitle, setNewTitle] = React.useState("");
+
+  const toggle = (playlistId: string, currentlyIn: boolean) => {
+    const mutation = currentlyIn ? removeVideo : addVideo;
+    mutation.mutate(
+      { playlistId, videoId },
+      {
+        onError: (err) =>
+          toast({
+            tone: "error",
+            title: "Couldn't update playlist",
+            description: err instanceof Error ? err.message : "Something went wrong.",
+          }),
+      },
+    );
+  };
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return;
+    try {
+      const playlist = await createPlaylist.mutateAsync({ title: newTitle.trim() });
+      await addVideo.mutateAsync({ playlistId: playlist.id, videoId });
+      setNewTitle("");
+      setCreating(false);
+      toast({ title: "Playlist created", description: `Added to "${playlist.title}".` });
+    } catch (err) {
+      toast({
+        tone: "error",
+        title: "Couldn't create playlist",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+      });
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Save to playlist" size="sm">
+      {isLoading ? (
+        <div className="space-y-2">
+          <div className="nx-skeleton h-10 w-full rounded" />
+          <div className="nx-skeleton h-10 w-full rounded" />
+        </div>
+      ) : playlists.length === 0 && !creating ? (
+        <p className="text-sm text-fg-muted">
+          You don&apos;t have any playlists yet.
+        </p>
+      ) : (
+        <ul className="max-h-64 space-y-1 overflow-y-auto">
+          {playlists.map((playlist) => (
+            <li key={playlist.id} className="flex items-center gap-3 rounded px-2 py-2 hover:bg-surface-2">
+              <Checkbox
+                checked={Boolean(playlist.containsVideo)}
+                onChange={() => toggle(playlist.id, Boolean(playlist.containsVideo))}
+                label={
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate">{playlist.title}</span>
+                    <span className="text-2xs text-fg-subtle nx-tnum">{playlist.videoCount}</span>
+                  </span>
+                }
+                className="w-full items-center"
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="mt-3 border-t border-border pt-3">
+        {creating ? (
+          <div className="space-y-2">
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Playlist name"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreate();
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                loading={createPlaylist.isPending || addVideo.isPending}
+                disabled={!newTitle.trim()}
+                onClick={handleCreate}
+              >
+                Create &amp; add
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="secondary" size="sm" block onClick={() => setCreating(true)}>
+            <IconPlus />
+            New playlist
+          </Button>
+        )}
       </div>
     </Modal>
   );

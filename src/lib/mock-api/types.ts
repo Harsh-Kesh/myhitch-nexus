@@ -309,6 +309,24 @@ export interface Playlist {
   thumbnailUrl?: string;
 }
 
+/** A viewer's own, personal playlist — real from day one (viewerPlaylists.ts), distinct
+ * from the creator-side channel `Playlist` above (a "series" a channel publishes). No
+ * mock/legacy shape to bridge, since a personal playlist never existed for a viewer to
+ * reach before this. */
+export interface ViewerPlaylist {
+  id: string;
+  accountId: string;
+  title: string;
+  description: string | null;
+  visibility: "public" | "unlisted" | "private";
+  videoCount: number;
+  createdAt: string;
+  updatedAt: string;
+  /** Only present when fetched scoped to a specific video (the "Save to playlist" modal's
+   * checkbox state). */
+  containsVideo?: boolean;
+}
+
 export interface Comment {
   id: string;
   videoId: string;

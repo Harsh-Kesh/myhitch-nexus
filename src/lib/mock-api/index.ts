@@ -64,6 +64,7 @@ import type {
   User,
   Video,
   VideoDraft,
+  ViewerPlaylist,
   WatchProgress,
 } from "./types";
 
@@ -1108,6 +1109,75 @@ export async function getWatchlist(): Promise<Video[]> {
     })(),
   ]);
   return [...mock, ...real];
+}
+
+/* ============================ Viewer playlists ============================ */
+// Real from day one (viewerPlaylists.ts) — a personal playlist never existed for a viewer
+// to reach before this (found live, 2026-09-25: "how can I create a playlist, can't find
+// it" — only the channel-side "series" concept and the Watchlist existed). No mock
+// fallback branch, since there's no legacy shape to preserve.
+
+async function playlistsFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${path} failed with ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export async function getMyPlaylists(videoId?: string): Promise<ViewerPlaylist[]> {
+  const query = videoId ? `?videoId=${encodeURIComponent(videoId)}` : "";
+  const data = await fetch(`/api/playlists/${query}`)
+    .then((res) => (res.ok ? res.json() : { items: [] }))
+    .then((d) => d as { items: ViewerPlaylist[] })
+    .catch(() => ({ items: [] as ViewerPlaylist[] }));
+  return data.items;
+}
+
+export async function getPlaylistDetail(
+  playlistId: string,
+): Promise<{ playlist: ViewerPlaylist; videos: Video[] } | null> {
+  const res = await fetch(`/api/playlists/${playlistId}/`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// Named createMyPlaylist/updateMyPlaylist, not createPlaylist/updatePlaylist — those
+// names are already taken by the creator-side channel playlist ("series") feature further
+// down this file; deletePlaylist/addVideoToPlaylist/removeVideoFromPlaylist don't collide.
+export async function createMyPlaylist(input: {
+  title: string;
+  description?: string;
+  visibility?: ViewerPlaylist["visibility"];
+}): Promise<ViewerPlaylist> {
+  const data = await playlistsFetch<{ playlist: ViewerPlaylist }>("/api/playlists/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return data.playlist;
+}
+
+export async function updateMyPlaylist(
+  playlistId: string,
+  patch: { title?: string; description?: string; visibility?: ViewerPlaylist["visibility"] },
+): Promise<void> {
+  await playlistsFetch(`/api/playlists/${playlistId}/`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export async function deletePlaylist(playlistId: string): Promise<void> {
+  await playlistsFetch(`/api/playlists/${playlistId}/`, { method: "DELETE" });
+}
+
+export async function addVideoToPlaylist(playlistId: string, videoId: string): Promise<void> {
+  await playlistsFetch(`/api/playlists/${playlistId}/videos/${videoId}/`, { method: "POST" });
+}
+
+export async function removeVideoFromPlaylist(playlistId: string, videoId: string): Promise<void> {
+  await playlistsFetch(`/api/playlists/${playlistId}/videos/${videoId}/`, { method: "DELETE" });
 }
 
 /* ================================ Live =================================== */
