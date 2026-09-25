@@ -28,7 +28,7 @@ import {
   PLACEMENT_FORMATS,
 } from "@/lib/mock-api/data/advertising";
 import { categories } from "@/lib/mock-api/data/categories";
-import { useChannel, useCreateCampaign, useCurrentUser } from "@/lib/mock-api/hooks";
+import { useChannel, useCreateCampaign, useCurrentUser, useSubmitCampaign } from "@/lib/mock-api/hooks";
 import type { AgeRating, Campaign, CampaignCreative } from "@/lib/mock-api/types";
 import { cn, compactNumber, formatCurrency } from "@/lib/utils";
 
@@ -63,6 +63,7 @@ export default function NewCampaignPage() {
   const router = useRouter();
   const { toast } = useToast();
   const createCampaign = useCreateCampaign();
+  const submitCampaign = useSubmitCampaign();
   const { data: user } = useCurrentUser();
   const advertiserId = user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_ADVERTISER_CHANNEL;
   const { data: advertiserChannel } = useChannel(advertiserId);
@@ -218,17 +219,43 @@ export default function NewCampaignPage() {
       if (uploadFailures > 0) {
         toast({
           title: "Campaign created, but some creatives failed to upload",
-          description: `${uploadFailures} creative(s) didn't upload — add them again from the campaign before it can be approved.`,
+          description: `${uploadFailures} creative(s) didn't upload — add them again from the campaign before it can be submitted.`,
           tone: "warning",
         });
         router.push("/business/campaigns");
         return;
       }
+
+      // Real, automated approval — no moderator/admin involved. Runs the same technical
+      // checks (real playable file, malware scan) a human reviewer had to go on anyway.
+      try {
+        const result = await submitCampaign.mutateAsync(campaign.id);
+        if (result.status === "active") {
+          toast({
+            title: "Campaign is live",
+            description: `“${campaign.name}” passed automated review and is now serving.`,
+          });
+        } else {
+          toast({
+            title: "Campaign couldn't be approved",
+            description: result.reason,
+            tone: "warning",
+          });
+        }
+      } catch (err) {
+        toast({
+          title: "Campaign created, but couldn't be submitted",
+          description: err instanceof Error ? err.message : "Try submitting it again from the campaign page.",
+          tone: "warning",
+        });
+      }
+      router.push("/business/campaigns");
+      return;
     }
 
     toast({
       title: "Campaign submitted",
-      description: `“${campaign.name}” is pending approval and now appears in the admin review queue.`,
+      description: `“${campaign.name}” is now live.`,
     });
     router.push("/business/campaigns");
   };
@@ -237,7 +264,7 @@ export default function NewCampaignPage() {
     <>
       <PageHeader
         title="New campaign"
-        description="Build a campaign, then submit it for approval. No ad server, targeting service or measurement provider is contacted — everything here is mocked."
+        description="Build a campaign, then submit it — approval is automated (real technical checks on your creative, no manual review) and, once approved, it starts serving immediately."
         breadcrumb={
           <Button variant="ghost" size="xs" href="/business/campaigns">
             ← Campaigns

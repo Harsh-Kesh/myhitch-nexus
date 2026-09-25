@@ -5,6 +5,8 @@
 import "server-only";
 import { query, queryOne, withTransaction } from "./db";
 import { createAdCreativeUploadUrl, getAdCreativePublicUrl, adCreativeAssetExists, MAX_AD_CREATIVE_UPLOAD_BYTES } from "./storage";
+import { probeAdCreative } from "./videoValidation";
+import { scanAdCreativeForMalware } from "./malwareScan";
 import { recordAudit } from "./moderation";
 import { describeAdminTier } from "./rbac";
 
@@ -328,6 +330,101 @@ export async function createCreativeUploadUrl(
   await query(`update campaign_creatives set asset_path = $2 where id = $1`, [creativeId, path]);
 
   return { outcome: "success", creativeId, path, signedUrl, token, maxBytes: MAX_AD_CREATIVE_UPLOAD_BYTES };
+}
+
+export type SubmitCampaignResult =
+  | { outcome: "success"; status: "active" | "rejected"; reason: string }
+  | { outcome: "not_found" }
+  | { outcome: "not_org_member" }
+  | { outcome: "invalid_state" };
+
+/** Real automated approval — client decision, 2026-09-25: no platform staff involvement
+ * in ordinary product flows, ad campaigns included. This replaces "wait for a moderator to
+ * click approve" (decideCampaign() below) with the same technical checks a human reviewer
+ * had to go on anyway: does every creative have a real, uploaded, valid, malware-free
+ * video file (probeAdCreative()/scanAdCreativeForMalware(), the same real ffprobe +
+ * ClamAV checks a regular video upload already goes through — extended to ad creatives
+ * for this). decideCampaign()/`/admin/ads` stay in place as a *reactive* override — a
+ * moderator/super-admin can still suspend or reject an already-live campaign (e.g. a
+ * legal complaint), which is a helpdesk-style intervention, not a required gate before a
+ * campaign can ever run.
+ *
+ * Disclosed limitation, same honest gap the rest of this platform's moderation already
+ * has (docs/DEVELOPMENT-PLAN.md's automated-moderation-direction entry): there is no
+ * semantic/brand-safety content classifier without a paid vendor. This automates what's
+ * technically verifiable — the file is real, plays, and scans clean — not "is this ad
+ * appropriate." */
+export async function autoActivateCampaign(accountId: string, campaignId: string): Promise<SubmitCampaignResult> {
+  const campaign = await queryOne<{ advertiser_org_id: string; status: string }>(
+    `select advertiser_org_id, status from campaigns where id = $1`,
+    [campaignId],
+  );
+  if (!campaign) return { outcome: "not_found" };
+  if (!(await isOrgMember(accountId, campaign.advertiser_org_id))) {
+    return { outcome: "not_org_member" };
+  }
+  if (campaign.status !== "pending") {
+    return { outcome: "invalid_state" };
+  }
+
+  const creatives = await query<{ id: string; asset_path: string | null }>(
+    `select id, asset_path from campaign_creatives where campaign_id = $1`,
+    [campaignId],
+  );
+
+  const approvedIds: string[] = [];
+  let firstFailureReason: string | null = null;
+  for (const creative of creatives) {
+    if (!creative.asset_path || !(await adCreativeAssetExists(creative.asset_path))) {
+      firstFailureReason ??= "a creative has no real uploaded file";
+      continue;
+    }
+    const probe = await probeAdCreative(creative.asset_path);
+    if (!probe.ok) {
+      firstFailureReason ??= probe.reason;
+      continue;
+    }
+    const scan = await scanAdCreativeForMalware(creative.asset_path);
+    if (scan.status === "infected") {
+      firstFailureReason ??= `a creative failed a malware scan (${scan.signature})`;
+      continue;
+    }
+    approvedIds.push(creative.id);
+  }
+
+  const system = { actorAccountId: null, actorName: "System (automated approval)", actorRole: "system" } as const;
+
+  if (approvedIds.length === 0) {
+    const reason = `Automatically rejected — no creative passed automated validation${firstFailureReason ? `: ${firstFailureReason}.` : "."}`;
+    await withTransaction(async (tx) => {
+      await tx.query(
+        `update campaigns set status = 'rejected', decided_at = now(), decided_by = null, decision_reason = $2 where id = $1`,
+        [campaignId, reason],
+      );
+      await tx.query(`update campaign_creatives set status = 'rejected' where campaign_id = $1`, [campaignId]);
+    });
+    await recordAudit({ ...system, action: "campaign.auto_rejected", targetType: "campaign", targetId: campaignId, reason, severity: "warning" });
+    return { outcome: "success", status: "rejected", reason };
+  }
+
+  const reason =
+    "Automatically approved — every listed creative passed automated technical validation (real playable video, malware scan clean). No human review.";
+  await withTransaction(async (tx) => {
+    await tx.query(
+      `update campaigns set status = 'active', decided_at = now(), decided_by = null, decision_reason = $2 where id = $1`,
+      [campaignId, reason],
+    );
+    await tx.query(`update campaign_creatives set status = 'approved' where campaign_id = $1 and id = any($2)`, [
+      campaignId,
+      approvedIds,
+    ]);
+    await tx.query(`update campaign_creatives set status = 'rejected' where campaign_id = $1 and not (id = any($2))`, [
+      campaignId,
+      approvedIds,
+    ]);
+  });
+  await recordAudit({ ...system, action: "campaign.auto_approved", targetType: "campaign", targetId: campaignId, reason, severity: "info" });
+  return { outcome: "success", status: "active", reason };
 }
 
 export type CampaignDecisionResult =

@@ -9,12 +9,12 @@
 import "server-only";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createMasterDownloadUrl } from "./storage";
+import { createMasterDownloadUrl, getAdCreativePublicUrl } from "./storage";
 
 const execFileAsync = promisify(execFile);
 
-// ffprobe reads the signed URL directly (native HTTP(S) input support) — generous but
-// bounded, so a slow or hostile remote can't hang the publish request indefinitely.
+// ffprobe reads the URL directly (native HTTP(S) input support) — generous but bounded,
+// so a slow or hostile remote can't hang the publish request indefinitely.
 const PROBE_TIMEOUT_MS = 30_000;
 
 export type ProbeResult = { ok: true; durationSeconds: number } | { ok: false; reason: string };
@@ -24,25 +24,15 @@ interface FfprobeOutput {
   streams?: Array<{ codec_type?: string }>;
 }
 
-/** Runs ffprobe against the uploaded master and confirms it's a real, readable file of
- * the declared kind — rejects a renamed/mismatched file, a corrupted upload, or an
- * empty/truncated one. Returns the real duration on success, since ffprobe already has
- * to read it. `kind` selects which stream type is required: a video upload must contain
- * a video stream, an audio upload must contain an audio stream (and is not rejected for
- * lacking a video one — the opposite of the video check). */
-export async function probeMasterAsset(path: string, kind: "video" | "audio" = "video"): Promise<ProbeResult> {
-  let signedUrl: string;
-  try {
-    signedUrl = await createMasterDownloadUrl(path, kind);
-  } catch {
-    return { ok: false, reason: "Could not access the uploaded file to verify it." };
-  }
-
+/** The actual ffprobe invocation, shared by probeMasterAsset() (video/audio masters, a
+ * signed URL against a private bucket) and probeAdCreative() (ad creatives, a public
+ * bucket — no signing needed) below. */
+async function runFfprobe(url: string, kind: "video" | "audio"): Promise<ProbeResult> {
   let stdout: string;
   try {
     const result = await execFileAsync(
       "ffprobe",
-      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", signedUrl],
+      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", url],
       { timeout: PROBE_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
     );
     stdout = result.stdout;
@@ -74,4 +64,28 @@ export async function probeMasterAsset(path: string, kind: "video" | "audio" = "
   }
 
   return { ok: true, durationSeconds };
+}
+
+/** Runs ffprobe against the uploaded master and confirms it's a real, readable file of
+ * the declared kind — rejects a renamed/mismatched file, a corrupted upload, or an
+ * empty/truncated one. Returns the real duration on success, since ffprobe already has
+ * to read it. `kind` selects which stream type is required: a video upload must contain
+ * a video stream, an audio upload must contain an audio stream (and is not rejected for
+ * lacking a video one — the opposite of the video check). */
+export async function probeMasterAsset(path: string, kind: "video" | "audio" = "video"): Promise<ProbeResult> {
+  let signedUrl: string;
+  try {
+    signedUrl = await createMasterDownloadUrl(path, kind);
+  } catch {
+    return { ok: false, reason: "Could not access the uploaded file to verify it." };
+  }
+  return runFfprobe(signedUrl, kind);
+}
+
+/** Same real check as probeMasterAsset(), for a campaign creative — this is the automated
+ * technical half of campaign approval (campaigns.ts's autoActivateCampaign()): a creative
+ * with no real, readable video behind it can never be approved, human review or not. The
+ * ad-creatives bucket is public, so no signed URL is needed to read it back. */
+export async function probeAdCreative(path: string): Promise<ProbeResult> {
+  return runFfprobe(getAdCreativePublicUrl(path), "video");
 }

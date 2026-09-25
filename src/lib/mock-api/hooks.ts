@@ -825,6 +825,18 @@ export function useCreateCampaign() {
   });
 }
 
+export function useSubmitCampaign() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.submitCampaign,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["campaigns"] });
+      client.invalidateQueries({ queryKey: ["campaign"] });
+      client.invalidateQueries({ queryKey: qk.auditLog() });
+    },
+  });
+}
+
 export function useUpdateCampaignStatus() {
   const client = useQueryClient();
   return useMutation({

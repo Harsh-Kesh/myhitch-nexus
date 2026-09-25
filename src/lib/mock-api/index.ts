@@ -2628,6 +2628,20 @@ export async function uploadCampaignCreative(
   await uploadMasterFile(signedUrl, input.file);
 }
 
+/** The advertiser's own real, automated approval trigger — call once every creative has
+ * finished uploading. No moderator/admin action required; see campaigns.ts's
+ * autoActivateCampaign() for the real technical checks this runs (file validity, malware
+ * scan) and the client's "no platform staff in ordinary product flows" policy behind
+ * removing the manual-review step. */
+export async function submitCampaign(campaignId: string): Promise<{ status: "active" | "rejected"; reason: string }> {
+  const res = await fetch(`/api/campaigns/${campaignId}/submit/`, { method: "POST" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to submit the campaign (${res.status}).`);
+  }
+  return res.json();
+}
+
 export async function getLeads(channelId: string): Promise<Lead[]> {
   await latency("fast");
   return clone(store.leads.filter((lead) => lead.channelId === channelId));
