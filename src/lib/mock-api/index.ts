@@ -732,7 +732,7 @@ export async function startSubscription(
     id: nextId("sub"),
     name: display.name,
     kind: "platform",
-    price: { amount, currency: "GBP" },
+    price: { amount, currency: "AUD" },
     interval: interval === "year" ? "annual" : "monthly",
     status: "active",
     renewsAt: daysAhead(interval === "year" ? 365 : 30),
@@ -1072,6 +1072,21 @@ export async function likeVideo(videoId: string) {
 /** The Report button used to just show a toast on click — no reason, no details, and
  * nothing written anywhere for a real video, ever (see moderation.ts's reportVideo()'s
  * own header comment for the real 'reported' queue this now actually reaches). */
+/** Real signed download URL for a real video — see playbackAuthorization.ts's
+ * mintVideoDownloadUrl() for why the old `video.thumbnailUrl`/fabricated-path approach
+ * always 404'd. Real videos only; mock ids never reach this (see the call site). */
+export async function getVideoDownloadUrl(videoId: string): Promise<string> {
+  const profileId = looksLikeRealId(store.user.activeProfileId ?? "") ? store.user.activeProfileId : undefined;
+  const query = profileId ? `?profileId=${encodeURIComponent(profileId)}` : "";
+  const res = await fetch(`/api/videos/${videoId}/download/${query}`);
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? "Could not prepare this download.");
+  }
+  const data = (await res.json()) as { url: string };
+  return data.url;
+}
+
 export async function reportVideo(videoId: string, reason: string, details?: string): Promise<void> {
   if (looksLikeRealId(videoId)) {
     const res = await fetch(`/api/videos/${videoId}/report/`, {
@@ -2692,8 +2707,8 @@ export async function getAdminSummary(): Promise<AdminDashboardSummary> {
     campaignsAwaitingApproval: store.campaigns.filter((c) => c.status === "pending").length,
     activeLiveEvents: store.liveEvents.filter((event) => event.status === "live").length,
     totalUsers: store.adminUsers.length,
-    revenue30d: { amount: 184_920_00, currency: "GBP" },
-    payoutsDue: { amount: 42_180_00, currency: "GBP" },
+    revenue30d: { amount: 184_920_00, currency: "AUD" },
+    payoutsDue: { amount: 42_180_00, currency: "AUD" },
     trend: buildAdminTrend(30),
   };
 }
@@ -2712,7 +2727,7 @@ export async function getAdminFinance(): Promise<AdminFinanceSummary> {
 
   await latency();
   return {
-    platform: { commission30dMinor: 0, payoutsDueMinor: 0, currency: "GBP" },
+    platform: { commission30dMinor: 0, payoutsDueMinor: 0, currency: "AUD" },
     trend: [],
     revenueByStream: [],
     organizations: [],
@@ -3698,7 +3713,7 @@ export async function cancelSubscription(id: string): Promise<Subscription | nul
       id,
       name: "Nexus Premium",
       kind: "platform",
-      price: { amount: 0, currency: "GBP" },
+      price: { amount: 0, currency: "AUD" },
       interval: "monthly",
       status: "active",
       renewsAt: data.currentPeriodEnd ?? "",

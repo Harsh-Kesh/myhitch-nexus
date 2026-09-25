@@ -12,6 +12,8 @@ import "server-only";
 import { queryOne } from "./db";
 import { isChannelMember } from "./channelSettings";
 import { checkRealEntitlement, isBlockedByProfileAgeRating } from "./commerce";
+import { checkRealContentAccess } from "./subscriptions";
+import { createMasterDownloadUrl } from "./storage";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -102,4 +104,67 @@ export async function authorizeVideoAccess(input: AuthorizeVideoAccessInput): Pr
             ? "membership"
             : "purchased";
   return { granted: true, reason, expiresAt: result.expiresAt };
+}
+
+export type MintDownloadUrlResult =
+  | { outcome: "success"; url: string; expiresAt: string }
+  | { outcome: "not_found" }
+  | { outcome: "not_premium" }
+  | { outcome: "not_entitled" }
+  | { outcome: "not_processed" };
+
+interface DownloadableVideoRow {
+  channel_id: string;
+  master_asset_path: string | null;
+  kind: "video" | "audio";
+}
+
+/** Real signed download URL for offline playback — the "Download" button used to pass
+ * `video.thumbnailUrl` (an image!) or a fabricated `/videos/{id}.mp4` path (a route that
+ * has never existed) straight to the browser's `fetch()`, so every real download failed
+ * with a 404. Neither was ever a real media URL. This mints one against the actual
+ * uploaded master file, gated on the same real checks that matter here: (1) Downloads is
+ * a Premium/Family-only perk (checkRealContentAccess()), not just "can this account watch
+ * the video" — a free/ad-supported video is still not downloadable without a real paid
+ * plan; (2) the account must still be genuinely entitled to the video itself
+ * (authorizeVideoAccess()) — a Premium subscription doesn't bypass age-gating/geo-
+ * restriction/ownership for what it lets you download, only for the payment gate. A
+ * longer-than-usual expiry (1 hour, vs. the 5-minute default used for internal server-side
+ * probing) since a real client-side download of a large file can take a while and this
+ * signed URL has to stay valid for the whole fetch, not just the start of it. */
+export async function mintVideoDownloadUrl(
+  accountId: string,
+  videoId: string,
+  profileId: string | null | undefined,
+  country: string | null,
+): Promise<MintDownloadUrlResult> {
+  const video = await queryOne<DownloadableVideoRow>(
+    `select channel_id, master_asset_path, kind from videos where id = $1 and status = 'published'`,
+    [videoId],
+  );
+  if (!video) return { outcome: "not_found" };
+
+  const isOwner = await isChannelMember(accountId, video.channel_id);
+  if (!isOwner && !(await checkRealContentAccess(accountId))) {
+    return { outcome: "not_premium" };
+  }
+
+  if (!isOwner) {
+    const entitlement = await checkRealEntitlement(accountId, videoId, profileId);
+    if (!entitlement.granted) {
+      // Free/ad-supported content has no per-video entitlement row (checkRealEntitlement()
+      // only tracks paid unlocks) — a Premium/Family account can still download it as long
+      // as it isn't blocked by age/geo, so fall back to the general access gate rather than
+      // treating "no entitlement row" as "not allowed."
+      const general = await authorizeVideoAccess({ accountId, videoId, profileId, country });
+      if (!general.granted) return { outcome: "not_entitled" };
+    }
+  }
+
+  if (!video.master_asset_path) {
+    return { outcome: "not_processed" };
+  }
+
+  const url = await createMasterDownloadUrl(video.master_asset_path, video.kind, 3600);
+  return { outcome: "success", url, expiresAt: new Date(Date.now() + 3600 * 1000).toISOString() };
 }

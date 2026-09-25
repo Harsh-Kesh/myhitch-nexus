@@ -145,7 +145,7 @@ export default function BillingPage() {
               <div>
                 <p className="text-xs text-fg-muted">Plan Tier</p>
                 <p className="font-semibold text-fg">Nexus Business</p>
-                <p className="text-xs text-fg-subtle">£29.00 / month (£290 / year option)</p>
+                <p className="text-xs text-fg-subtle">$29.00 / month ($290 / year option)</p>
               </div>
               <div>
                 <p className="text-xs text-fg-muted">Team Allocation</p>
@@ -169,11 +169,11 @@ export default function BillingPage() {
           />
           <Stat
             label="Spent to date"
-            value={formatCurrency(spent, "GBP", { compact: true })}
+            value={formatCurrency(spent, "AUD", { compact: true })}
           />
           <Stat
             label="Committed budget"
-            value={formatCurrency(committed, "GBP", { compact: true })}
+            value={formatCurrency(committed, "AUD", { compact: true })}
             hint="Active and pending campaigns"
           />
         </div>
@@ -191,7 +191,7 @@ export default function BillingPage() {
                   key={campaign.id}
                   value={(campaign.spend.amount / campaign.budget.amount) * 100}
                   label={campaign.name}
-                  valueLabel={`${formatCurrency(campaign.spend.amount, "GBP", { compact: true })} / ${formatCurrency(campaign.budget.amount, "GBP", { compact: true })}`}
+                  valueLabel={`${formatCurrency(campaign.spend.amount, "AUD", { compact: true })} / ${formatCurrency(campaign.budget.amount, "AUD", { compact: true })}`}
                   size="sm"
                   tone={
                     campaign.spend.amount / campaign.budget.amount > 0.9

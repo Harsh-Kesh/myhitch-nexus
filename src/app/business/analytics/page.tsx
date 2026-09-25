@@ -196,7 +196,7 @@ export default function BusinessAnalyticsPage() {
                     />
                     <Stat
                       label="Spend"
-                      value={formatCurrency(adTotals.spend, "GBP", { compact: true })}
+                      value={formatCurrency(adTotals.spend, "AUD", { compact: true })}
                       className="border-0 p-0"
                     />
                   </div>

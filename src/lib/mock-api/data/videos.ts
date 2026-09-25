@@ -185,8 +185,8 @@ export const videos: Video[] = [
     completionRate: 71,
     pricing: {
       accessModels: ["rent", "buy"],
-      rentPrice: { amount: 449, currency: "GBP" },
-      buyPrice: { amount: 1299, currency: "GBP" },
+      rentPrice: { amount: 449, currency: "AUD" },
+      buyPrice: { amount: 1299, currency: "AUD" },
       rentalWindowHours: 48,
     },
     rights: {
@@ -230,8 +230,8 @@ export const videos: Video[] = [
     // and preview-limit states for the signed-in user.
     pricing: {
       accessModels: ["rent", "buy"],
-      rentPrice: { amount: 399, currency: "GBP" },
-      buyPrice: { amount: 999, currency: "GBP" },
+      rentPrice: { amount: 399, currency: "AUD" },
+      buyPrice: { amount: 999, currency: "AUD" },
       rentalWindowHours: 48,
     },
     rights: {
@@ -288,7 +288,7 @@ export const videos: Video[] = [
     completionRate: 61,
     pricing: {
       accessModels: ["buy", "subscription"],
-      buyPrice: { amount: 799, currency: "GBP" },
+      buyPrice: { amount: 799, currency: "AUD" },
     },
     rights: {
       declaredOwner: "Northlight Pictures Ltd",
@@ -354,7 +354,7 @@ export const videos: Video[] = [
           id: "cl_aurora_config",
           label: "Shop this video",
           productName: "Helio Aurora — configure",
-          price: { amount: 4_299_000, currency: "GBP" },
+          price: { amount: 4_299_000, currency: "AUD" },
           martProductId: "mart_helio_aurora",
           timestampSeconds: 620,
         },
@@ -362,7 +362,7 @@ export const videos: Video[] = [
           id: "cl_aurora_charger",
           label: "Home charger",
           productName: "Helio Wallbox 11kW",
-          price: { amount: 69_900, currency: "GBP" },
+          price: { amount: 69_900, currency: "AUD" },
           martProductId: "mart_helio_wallbox",
           timestampSeconds: 1_180,
         },
@@ -468,7 +468,7 @@ export const videos: Video[] = [
     slug: "anamorphic-on-a-budget",
     title: "Anamorphic on a budget: what actually matters",
     synopsis:
-      "I put a £400 adapter against a £14,000 set of Master Anamorphics on the same lighting setup. Here is where the money goes and where it genuinely does not.",
+      "I put a $400 adapter against a $14,000 set of Master Anamorphics on the same lighting setup. Here is where the money goes and where it genuinely does not.",
     channelId: "ch_mara",
     contentType: "user-generated",
     categoryIds: ["cat_creators"],
@@ -488,7 +488,7 @@ export const videos: Video[] = [
           id: "cl_adapter",
           label: "Shop this video",
           productName: "SirulUltra 1.33x anamorphic adapter",
-          price: { amount: 39_900, currency: "GBP" },
+          price: { amount: 39_900, currency: "AUD" },
           martProductId: "mart_siriul_133",
           timestampSeconds: 240,
         },
@@ -532,7 +532,7 @@ export const videos: Video[] = [
     completionRate: 52,
     pricing: {
       accessModels: ["ppv"],
-      ppvPrice: { amount: 599, currency: "GBP" },
+      ppvPrice: { amount: 599, currency: "AUD" },
     },
   }),
   defineVideo({
@@ -650,7 +650,7 @@ export const videos: Video[] = [
     episodeNumber: 2,
     pricing: {
       accessModels: ["subscription", "buy"],
-      buyPrice: { amount: 2_400, currency: "GBP" },
+      buyPrice: { amount: 2_400, currency: "AUD" },
     },
   }),
   defineVideo({
@@ -691,7 +691,7 @@ export const videos: Video[] = [
     completionRate: 87,
     pricing: {
       accessModels: ["buy"],
-      buyPrice: { amount: 4_900, currency: "GBP" },
+      buyPrice: { amount: 4_900, currency: "AUD" },
     },
   }),
   defineVideo({
@@ -932,7 +932,7 @@ export const videos: Video[] = [
           id: "cl_tideline_donate",
           label: "Support this project",
           productName: "Blackwater restoration — one hectare",
-          price: { amount: 2_500, currency: "GBP" },
+          price: { amount: 2_500, currency: "AUD" },
           martProductId: "mart_tideline_hectare",
           timestampSeconds: 380,
         },
@@ -1097,7 +1097,7 @@ export const videos: Video[] = [
           id: "cl_asha_router",
           label: "Shop this video",
           productName: "Kestrel 1400W plunge router",
-          price: { amount: 18_900, currency: "GBP" },
+          price: { amount: 18_900, currency: "AUD" },
           martProductId: "mart_kestrel_router",
           timestampSeconds: 640,
         },

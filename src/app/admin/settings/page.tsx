@@ -292,7 +292,7 @@ export default function AdminSettingsPage() {
             />
             <CardBody className="p-0">
               <ConfigTable
-                head={["Code", "Name", "Symbol", "Rate to GBP", "Enabled"]}
+                head={["Code", "Name", "Symbol", "Rate to AUD", "Enabled"]}
                 rows={config.currencies.map((currency) => [
                   <code key="c" className="font-mono text-xs font-medium text-fg">
                     {currency.code}
@@ -304,7 +304,7 @@ export default function AdminSettingsPage() {
                     {currency.symbol}
                   </span>,
                   <span key="r" className="nx-tnum">
-                    {currency.rateToGbp}
+                    {currency.rateToAud}
                   </span>,
                   <Switch
                     key="e"

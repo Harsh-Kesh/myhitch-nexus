@@ -231,7 +231,7 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
 
   entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
-  return { entries, grossMinor, netMinor, currency: entries[0]?.currency ?? "GBP" };
+  return { entries, grossMinor, netMinor, currency: entries[0]?.currency ?? "AUD" };
 }
 
 export interface PlatformRevenueSummary {
@@ -331,7 +331,7 @@ export async function getPlatformRevenueSummary(): Promise<PlatformRevenueSummar
     payoutsDueMinor: Math.max(netAllTime - paid, 0),
     // Same single-currency simplification as every other Money value in this codebase —
     // no multi-currency handling exists anywhere yet.
-    currency: "GBP",
+    currency: "AUD",
   };
 }
 

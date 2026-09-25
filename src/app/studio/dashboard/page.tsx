@@ -145,7 +145,7 @@ export default function StudioDashboardPage() {
             />
             <Stat
               label="Estimated revenue"
-              value={formatCurrency(analytics.totals.revenue.amount, "GBP", {
+              value={formatCurrency(analytics.totals.revenue.amount, "AUD", {
                 compact: true,
               })}
               delta={analytics.deltas.revenue}

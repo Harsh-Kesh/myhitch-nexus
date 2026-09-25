@@ -178,7 +178,7 @@ export default function BusinessChannelPage() {
             value={String(activeCampaigns.length)}
             hint={formatCurrency(
               activeCampaigns.reduce((total, c) => total + c.spend.amount, 0),
-              "GBP",
+              "AUD",
               { compact: true },
             )}
             icon={<IconSpeakerphone />}
@@ -252,11 +252,11 @@ export default function BusinessChannelPage() {
                           {campaign.name}
                         </span>
                         <span className="mt-0.5 block text-2xs text-fg-subtle nx-tnum">
-                          {formatCurrency(campaign.spend.amount, "GBP", {
+                          {formatCurrency(campaign.spend.amount, "AUD", {
                             compact: true,
                           })}{" "}
                           of{" "}
-                          {formatCurrency(campaign.budget.amount, "GBP", {
+                          {formatCurrency(campaign.budget.amount, "AUD", {
                             compact: true,
                           })}
                         </span>

@@ -207,7 +207,7 @@ export default function ProductLinksPage() {
                   martProductId: `mart_${productName.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 24)}`,
                   price: {
                     amount: Math.round(Number(price || 0) * 100),
-                    currency: "GBP",
+                    currency: "AUD",
                   },
                   attachedVideoIds: attached,
                   commissionRate: Number(commission) || 0,
@@ -234,7 +234,7 @@ export default function ProductLinksPage() {
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Price (£)" htmlFor="pl-price">
+            <Field label="Price ($)" htmlFor="pl-price">
               <Input
                 id="pl-price"
                 value={price}

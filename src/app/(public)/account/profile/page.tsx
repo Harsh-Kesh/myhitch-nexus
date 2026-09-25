@@ -83,7 +83,7 @@ export default function ProfilePage() {
         name: "Nexus Free Tier",
         interval: null,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Ad-Supported Catalog Access",
@@ -112,7 +112,7 @@ export default function ProfilePage() {
         name: "Nexus Creator Plan",
         interval: "monthly" as const,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Creator Studio Access",
@@ -130,7 +130,7 @@ export default function ProfilePage() {
         name: "Nexus Business Plan",
         interval: "monthly" as const,
         amount: 2900,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Business Channel & Product Link Embedding",
@@ -147,7 +147,7 @@ export default function ProfilePage() {
         name: "Nexus Enterprise Plan",
         interval: "annual" as const,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Bulk CSV/XML Catalog Metadata Import",
@@ -163,7 +163,7 @@ export default function ProfilePage() {
       name: "Nexus Free Tier",
       interval: null,
       amount: 0,
-      currency: "GBP",
+      currency: "AUD",
       renewsAt: null,
       benefits: [
         "Ad-Supported Catalog Access",
@@ -725,7 +725,7 @@ export default function ProfilePage() {
             <div>
               <p className="font-semibold text-fg">Multi-Profile Household Switching</p>
               <p className="mt-1 text-sm text-fg-muted leading-relaxed">
-                Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan (£14.99/mo)</strong>.
+                Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan ($14.99/mo)</strong>.
               </p>
             </div>
           </div>
@@ -735,7 +735,7 @@ export default function ProfilePage() {
               Maybe Later
             </Button>
             <Button variant="primary" href="/plans">
-              Upgrade to Family Plan — £14.99/mo
+              Upgrade to Family Plan — $14.99/mo
             </Button>
           </div>
         </div>

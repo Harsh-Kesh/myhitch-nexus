@@ -192,9 +192,9 @@ function mapVideoSummary(row: VideoSummaryRow): VideoSummary {
     country: row.country,
     pricing: {
       accessModels: row.access_models ?? ["free"],
-      rentPrice: row.rent_price_minor != null ? { amount: row.rent_price_minor, currency: row.rent_price_currency ?? "GBP" } : null,
-      buyPrice: row.buy_price_minor != null ? { amount: row.buy_price_minor, currency: row.buy_price_currency ?? "GBP" } : null,
-      ppvPrice: row.ppv_price_minor != null ? { amount: row.ppv_price_minor, currency: row.ppv_price_currency ?? "GBP" } : null,
+      rentPrice: row.rent_price_minor != null ? { amount: row.rent_price_minor, currency: row.rent_price_currency ?? "AUD" } : null,
+      buyPrice: row.buy_price_minor != null ? { amount: row.buy_price_minor, currency: row.buy_price_currency ?? "AUD" } : null,
+      ppvPrice: row.ppv_price_minor != null ? { amount: row.ppv_price_minor, currency: row.ppv_price_currency ?? "AUD" } : null,
       rentalWindowHours: row.rental_window_hours,
       membershipTier: row.membership_tier,
       sponsored: row.sponsored ?? false,

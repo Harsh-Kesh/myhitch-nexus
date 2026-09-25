@@ -161,17 +161,17 @@ export default function AdminFinancePage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Stat
             label="Gross revenue (30d)"
-            value={formatCurrency(gross30dMinor, "GBP", { compact: true })}
+            value={formatCurrency(gross30dMinor, "AUD", { compact: true })}
             icon={<IconCoin />}
           />
           <Stat
             label="Platform revenue (30d)"
-            value={formatCurrency(platform?.commission30dMinor ?? 0, "GBP", { compact: true })}
+            value={formatCurrency(platform?.commission30dMinor ?? 0, "AUD", { compact: true })}
             hint="Commission + subscriptions"
           />
           <Stat
             label="Payouts due"
-            value={formatCurrency(platform?.payoutsDueMinor ?? 0, "GBP", { compact: true })}
+            value={formatCurrency(platform?.payoutsDueMinor ?? 0, "AUD", { compact: true })}
             icon={<IconWallet />}
             hint="Owed to creators, all-time"
           />
@@ -248,7 +248,7 @@ export default function AdminFinancePage() {
                         tickFormatter={(value: string) => formatDate(value, "short")}
                         minTickGap={28}
                       />
-                      <YAxis {...chartAxis} width={36} tickFormatter={(value: number) => formatCurrency(value, "GBP", { compact: true })} />
+                      <YAxis {...chartAxis} width={36} tickFormatter={(value: number) => formatCurrency(value, "AUD", { compact: true })} />
                       <Tooltip
                         {...chartTooltip}
                         labelFormatter={(value) => formatDate(String(value), "long")}
@@ -299,7 +299,7 @@ export default function AdminFinancePage() {
                           />
                           <span className="min-w-0 flex-1 truncate text-fg-muted">{slice.label}</span>
                           <span className="text-fg nx-tnum">
-                            {formatCurrency(slice.grossMinor, "GBP", { compact: true })}
+                            {formatCurrency(slice.grossMinor, "AUD", { compact: true })}
                           </span>
                         </li>
                       ))}

@@ -35,7 +35,7 @@ export default function SubscriptionsPage() {
         name: "Nexus Free Tier",
         interval: null,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Ad-Supported Catalog Access",
@@ -44,6 +44,7 @@ export default function SubscriptionsPage() {
         ],
         isFree: true,
         notSubscribed: false,
+        isActiveSubscription: false,
       };
     }
 
@@ -58,6 +59,15 @@ export default function SubscriptionsPage() {
         benefits: activeSub.benefits,
         isFree: false,
         notSubscribed: false,
+        // The one case with a genuine, currently-active paid subscription behind it —
+        // isFree/notSubscribed alone can't distinguish this from the Creator case just
+        // below (also isFree: false, notSubscribed: false, since Creator is genuinely
+        // free but deliberately not flagged "isFree" for its own display reasons). The
+        // CTA button below needs exactly this distinction: "Subscribe" makes no sense
+        // once a real subscription is already active — that was the actual bug (found
+        // live: a real Premium subscriber still saw a "Subscribe" button on their own
+        // active-plan card).
+        isActiveSubscription: true,
       };
     }
 
@@ -66,7 +76,7 @@ export default function SubscriptionsPage() {
         name: "Nexus Creator Plan",
         interval: "monthly" as const,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Creator Studio Access",
@@ -80,14 +90,15 @@ export default function SubscriptionsPage() {
         // subscribe to, unlike the Business/Enterprise cases below.
         isFree: false,
         notSubscribed: false,
+        isActiveSubscription: false,
       };
     }
 
-    // Business and Enterprise are real, paid tiers (£29/mo and contact-sales
+    // Business and Enterprise are real, paid tiers ($29/mo and contact-sales
     // respectively) — a "business"/"enterprise" role flag alone (set for free at
     // registration, see auth/register/route.ts) is not a payment and must never be
     // shown as an "active" plan here. Found live: this used to claim "Nexus Business
-    // Plan is active... £29/mo" for any business-role account with no real
+    // Plan is active... $29/mo" for any business-role account with no real
     // subscription, directly contradicting /business/layout.tsx's real
     // checkRealPlanActive() gate one click away.
     if (user.roles.includes("business") || user.activeRole === "business") {
@@ -95,7 +106,7 @@ export default function SubscriptionsPage() {
         name: "Nexus Business Plan",
         interval: "monthly" as const,
         amount: 2900,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Business Channel & Product Link Embedding",
@@ -105,6 +116,7 @@ export default function SubscriptionsPage() {
         ],
         isFree: true,
         notSubscribed: true,
+        isActiveSubscription: false,
       };
     }
 
@@ -113,7 +125,7 @@ export default function SubscriptionsPage() {
         name: "Nexus Enterprise Plan",
         interval: "annual" as const,
         amount: 0,
-        currency: "GBP",
+        currency: "AUD",
         renewsAt: null,
         benefits: [
           "Bulk CSV/XML Catalog Metadata Import",
@@ -123,6 +135,7 @@ export default function SubscriptionsPage() {
         ],
         isFree: true,
         notSubscribed: true,
+        isActiveSubscription: false,
       };
     }
 
@@ -130,7 +143,7 @@ export default function SubscriptionsPage() {
       name: "Nexus Free Tier",
       interval: null,
       amount: 0,
-      currency: "GBP",
+      currency: "AUD",
       renewsAt: null,
       benefits: [
         "Ad-Supported Catalog Access",
@@ -139,6 +152,7 @@ export default function SubscriptionsPage() {
       ],
       isFree: true,
       notSubscribed: false,
+      isActiveSubscription: false,
     };
   }, [subscriptions, user]);
 
@@ -176,7 +190,10 @@ export default function SubscriptionsPage() {
           }
           action={
             <Button variant="primary" size="sm" href="/plans">
-              {!activePlanInfo.isFree || activePlanInfo.notSubscribed ? "Subscribe" : "Upgrade Plan"}
+              {/* Was `!isFree || notSubscribed` — backwards: that's true for a genuinely
+                  active paid subscription (isFree: false, notSubscribed: false), which is
+                  exactly the one case where offering to "Subscribe" makes no sense. */}
+              {activePlanInfo.isActiveSubscription ? "Change Plan" : "Subscribe"}
             </Button>
           }
         />

@@ -124,7 +124,7 @@ export type CreatePayoutResult =
   | { outcome: "insufficient_balance" }
   | { outcome: "amount_too_small" };
 
-const MINIMUM_PAYOUT_MINOR = 5000; // £50.00 — matches the mock's own minimum
+const MINIMUM_PAYOUT_MINOR = 5000; // $50.00 — matches the mock's own minimum
 
 export async function createPayout(
   organizationId: string,

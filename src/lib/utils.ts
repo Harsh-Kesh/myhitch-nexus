@@ -27,16 +27,16 @@ export function compactNumber(value: number): string {
 }
 
 export function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-GB").format(Math.round(value));
+  return new Intl.NumberFormat("en-AU").format(Math.round(value));
 }
 
 export function formatCurrency(
   amountMinor: number,
-  currency = "GBP",
+  currency = "AUD",
   opts: { compact?: boolean } = {},
 ): string {
   const amount = amountMinor / 100;
-  return new Intl.NumberFormat("en-GB", {
+  return new Intl.NumberFormat("en-AU", {
     style: "currency",
     currency,
     notation: opts.compact ? "compact" : "standard",

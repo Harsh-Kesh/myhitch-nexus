@@ -178,14 +178,14 @@ export default function AdminDashboardPage() {
               />
               <Stat
                 label="Revenue (30d)"
-                value={formatCurrency(summary.revenue30d.amount, "GBP", {
+                value={formatCurrency(summary.revenue30d.amount, "AUD", {
                   compact: true,
                 })}
                 icon={<IconCoin />}
               />
               <Stat
                 label="Payouts due"
-                value={formatCurrency(summary.payoutsDue.amount, "GBP", {
+                value={formatCurrency(summary.payoutsDue.amount, "AUD", {
                   compact: true,
                 })}
               />

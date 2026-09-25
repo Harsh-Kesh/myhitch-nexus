@@ -48,13 +48,13 @@ async function getVideoPriceRow(videoId: string): Promise<VideoPriceRow | null> 
 
 function priceFor(row: VideoPriceRow, kind: CheckoutKind): { amountMinor: number; currency: string } | null {
   if (kind === "buy" && row.buy_price_minor != null) {
-    return { amountMinor: row.buy_price_minor, currency: row.buy_price_currency ?? "GBP" };
+    return { amountMinor: row.buy_price_minor, currency: row.buy_price_currency ?? "AUD" };
   }
   if (kind === "rent" && row.rent_price_minor != null) {
-    return { amountMinor: row.rent_price_minor, currency: row.rent_price_currency ?? "GBP" };
+    return { amountMinor: row.rent_price_minor, currency: row.rent_price_currency ?? "AUD" };
   }
   if (kind === "ppv" && row.ppv_price_minor != null) {
-    return { amountMinor: row.ppv_price_minor, currency: row.ppv_price_currency ?? "GBP" };
+    return { amountMinor: row.ppv_price_minor, currency: row.ppv_price_currency ?? "AUD" };
   }
   return null;
 }
@@ -62,7 +62,7 @@ function priceFor(row: VideoPriceRow, kind: CheckoutKind): { amountMinor: number
 // Stripe's supported-currency list is a real constraint (LKR, one of the four
 // currencies this app otherwise models, isn't on it) — surfaced as a clear outcome
 // rather than an opaque Stripe API error reaching the checkout route.
-const STRIPE_SUPPORTED_CURRENCIES = new Set(["gbp", "usd", "eur"]);
+const STRIPE_SUPPORTED_CURRENCIES = new Set(["aud", "gbp", "usd", "eur"]);
 
 export type CreateCheckoutSessionResult =
   | { outcome: "success"; url: string }
@@ -157,7 +157,7 @@ export async function fulfillCheckoutSession(session: Stripe.Checkout.Session): 
       videoId,
       kind,
       session.amount_total ?? 0,
-      (session.currency ?? "gbp").toUpperCase(),
+      (session.currency ?? "aud").toUpperCase(),
       kind === "rent" ? "active" : "completed",
       invoiceNumber,
       session.id,

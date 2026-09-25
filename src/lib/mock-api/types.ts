@@ -125,9 +125,9 @@ export type PlaybackBlockReason =
   | "unavailable";
 
 export interface Money {
-  /** Minor units (pence/cents) so nothing ever hits float rounding. */
+  /** Minor units (cents) so nothing ever hits float rounding. */
   amount: number;
-  currency: "GBP" | "USD" | "EUR" | "LKR";
+  currency: "AUD" | "GBP" | "USD" | "EUR" | "LKR";
 }
 
 export interface Category {
@@ -930,7 +930,7 @@ export interface PlatformConfigTables {
     code: Money["currency"];
     name: string;
     symbol: string;
-    rateToGbp: number;
+    rateToAud: number;
     enabled: boolean;
   }>;
   payoutRules: Array<{

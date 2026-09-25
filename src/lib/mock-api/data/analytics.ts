@@ -149,7 +149,7 @@ export function buildCreatorAnalytics(
       averageViewDuration: Math.round((watchHours * 3600) / Math.max(views, 1)),
       subscribersGained: Math.round(views * 0.0042),
       subscribersLost: Math.round(views * 0.0009),
-      revenue: { amount: revenueMinor, currency: "GBP" },
+      revenue: { amount: revenueMinor, currency: "AUD" },
     },
     deltas: {
       views: Number((6.2 + random() * 9).toFixed(1)),
@@ -265,7 +265,7 @@ export function buildRevenueSummary(channelId: string): RevenueSummary {
 
   return {
     channelId,
-    currency: "GBP",
+    currency: "AUD",
     available,
     pending,
     lifetime,

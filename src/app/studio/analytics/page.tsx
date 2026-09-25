@@ -198,7 +198,7 @@ export default function StudioAnalyticsPage() {
               />
               <Stat
                 label="Revenue"
-                value={formatCurrency(data.totals.revenue.amount, "GBP", {
+                value={formatCurrency(data.totals.revenue.amount, "AUD", {
                   compact: true,
                 })}
                 delta={data.deltas.revenue}
@@ -582,7 +582,7 @@ export default function StudioAnalyticsPage() {
                               {...chartAxis}
                               width={52}
                               tickFormatter={(value: number) =>
-                                formatCurrency(value, "GBP", { compact: true })
+                                formatCurrency(value, "AUD", { compact: true })
                               }
                             />
                             <Tooltip
@@ -623,12 +623,12 @@ export default function StudioAnalyticsPage() {
                         />
                         <Stat
                           label="eCPM"
-                          value={`£${data.adPerformance.ecpm.toFixed(2)}`}
+                          value={`$${data.adPerformance.ecpm.toFixed(2)}`}
                           className="border-0 p-0"
                         />
                         <Stat
                           label="Ad revenue"
-                          value={formatCurrency(data.adPerformance.revenue, "GBP", {
+                          value={formatCurrency(data.adPerformance.revenue, "AUD", {
                             compact: true,
                           })}
                           className="border-0 p-0"

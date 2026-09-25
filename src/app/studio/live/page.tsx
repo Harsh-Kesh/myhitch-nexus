@@ -101,7 +101,7 @@ export default function StudioLivePage() {
       posterGradient: ["#2E5B4A", "#0A1712"],
       price:
         accessType === "ticketed"
-          ? { amount: Math.round(Number(price) * 100), currency: "GBP" }
+          ? { amount: Math.round(Number(price) * 100), currency: "AUD" }
           : undefined,
       chatEnabled,
       categoryIds,
@@ -315,7 +315,7 @@ export default function StudioLivePage() {
             </div>
             {accessType === "ticketed" ? (
               <div className="mt-3 max-w-xs">
-                <Field label="Ticket price (£)" htmlFor="live-price" hint="Issued and processed via MYHitch Pass.">
+                <Field label="Ticket price ($)" htmlFor="live-price" hint="Issued and processed via MYHitch Pass.">
                   <Input
                     id="live-price"
                     value={price}

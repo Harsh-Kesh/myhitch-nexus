@@ -83,7 +83,7 @@ export default function AdminAdsPage() {
           />
           <Stat
             label="Advertiser spend"
-            value={formatCurrency(platformSpend, "GBP", { compact: true })}
+            value={formatCurrency(platformSpend, "AUD", { compact: true })}
           />
         </div>
 
@@ -278,7 +278,7 @@ export default function AdminAdsPage() {
                         />
                         <MiniStat
                           label="Spend"
-                          value={formatCurrency(campaign.spend.amount, "GBP", {
+                          value={formatCurrency(campaign.spend.amount, "AUD", {
                             compact: true,
                           })}
                         />

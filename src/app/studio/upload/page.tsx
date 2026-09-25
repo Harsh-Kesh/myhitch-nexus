@@ -412,7 +412,7 @@ export default function UploadPage() {
                 id: "cl_new",
                 label: "Shop this video",
                 productName: commerceProduct,
-                price: { amount: Math.round(Number(commercePrice || 0) * 100), currency: "GBP" },
+                price: { amount: Math.round(Number(commercePrice || 0) * 100), currency: "AUD" },
                 martProductId: "mart_new_product",
                 timestampSeconds: 120,
               },
@@ -1322,7 +1322,7 @@ export default function UploadPage() {
                               sizeVariant="sm"
                             />
                           </Field>
-                          <Field label="Price (£)" htmlFor="commerce-price">
+                          <Field label="Price ($)" htmlFor="commerce-price">
                             <Input
                               id="commerce-price"
                               value={commercePrice}

@@ -87,7 +87,7 @@ const rawLiveEvents: LiveEvent[] = [
     thumbnailUrl: "/images/live/live_northlight_premiere.svg",
     viewerCount: 0,
     peakViewers: 0,
-    price: { amount: 1_200, currency: "GBP" },
+    price: { amount: 1_200, currency: "AUD" },
     streamKey: "nx_live_88a1-04fe-72c3-9d6b",
     ingestUrl: "rtmp://ingest.mock.nexus/live",
     chatEnabled: true,

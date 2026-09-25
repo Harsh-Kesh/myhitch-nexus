@@ -12,8 +12,10 @@ import { query, queryOne } from "./db";
 import { getStripe } from "./stripeClient";
 
 export async function checkRealChannelMembership(accountId: string, channelId: string): Promise<boolean> {
+  // limit 1 — same reasoning as checkRealContentAccess() in subscriptions.ts: this is a
+  // pure existence check, and nothing guarantees only one 'active' row per account/channel.
   const row = await queryOne(
-    `select 1 from subscriptions where account_id = $1 and channel_id = $2 and status = 'active'`,
+    `select 1 from subscriptions where account_id = $1 and channel_id = $2 and status = 'active' limit 1`,
     [accountId, channelId],
   );
   return Boolean(row);
@@ -41,6 +43,6 @@ export async function recordMembershipPaymentFromInvoice(invoice: Stripe.Invoice
     `insert into membership_payments (account_id, channel_id, amount_minor, currency, stripe_invoice_id)
      values ($1, $2, $3, $4, $5)
      on conflict (stripe_invoice_id) do nothing`,
-    [accountId, channelId, invoice.amount_paid, (invoice.currency ?? "gbp").toUpperCase(), invoice.id],
+    [accountId, channelId, invoice.amount_paid, (invoice.currency ?? "aud").toUpperCase(), invoice.id],
   );
 }

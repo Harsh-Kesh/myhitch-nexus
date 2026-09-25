@@ -21,7 +21,7 @@ export interface CreateTipInput {
   accountId?: string | null;
   supporterName: string;
   supporterEmail?: string | null;
-  amountCents: number; // minor units e.g. 500 = $5.00 / £5.00
+  amountCents: number; // minor units e.g. 500 = $5.00 AUD
   currency?: string;
   message?: string | null;
   isPatron?: boolean; // false for one-time tip, true for monthly patron subscription

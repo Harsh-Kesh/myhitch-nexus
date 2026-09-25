@@ -45,7 +45,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { VideoCard } from "@/components/video/video-card";
-import { looksLikeRealId } from "@/lib/mock-api";
+import { getVideoDownloadUrl, looksLikeRealId } from "@/lib/mock-api";
 import { CONTENT_TYPE_LABELS, categoryById } from "@/lib/mock-api/data/categories";
 import {
   useAddVideoToPlaylist,
@@ -252,6 +252,14 @@ export function VideoDetailClient() {
 
     setDownloadProgress(0);
     try {
+      // `video.thumbnailUrl` (an image) or a fabricated `/videos/{id}.mp4` (a route that
+      // never existed) used to be passed straight through as the download's media URL —
+      // every real download 404'd. For a real video, mint an actual signed URL against
+      // the real uploaded file first; mock videos keep their existing local-only path.
+      let mediaUrl = video.thumbnailUrl || `/videos/${video.id}.mp4`;
+      if (looksLikeRealId(video.id)) {
+        mediaUrl = await getVideoDownloadUrl(video.id);
+      }
       await downloadVideo(
         {
           id: video.id,
@@ -259,7 +267,7 @@ export function VideoDetailClient() {
           channelTitle: channel?.name || "Nexus Creator",
           posterUrl: video.thumbnailUrl || video.heroUrl || "",
           duration: video.durationSeconds,
-          mediaUrl: video.thumbnailUrl || `/videos/${video.id}.mp4`,
+          mediaUrl,
         },
         (pct) => setDownloadProgress(pct),
       );
@@ -1382,7 +1390,7 @@ function PurchaseModal({
         <OfferRow
           title="Nexus Premium"
           description="All videos, music & live streams, ad-free, plus the rest of the included catalogue."
-          price="£9.99 / month"
+          price="$9.99 / month"
           icon={<IconStarFilled />}
           loading={loading}
           onSelect={() => onSubscribe("premium")}
@@ -1391,7 +1399,7 @@ function PurchaseModal({
         <OfferRow
           title="Nexus Family"
           description="All Premium benefits across up to 5 profiles, with parental controls."
-          price="£14.99 / month"
+          price="$14.99 / month"
           icon={<IconStar />}
           loading={loading}
           onSelect={() => onSubscribe("family")}

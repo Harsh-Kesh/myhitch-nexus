@@ -21,26 +21,25 @@ interface PlanDefinition {
   prices: Partial<Record<BillingInterval, number>>;
 }
 
-// Minor units (pence), GBP — matching the currency every other real Stripe price in this
-// app already uses (Premium's own £9.99/month predates this file's generalisation and is
-// unchanged here). The pricing graphic's $ figures are the same numbers (9.99, 99, 29,
-// 290); the client hasn't asked for a currency change, so this keeps one consistent
-// currency across the whole app rather than introducing a second one from a marketing
-// mockup alone.
+// Minor units (cents), AUD — client decision, 2026-09-25: this is an Australian
+// platform (real org verification already uses the Australian Business Register/ABN
+// lookup), and every price shown anywhere should be AUD, not the GBP this catalog
+// originally shipped with. The numeric amounts (9.99, 99, 29, 290) are unchanged — only
+// the currency code, matching the pricing page's own real numbers.
 export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
   premium: {
     productName: "Nexus Premium",
-    currency: "gbp",
+    currency: "aud",
     prices: { month: 999, year: 9900 },
   },
   family: {
     productName: "Nexus Family",
-    currency: "gbp",
+    currency: "aud",
     prices: { month: 1499 },
   },
   business: {
     productName: "Nexus Business",
-    currency: "gbp",
+    currency: "aud",
     prices: { month: 2900, year: 29000 },
   },
 };
@@ -126,7 +125,7 @@ export async function recordSubscriptionPaymentFromInvoice(invoice: Stripe.Invoi
     `insert into subscription_payments (account_id, plan, amount_minor, currency, stripe_invoice_id)
      values ($1, $2, $3, $4, $5)
      on conflict (stripe_invoice_id) do nothing`,
-    [accountId, (plan as PlanId | undefined) ?? "premium", invoice.amount_paid, (invoice.currency ?? "gbp").toUpperCase(), invoice.id],
+    [accountId, (plan as PlanId | undefined) ?? "premium", invoice.amount_paid, (invoice.currency ?? "aud").toUpperCase(), invoice.id],
   );
 }
 
@@ -176,8 +175,12 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
  * promotion/campaign tools, not content consumption), so it's deliberately excluded
  * here despite also being a paid plan. */
 export async function checkRealContentAccess(accountId: string): Promise<boolean> {
+  // limit 1 — queryOne() throws if a query returns more than one row, and nothing in the
+  // schema stops an account from ending up with two simultaneously 'active' rows (e.g. a
+  // Stripe webhook race during an upgrade); this only ever cared about existence. Found
+  // live: a real account with two active rows 500'd every download/content-access check.
   const row = await queryOne(
-    `select 1 from subscriptions where account_id = $1 and plan in ('premium', 'family') and status = 'active'`,
+    `select 1 from subscriptions where account_id = $1 and plan in ('premium', 'family') and status = 'active' limit 1`,
     [accountId],
   );
   return Boolean(row);
@@ -185,7 +188,7 @@ export async function checkRealContentAccess(accountId: string): Promise<boolean
 
 export async function checkRealPlanActive(accountId: string, plan: PlanId): Promise<boolean> {
   const row = await queryOne(
-    `select 1 from subscriptions where account_id = $1 and plan = $2 and status = 'active'`,
+    `select 1 from subscriptions where account_id = $1 and plan = $2 and status = 'active' limit 1`,
     [accountId, plan],
   );
   return Boolean(row);

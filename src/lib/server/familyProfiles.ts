@@ -104,7 +104,7 @@ export async function createAccountProfile(
     const isFamilyPlan = await checkRealPlanActive(accountId, "family");
     if (!isFamilyPlan) {
       throw new Error(
-        "Adding additional household profiles requires an active Nexus Family Plan (£14.99/mo). Please upgrade your subscription.",
+        "Adding additional household profiles requires an active Nexus Family Plan ($14.99/mo). Please upgrade your subscription.",
       );
     }
   }

@@ -710,7 +710,7 @@ export default function SwitchProfilePage() {
               <div>
                 <p className="font-semibold text-fg">Multi-Profile Household Switching</p>
                 <p className="mt-1 text-sm text-fg-muted leading-relaxed">
-                  Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan (£14.99/mo)</strong>.
+                  Adding additional household profiles (up to 5 individual viewer profiles with independent age ratings, Kids Mode, and PIN controls) is exclusive to the <strong>Nexus Family Plan ($14.99/mo)</strong>.
                 </p>
               </div>
             </div>
@@ -720,7 +720,7 @@ export default function SwitchProfilePage() {
                 Maybe Later
               </Button>
               <Button variant="primary" href="/plans">
-                Upgrade to Family Plan — £14.99/mo
+                Upgrade to Family Plan — $14.99/mo
               </Button>
             </div>
           </div>

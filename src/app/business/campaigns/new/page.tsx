@@ -181,9 +181,9 @@ export default function NewCampaignPage() {
       advertiserName,
       name: name.trim(),
       objective,
-      budget: { amount: budgetMinor, currency: "GBP" },
-      dailyCap: { amount: dailyMinor, currency: "GBP" },
-      cpm: { amount: cpmMinor, currency: "GBP" },
+      budget: { amount: budgetMinor, currency: "AUD" },
+      dailyCap: { amount: dailyMinor, currency: "AUD" },
+      cpm: { amount: cpmMinor, currency: "AUD" },
       startDate: new Date(startDate).toISOString(),
       endDate: new Date(endDate).toISOString(),
       targeting: { countries, languages, ageBands, interests, categoryIds, devices },
@@ -353,7 +353,7 @@ export default function NewCampaignPage() {
                   <>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <Field
-                        label="Total budget (£)"
+                        label="Total budget ($)"
                         htmlFor="c-budget"
                         required
                         hint="The most this campaign can spend in total."
@@ -366,7 +366,7 @@ export default function NewCampaignPage() {
                         />
                       </Field>
                       <Field
-                        label="Daily cap (£)"
+                        label="Daily cap ($)"
                         htmlFor="c-daily"
                         required
                         hint="Paces delivery so the budget lasts the flight."
@@ -381,7 +381,7 @@ export default function NewCampaignPage() {
                     </div>
 
                     <Field
-                      label="CPM (£)"
+                      label="CPM ($)"
                       htmlFor="c-cpm"
                       required
                       hint="What you pay per 1,000 impressions delivered."

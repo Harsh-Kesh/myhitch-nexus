@@ -170,8 +170,8 @@ const TONE_CLASSES: Record<PlanDef["tone"], string> = {
   dark: "border-fg/30",
 };
 
-function formatGbp(minor: number): string {
-  return `£${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
+function formatAud(minor: number): string {
+  return `$${(minor / 100).toFixed(minor % 100 === 0 ? 0 : 2)}`;
 }
 
 export function PlansClient() {
@@ -283,12 +283,12 @@ export function PlansClient() {
           const effectiveInterval: Interval = isPaidPlan && !yearlyAvailable ? "month" : interval;
           const priceDisplay =
             plan.price === "free"
-              ? "£0"
+              ? "$0"
               : plan.price === "custom"
                 ? "Custom"
                 : effectiveInterval === "year" && "year" in plan.price
-                  ? formatGbp(plan.price.year)
-                  : formatGbp(plan.price.month);
+                  ? formatAud(plan.price.year)
+                  : formatAud(plan.price.month);
           const priceSuffix =
             plan.price === "free" || plan.price === "custom"
               ? ""
@@ -453,7 +453,7 @@ export function PlansClient() {
       </div>
 
       <p className="mt-8 text-center text-xs text-fg-subtle">
-        Prices shown in GBP. Payments processed securely by Stripe — MYHitch Nexus never collects or stores your
+        Prices shown in AUD. Payments processed securely by Stripe — MYHitch Nexus never collects or stores your
         card details. Cancel any paid plan any time from{" "}
         <Link href="/account/subscriptions" className="text-accent hover:underline">
           Account → Subscriptions

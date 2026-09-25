@@ -18,8 +18,8 @@ export function BusinessUpgradeGate() {
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-fg-muted">
           Business Studio — verified channel, commercial campaigns, product links, lead
-          generation and analytics — is part of the Nexus Business plan (£29/month or
-          £290/year). Subscribe to unlock it.
+          generation and analytics — is part of the Nexus Business plan ($29/month or
+          $290/year). Subscribe to unlock it.
         </p>
         <div className="mt-5 flex justify-center gap-2">
           <Button variant="primary" href="/plans">

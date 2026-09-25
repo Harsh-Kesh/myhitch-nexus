@@ -91,7 +91,7 @@ export default function CampaignsPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Stat
             label="Total spend"
-            value={formatCurrency(totals.spend, "GBP", { compact: true })}
+            value={formatCurrency(totals.spend, "AUD", { compact: true })}
             icon={<IconSpeakerphone />}
           />
           <Stat
@@ -307,7 +307,7 @@ function CampaignDetail({
           <div className="grid gap-3 sm:grid-cols-4">
             <Stat
               label="Spend"
-              value={formatCurrency(campaign.spend.amount, "GBP", { compact: true })}
+              value={formatCurrency(campaign.spend.amount, "AUD", { compact: true })}
             />
             <Stat
               label="Impressions"

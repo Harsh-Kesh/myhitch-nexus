@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       case "not_onboarded":
         return NextResponse.json({ error: "Finish connecting a bank account first." }, { status: 400 });
       case "amount_too_small":
-        return NextResponse.json({ error: "The minimum withdrawal is £50.00." }, { status: 400 });
+        return NextResponse.json({ error: "The minimum withdrawal is $50.00." }, { status: 400 });
       case "insufficient_balance":
         return NextResponse.json({ error: "That's more than your available balance." }, { status: 400 });
       case "success":

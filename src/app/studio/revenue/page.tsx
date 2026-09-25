@@ -313,7 +313,7 @@ export default function StudioRevenuePage() {
               />
               <Stat
                 label="Lifetime earnings"
-                value={formatCurrency(data.lifetime, "GBP", { compact: true })}
+                value={formatCurrency(data.lifetime, "AUD", { compact: true })}
                 icon={<IconCoin />}
               />
               <Stat
@@ -322,7 +322,7 @@ export default function StudioRevenuePage() {
                   data.transactions
                     .filter((txn) => txn.kind !== "payout")
                     .reduce((total, txn) => total + txn.net, 0),
-                  "GBP",
+                  "AUD",
                   { compact: true },
                 )}
               />
@@ -379,7 +379,7 @@ export default function StudioRevenuePage() {
                         </span>
                         <span className="text-fg-subtle nx-tnum">{slice.share}%</span>
                         <span className="w-20 text-right text-fg nx-tnum">
-                          {formatCurrency(slice.value, "GBP", { compact: true })}
+                          {formatCurrency(slice.value, "AUD", { compact: true })}
                         </span>
                       </li>
                     ))}
@@ -403,7 +403,7 @@ export default function StudioRevenuePage() {
                             <div>
                               <p className="text-sm font-medium text-fg">Bank account connected</p>
                               <p className="mt-0.5 text-xs text-fg-muted">
-                                Via Stripe Connect · minimum £50.00 per withdrawal
+                                Via Stripe Connect · minimum $50.00 per withdrawal
                               </p>
                             </div>
                             <Badge tone="published" size="sm">
@@ -477,7 +477,7 @@ export default function StudioRevenuePage() {
                               Bank transfer · ••••4417
                             </p>
                             <p className="mt-0.5 text-xs text-fg-muted">
-                              Monthly on the 28th · 30-day hold · minimum £50.00
+                              Monthly on the 28th · 30-day hold · minimum $50.00
                             </p>
                           </div>
                           <Badge tone="published" size="sm">
