@@ -50,12 +50,27 @@ export function useHorizontalScroller(itemCount: number) {
 
   // Layout effect, not a plain effect — runs synchronously before the browser paints, so
   // a drifted initial position is corrected before it's ever visible rather than flashing
-  // wrong-then-right.
+  // wrong-then-right. The single synchronous reset wasn't enough on its own — still
+  // reported live after the CSS-only fix, most likely because late-decoding images keep
+  // shifting layout for a moment after this effect runs, and/or `overflow-anchor: none`
+  // isn't consistently honoured (Safari's support has long been spotty). So this also
+  // re-asserts scrollLeft = 0 every frame for a short window after mount — long enough to
+  // outlast a late image swap, short enough to never fight a viewer who's actually
+  // scrolled the rail themselves a moment later.
   React.useLayoutEffect(() => {
     const element = scrollerRef.current;
     if (!element) return;
     element.scrollLeft = 0;
     updateScrollState();
+
+    const deadline = performance.now() + 600;
+    let frame = requestAnimationFrame(function reassert() {
+      const el = scrollerRef.current;
+      if (!el || performance.now() > deadline) return;
+      if (el.scrollLeft !== 0) el.scrollLeft = 0;
+      frame = requestAnimationFrame(reassert);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [updateScrollState, itemCount]);
 
   React.useEffect(() => {
