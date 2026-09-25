@@ -3748,6 +3748,33 @@ export async function cancelSubscription(id: string): Promise<Subscription | nul
   return clone(subscription);
 }
 
+export async function resumeSubscription(id: string): Promise<Subscription | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/subscriptions/${id}/resume/`, { method: "POST" });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { currentPeriodEnd: string | null };
+    return {
+      id,
+      name: "Nexus Premium",
+      kind: "platform",
+      price: { amount: 0, currency: "AUD" },
+      interval: "monthly",
+      status: "active",
+      renewsAt: data.currentPeriodEnd ?? "",
+      startedAt: "",
+      benefits: [],
+      cancelAtPeriodEnd: false,
+    };
+  }
+
+  await latency();
+  const subscription = store.subscriptions.find((item) => item.id === id);
+  if (!subscription) return null;
+  subscription.status = "active";
+  subscription.cancelAtPeriodEnd = false;
+  return clone(subscription);
+}
+
 export async function getNotifications(): Promise<AppNotification[]> {
   await latency("fast");
   return clone(store.notifications);

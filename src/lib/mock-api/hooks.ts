@@ -1106,6 +1106,14 @@ export function useCancelSubscription() {
   });
 }
 
+export function useResumeSubscription() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.resumeSubscription,
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.subscriptions }),
+  });
+}
+
 export const useNotifications = () =>
   useQuery({ queryKey: qk.notifications, queryFn: api.getNotifications });
 

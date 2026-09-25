@@ -454,3 +454,29 @@ export async function cancelRealSubscription(
     currentPeriodEnd: item?.current_period_end ? new Date(item.current_period_end * 1000).toISOString() : null,
   };
 }
+
+/** The missing counterpart to cancelRealSubscription() — found live 2026-09-25: there
+ * was no way to undo a pending cancellation at all short of waiting for it to actually
+ * lapse and buying a new subscription, and startOrChangePlan()'s own auto-clear of
+ * cancel_at_period_end only fires when the account actively changes plan, not when they
+ * just want to stay on the one they already have. */
+export async function resumeRealSubscription(
+  accountId: string,
+  subscriptionRowId: string,
+): Promise<CancelSubscriptionResult> {
+  const row = await queryOne<{ stripe_subscription_id: string }>(
+    `select stripe_subscription_id from subscriptions where id = $1 and account_id = $2`,
+    [subscriptionRowId, accountId],
+  );
+  if (!row) return { outcome: "not_found" };
+
+  const updated = await getStripe().subscriptions.update(row.stripe_subscription_id, {
+    cancel_at_period_end: false,
+  });
+  await upsertSubscriptionFromStripe(updated);
+  const item = updated.items.data[0];
+  return {
+    outcome: "success",
+    currentPeriodEnd: item?.current_period_end ? new Date(item.current_period_end * 1000).toISOString() : null,
+  };
+}

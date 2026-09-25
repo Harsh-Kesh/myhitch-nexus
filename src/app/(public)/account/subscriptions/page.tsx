@@ -11,7 +11,7 @@ import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
 import { ConfirmModal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
-import { useCancelSubscription, useChannel, useCurrentUser, useSubscriptions } from "@/lib/mock-api/hooks";
+import { useCancelSubscription, useChannel, useCurrentUser, useResumeSubscription, useSubscriptions } from "@/lib/mock-api/hooks";
 import type { Subscription } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ export default function SubscriptionsPage() {
   const isRealAccount = Boolean(user?.id && looksLikeRealId(user.id));
   const { data: subscriptions = [], isLoading } = useSubscriptions();
   const cancelSubscription = useCancelSubscription();
+  const resumeSubscription = useResumeSubscription();
   const { toast } = useToast();
   const [cancelling, setCancelling] = React.useState<Subscription | null>(null);
 
@@ -245,6 +246,19 @@ export default function SubscriptionsPage() {
               subscription={subscription}
               isRealAccount={isRealAccount}
               onCancel={() => setCancelling(subscription)}
+              onResume={async () => {
+                try {
+                  await resumeSubscription.mutateAsync(subscription.id);
+                  toast({ title: "Subscription resumed", description: "It'll keep renewing as normal." });
+                } catch (err) {
+                  toast({
+                    title: "Couldn't resume",
+                    description: err instanceof Error ? err.message : undefined,
+                    tone: "error",
+                  });
+                }
+              }}
+              resuming={resumeSubscription.isPending}
             />
           ))}
         </section>
@@ -302,10 +316,14 @@ function SubscriptionCard({
   subscription,
   isRealAccount,
   onCancel,
+  onResume,
+  resuming,
 }: {
   subscription: Subscription;
   isRealAccount: boolean;
   onCancel: () => void;
+  onResume: () => void;
+  resuming: boolean;
 }) {
   const { data: channel } = useChannel(subscription.channelId ?? "");
   const { toast } = useToast();
@@ -394,7 +412,13 @@ function SubscriptionCard({
           >
             Update payment method
           </Button>
-          {subscription.cancelAtPeriodEnd ? null : (
+          {subscription.cancelAtPeriodEnd ? (
+            // Found live 2026-09-25: there was no way to undo a pending cancellation at
+            // all short of waiting for it to lapse and buying a new subscription.
+            <Button variant="primary" size="sm" loading={resuming} onClick={onResume}>
+              Resume subscription
+            </Button>
+          ) : (
             <Button variant="secondary" size="sm" onClick={onCancel}>
               Cancel
             </Button>
