@@ -40,7 +40,7 @@ import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState, RailSkeleton } from "@/components/ui/empty-state";
-import { Modal } from "@/components/ui/modal";
+import { ConfirmModal, Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
@@ -181,6 +181,7 @@ export function VideoDetailClient() {
   }, []);
 
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
+  const [pendingPlanChange, setPendingPlanChange] = React.useState<"premium" | "family" | null>(null);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
   const [playlistOpen, setPlaylistOpen] = React.useState(false);
@@ -360,6 +361,24 @@ export function VideoDetailClient() {
       title: `${plan === "family" ? "Family" : "Premium"} activated`,
       description: "Titles included with your plan now play without a purchase.",
     });
+  };
+
+  // This paywall only shows when the account lacks Premium/Family content access — but
+  // it can still have an active Business plan (which doesn't grant content access), so
+  // "Unlock with Premium" here can be a real, immediate change to an already-running
+  // subscription, not a brand-new signup. Same reasoning as /plans's requestSubscribe:
+  // a fresh signup goes through Stripe Checkout, which is its own confirmation step; a
+  // change to an existing subscription has no such step, so this adds one.
+  const requestSubscribe = (plan: "premium" | "family") => {
+    if (!requireSignIn("Sign in to subscribe to a plan.")) return;
+    const activePaidSub = subscriptions.find(
+      (s) => s.status === "active" && (s.plan === "premium" || s.plan === "family" || s.plan === "business"),
+    );
+    if (activePaidSub && activePaidSub.plan !== plan) {
+      setPendingPlanChange(plan);
+      return;
+    }
+    handleSubscribe(plan);
   };
 
   return (
@@ -995,7 +1014,26 @@ export function VideoDetailClient() {
         onClose={() => setPurchaseOpen(false)}
         video={video}
         loading={startSubscription.isPending}
-        onSubscribe={handleSubscribe}
+        onSubscribe={requestSubscribe}
+      />
+
+      <ConfirmModal
+        open={Boolean(pendingPlanChange)}
+        onClose={() => setPendingPlanChange(null)}
+        onConfirm={async () => {
+          if (!pendingPlanChange) return;
+          await handleSubscribe(pendingPlanChange);
+          setPendingPlanChange(null);
+        }}
+        title={pendingPlanChange ? `Switch to ${pendingPlanChange === "family" ? "Nexus Family" : "Nexus Premium"}?` : ""}
+        description={
+          pendingPlanChange
+            ? `Switching to ${pendingPlanChange === "family" ? "Nexus Family ($14.99/month)" : "Nexus Premium ($9.99/month)"} charges or credits a prorated amount immediately, based on time left in your current billing period — it does not start a second, separate subscription.`
+            : undefined
+        }
+        confirmLabel="Switch & confirm"
+        tone="default"
+        loading={startSubscription.isPending}
       />
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} video={video} />

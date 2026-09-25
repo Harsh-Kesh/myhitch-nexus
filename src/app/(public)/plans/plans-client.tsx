@@ -13,7 +13,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { Field, Input, Textarea } from "@/components/ui/field";
-import { Modal } from "@/components/ui/modal";
+import { ConfirmModal, Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -182,6 +182,7 @@ export function PlansClient() {
   const { toast } = useToast();
   const [interval, setIntervalValue] = React.useState<Interval>("month");
   const [salesOpen, setSalesOpen] = React.useState(false);
+  const [pendingChange, setPendingChange] = React.useState<{ plan: PlanId; interval: Interval } | null>(null);
 
   const isCreator = Boolean(currentUser?.roles.includes("creator") || currentUser?.activeRole === "creator");
   const isBusiness = Boolean(currentUser?.roles.includes("business") || currentUser?.activeRole === "business");
@@ -197,6 +198,50 @@ export function PlansClient() {
     );
 
   const hasPaidViewerSub = hasActiveSub("family") || hasActiveSub("premium");
+
+  // The one thing that decides whether clicking a plan button is a brand-new signup
+  // (redirects to Stripe Checkout, which is its own confirmation step) or a real,
+  // immediate charge/credit against a subscription already running (startOrChangePlan's
+  // update-in-place — see subscriptions.ts) is whether the account already has ANY
+  // active paid platform plan. Prefers the real `plan` field (Subscription's own header
+  // comment on why: id/name string-matching silently drifts from reality) and falls back
+  // to hasActiveSub's fuzzy match only for a mock row, which never has `plan` set.
+  const activePaidSub = subscriptions.find(
+    (s) =>
+      s.status === "active" &&
+      (s.plan
+        ? s.plan === "premium" || s.plan === "family" || s.plan === "business"
+        : hasActiveSub("premium") || hasActiveSub("family") || hasActiveSub("business")),
+  );
+
+  const planName = (id: PlanId) => PLANS.find((p) => p.id === id)?.name ?? id;
+  const planPrice = (id: PlanId, planInterval: Interval): number => {
+    const def = PLANS.find((p) => p.id === id)?.price;
+    if (!def || def === "free" || def === "custom") return 0;
+    return "year" in def && planInterval === "year" ? def.year : def.month;
+  };
+
+  /** Real money moves the instant a plan-change API call succeeds — no Stripe Checkout
+   * page in between to act as a natural confirmation step, unlike a brand-new signup.
+   * Found live 2026-09-25: a real account switched plans with one click and only found
+   * out afterward that it had been charged. A fresh signup (no existing paid plan, or
+   * re-picking the exact same plan) still goes straight through — Stripe's own Checkout
+   * page is that case's confirmation. */
+  const requestSubscribe = (plan: PlanId, planInterval: Interval) => {
+    if (!currentUser) {
+      handleSubscribe(plan, planInterval);
+      return;
+    }
+    const activePlanId = activePaidSub?.plan;
+    const isRealChange =
+      activePaidSub &&
+      (activePlanId !== plan || (activePaidSub.interval === "annual" ? "year" : "month") !== planInterval);
+    if (isRealChange) {
+      setPendingChange({ plan, interval: planInterval });
+      return;
+    }
+    handleSubscribe(plan, planInterval);
+  };
 
   const handleBecomeCreator = () => {
     if (!currentUser) return;
@@ -353,7 +398,7 @@ export function PlansClient() {
                 variant="primary"
                 block
                 loading={startSubscription.isPending}
-                onClick={() => handleSubscribe("premium", effectiveInterval)}
+                onClick={() => requestSubscribe("premium", effectiveInterval)}
               >
                 {currentUser ? "Upgrade to Premium" : plan.cta}
               </Button>
@@ -370,7 +415,7 @@ export function PlansClient() {
                 variant="primary"
                 block
                 loading={startSubscription.isPending}
-                onClick={() => handleSubscribe("family", effectiveInterval)}
+                onClick={() => requestSubscribe("family", effectiveInterval)}
               >
                 {currentUser ? "Upgrade to Family" : plan.cta}
               </Button>
@@ -389,7 +434,7 @@ export function PlansClient() {
                   variant="primary"
                   block
                   loading={startSubscription.isPending}
-                  onClick={() => handleSubscribe("business", effectiveInterval)}
+                  onClick={() => requestSubscribe("business", effectiveInterval)}
                 >
                   {currentUser ? "Upgrade to Business" : plan.cta}
                 </Button>
@@ -462,6 +507,29 @@ export function PlansClient() {
       </p>
 
       <SalesInquiryModal open={salesOpen} onClose={() => setSalesOpen(false)} />
+
+      <ConfirmModal
+        open={Boolean(pendingChange)}
+        onClose={() => setPendingChange(null)}
+        onConfirm={async () => {
+          if (!pendingChange) return;
+          await handleSubscribe(pendingChange.plan, pendingChange.interval);
+          setPendingChange(null);
+        }}
+        title={pendingChange ? `Switch to ${planName(pendingChange.plan)}?` : ""}
+        description={
+          pendingChange && activePaidSub
+            ? `You're on ${activePaidSub.name} (${formatAud(activePaidSub.price.amount)}/${
+                activePaidSub.interval === "annual" ? "year" : "month"
+              }). Switching to ${planName(pendingChange.plan)} (${formatAud(
+                planPrice(pendingChange.plan, pendingChange.interval),
+              )}/${pendingChange.interval}) charges or credits a prorated amount immediately, based on time left in your current billing period — it does not start a second, separate subscription.`
+            : undefined
+        }
+        confirmLabel="Switch & confirm"
+        tone="default"
+        loading={startSubscription.isPending}
+      />
     </div>
   );
 }

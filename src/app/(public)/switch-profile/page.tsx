@@ -350,7 +350,7 @@ export default function SwitchProfilePage() {
         <div className="w-full max-w-4xl text-center space-y-8 animate-in fade-in-50 duration-200">
           <div>
             <h1 className="font-display text-3xl font-semibold tracking-tight text-fg sm:text-4xl md:text-5xl">
-              {isManaging ? "Manage Profiles" : "Who&apos;s watching?"}
+              {isManaging ? "Manage Profiles" : "Who's watching?"}
             </h1>
             <p className="mt-2 text-sm text-fg-muted sm:text-base">
               {isManaging
