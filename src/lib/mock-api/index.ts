@@ -4114,6 +4114,8 @@ export interface OrganizationVerification {
   abnLookupGstEffectiveFrom: string | null;
   abnLookupState: string | null;
   abnLookupPostcode: string | null;
+  abnLookupAcn: string | null;
+  abnLookupStatusEffectiveFrom: string | null;
   submittedAt: string | null;
   status: string;
 }
@@ -4129,6 +4131,8 @@ export type OrganizationVerificationDraft = Partial<
     | "abnLookupGstEffectiveFrom"
     | "abnLookupState"
     | "abnLookupPostcode"
+    | "abnLookupAcn"
+    | "abnLookupStatusEffectiveFrom"
     | "submittedAt"
     | "status"
   >
@@ -4212,6 +4216,8 @@ export async function getOrganizationVerification(organizationId: string): Promi
     abnLookupGstEffectiveFrom: null,
     abnLookupState: null,
     abnLookupPostcode: null,
+    abnLookupAcn: null,
+    abnLookupStatusEffectiveFrom: null,
     submittedAt: null,
     status: channel?.verificationStatus ?? "unverified",
   };

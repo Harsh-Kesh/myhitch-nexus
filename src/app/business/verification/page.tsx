@@ -74,15 +74,30 @@ export default function OrganizationVerificationPage() {
 
   React.useEffect(() => {
     if (!verification) return;
+    // Every field the real ABR lookup can supply falls back to verification's own
+    // persisted abn_lookup_* columns whenever the matching draft field is still empty —
+    // read from the verification record itself, not the lookup mutation's own result.
+    // Found live 2026-09-26: useRunAbnLookup()'s onSuccess invalidates this same
+    // verification query, so a same-tick setForm() from the mutation's own onSuccess
+    // got silently overwritten the instant the invalidated query refetched and this
+    // effect re-ran with the (still-blank) draft fields — the lookup visibly "worked"
+    // (the toast fired, the summary card populated) but the actual form fields stayed
+    // empty. Deriving the fallback here instead means it can never lose that race: this
+    // effect IS what runs after every refetch, so it's always the last word.
     setForm({
-      legalEntityName: verification.legalEntityName ?? "",
+      legalEntityName: verification.legalEntityName || verification.abnLookupEntityName || "",
       tradingName: verification.tradingName ?? "",
-      acn: verification.acn ?? "",
-      entityType: verification.entityType ?? "",
-      gstRegistered: verification.gstRegistered ?? false,
-      businessRegistrationDate: verification.businessRegistrationDate ?? "",
+      acn: verification.acn || verification.abnLookupAcn || "",
+      entityType: verification.entityType || verification.abnLookupEntityType || "",
+      gstRegistered: verification.gstRegistered || Boolean(verification.abnLookupGstEffectiveFrom),
+      businessRegistrationDate:
+        verification.businessRegistrationDate || verification.abnLookupStatusEffectiveFrom || "",
       countryOfRegistration: verification.countryOfRegistration ?? "AU",
-      registeredAddress: verification.registeredAddress ?? "",
+      // ABR only ever gives state + postcode, never a full street address — filling
+      // just that in is still real, verified information, not a fabricated address.
+      registeredAddress:
+        verification.registeredAddress ||
+        [verification.abnLookupState, verification.abnLookupPostcode].filter(Boolean).join(" "),
       principalAddress: verification.principalAddress ?? "",
       operatingLocations: verification.operatingLocations ?? "",
       addressSameAsRegistered: verification.addressSameAsRegistered ?? true,
@@ -124,16 +139,15 @@ export default function OrganizationVerificationPage() {
   const doAbnLookup = () => {
     if (!abnInput.trim()) return;
     runAbnLookup.mutate(abnInput, {
+      // The actual field-filling happens in the useEffect above, driven off the
+      // verification record useRunAbnLookup() just invalidated — see that effect's own
+      // comment for why setForm() doesn't happen here (it would just lose the race to
+      // that same invalidation). This only ever needs to report the outcome.
       onSuccess: (result) => {
         if (!result.found) {
           toast({ tone: "error", title: "ABN not found", description: result.message });
           return;
         }
-        setForm((current) => ({
-          ...current,
-          legalEntityName: current.legalEntityName || result.entityName,
-          entityType: current.entityType || result.entityTypeName,
-        }));
         toast({ title: "ABN found", description: `${result.entityName} — ${result.abnStatus}` });
       },
       onError: (error) =>

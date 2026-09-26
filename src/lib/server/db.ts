@@ -3,7 +3,19 @@
 // than earlier because this is the first server code that needs it at request time
 // instead of as a one-off script.
 import "server-only";
-import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { Pool, types, type PoolClient, type QueryResultRow } from "pg";
+
+// pg's default parser for a bare `date` column (OID 1082) builds a JS Date via the
+// local-timezone Date constructor, then callers serialize it to JSON with .toISOString()
+// (always UTC) — the round trip silently shifts the date backward whenever the server's
+// local timezone is ahead of UTC. Found live 2026-09-26: a real '1999-11-01'::date column
+// came back as "1999-10-31T18:00:00.000Z", one calendar day off, breaking a real
+// <input type="date">'s value the instant it round-tripped through this exact path. None
+// of this app's `date` columns (business_registration_date, abn_lookup_status_effective_from,
+// licence dates, release dates) carry a time-of-day or timezone — they're calendar dates —
+// so the fix is to stop parsing them into a Date at all and keep the raw "YYYY-MM-DD" string
+// Postgres already sends, which is exactly what every one of those columns actually needs.
+types.setTypeParser(1082, (value: string) => value);
 
 declare global {
   // Reused across hot-reloads in dev so we don't open a new pool per edit.

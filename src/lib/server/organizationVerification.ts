@@ -54,6 +54,8 @@ export interface VerificationRow {
   abnLookupGstEffectiveFrom: string | null;
   abnLookupState: string | null;
   abnLookupPostcode: string | null;
+  abnLookupAcn: string | null;
+  abnLookupStatusEffectiveFrom: string | null;
   submittedAt: string | null;
   status: string; // organizations.verification_status
 }
@@ -94,6 +96,8 @@ interface VerificationDbRow {
   abn_lookup_gst_effective_from: string | null;
   abn_lookup_state: string | null;
   abn_lookup_postcode: string | null;
+  abn_lookup_acn: string | null;
+  abn_lookup_status_effective_from: string | null;
   submitted_at: string | null;
 }
 
@@ -134,6 +138,8 @@ function mapRow(row: VerificationDbRow, status: string): VerificationRow {
     abnLookupGstEffectiveFrom: row.abn_lookup_gst_effective_from,
     abnLookupState: row.abn_lookup_state,
     abnLookupPostcode: row.abn_lookup_postcode,
+    abnLookupAcn: row.abn_lookup_acn,
+    abnLookupStatusEffectiveFrom: row.abn_lookup_status_effective_from,
     submittedAt: row.submitted_at,
     status,
   };
@@ -174,6 +180,8 @@ const EMPTY_ROW: Omit<VerificationDbRow, "organization_id"> = {
   abn_lookup_gst_effective_from: null,
   abn_lookup_state: null,
   abn_lookup_postcode: null,
+  abn_lookup_acn: null,
+  abn_lookup_status_effective_from: null,
   submitted_at: null,
 };
 
@@ -346,12 +354,13 @@ export async function runAbnLookup(accountId: string, organizationId: string, ab
   await query(
     `insert into organization_verification (
        organization_id, abn, abn_lookup_checked_at, abn_lookup_status, abn_lookup_entity_name,
-       abn_lookup_entity_type, abn_lookup_gst_effective_from, abn_lookup_state, abn_lookup_postcode
-     ) values ($1, $2, now(), $3, $4, $5, $6, $7, $8)
+       abn_lookup_entity_type, abn_lookup_gst_effective_from, abn_lookup_state, abn_lookup_postcode,
+       abn_lookup_acn, abn_lookup_status_effective_from
+     ) values ($1, $2, now(), $3, $4, $5, $6, $7, $8, $9, $10)
      on conflict (organization_id) do update set
        abn = $2, abn_lookup_checked_at = now(), abn_lookup_status = $3, abn_lookup_entity_name = $4,
        abn_lookup_entity_type = $5, abn_lookup_gst_effective_from = $6, abn_lookup_state = $7,
-       abn_lookup_postcode = $8`,
+       abn_lookup_postcode = $8, abn_lookup_acn = $9, abn_lookup_status_effective_from = $10`,
     [
       organizationId,
       result.abn,
@@ -361,6 +370,8 @@ export async function runAbnLookup(accountId: string, organizationId: string, ab
       result.gstEffectiveFrom,
       result.addressState || null,
       result.addressPostcode || null,
+      result.acn || null,
+      result.abnStatusEffectiveFrom,
     ],
   );
   return { outcome: "success", result };
