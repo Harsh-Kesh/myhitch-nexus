@@ -742,6 +742,19 @@ export function useUpdateVideoStatus() {
   });
 }
 
+export function useUpdateVideoDetails() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ videoId, patch }: { videoId: string; patch: api.VideoDetailsPatch }) =>
+      api.updateVideoDetails(videoId, patch),
+    onSuccess: (_data, { videoId }) => {
+      client.invalidateQueries({ queryKey: ["channel-videos"] });
+      client.invalidateQueries({ queryKey: qk.video(videoId) });
+      client.invalidateQueries({ queryKey: ["search"] });
+    },
+  });
+}
+
 /* ---------------------------- Collections ------------------------------- */
 
 export const usePlaylists = (channelId: string) =>

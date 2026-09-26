@@ -1388,16 +1388,6 @@ export default function UploadPage() {
                         </div>
                       </div>
 
-                      {(sponsored || ageRating === "18" || contentLabels.length > 0) &&
-                      status === "published" ? (
-                        <p className="flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs leading-relaxed text-fg-muted">
-                          <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-                          This video will publish as{" "}
-                          <strong className="text-fg">Pending review</strong> rather
-                          than going live immediately, because it is sponsored,
-                          18-rated, or carries a content label.
-                        </p>
-                      ) : null}
                     </>
                   ) : null}
                 </CardBody>

@@ -16,22 +16,41 @@ import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
-import { Input, Select } from "@/components/ui/field";
+import { Checkbox, Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
+import { Modal } from "@/components/ui/modal";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import {
+  useCategories,
   useChannelVideos,
   useCurrentUser,
+  useUpdateVideoDetails,
   useUpdateVideoStatus,
 } from "@/lib/mock-api/hooks";
-import type { ContentStatus, Video } from "@/lib/mock-api/types";
+import type { VideoDetailsPatch } from "@/lib/mock-api";
+import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
+import type { AccessModel, AgeRating, ContentStatus, Video } from "@/lib/mock-api/types";
 import {
   compactNumber,
   formatDate,
   formatDuration,
   formatPercent,
 } from "@/lib/utils";
+
+const AGE_RATINGS: AgeRating[] = ["U", "PG", "12", "15", "18"];
+
+const CONTENT_LABELS = [
+  "strong-language", "graphic-content", "medical-procedure", "flashing-imagery",
+  "political-content", "gambling", "synthetic-media",
+].map((value) => ({ value, label: value.replace(/-/g, " ") }));
+
+const ACCESS_MODELS: Array<{ value: AccessModel; label: string }> = [
+  { value: "free", label: "Free" },
+  { value: "ad-supported", label: "Advertising-supported" },
+  { value: "subscription", label: "Requires a paid plan" },
+];
 
 export default function StudioContentPage() {
   const { data: user } = useCurrentUser();
@@ -44,6 +63,7 @@ export default function StudioContentPage() {
   const [query, setQuery] = React.useState("");
   const [selected, setSelected] = React.useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = React.useState<ContentStatus>("published");
+  const [editingVideo, setEditingVideo] = React.useState<Video | null>(null);
 
   const counts = React.useMemo(() => {
     const map: Record<string, number> = {};
@@ -178,16 +198,7 @@ export default function StudioContentPage() {
           <MenuItem href="/studio/analytics" icon={<IconChartBar />}>
             Analytics
           </MenuItem>
-          <MenuItem
-            icon={<IconEdit />}
-            onClick={() =>
-              toast({
-                title: "Editing isn't available yet",
-                description: "Metadata can only be set at upload time for now — re-upload to change it.",
-                tone: "info",
-              })
-            }
-          >
+          <MenuItem icon={<IconEdit />} onClick={() => setEditingVideo(row)}>
             Edit details
           </MenuItem>
           <MenuSeparator />
@@ -330,6 +341,189 @@ export default function StudioContentPage() {
           />
         )}
       </PageBody>
+
+      {editingVideo ? (
+        <EditDetailsModal
+          key={editingVideo.id}
+          video={editingVideo}
+          onClose={() => setEditingVideo(null)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** Real counterpart of the "Edit details" action that used to just show "Editing isn't
+ * available yet" — found live 2026-09-26. Covers the fields a creator most often needs to
+ * fix post-publish (title, synopsis, categories, tags, age rating, content labels,
+ * sponsorship, access model). Deliberately doesn't touch the master file itself (a
+ * genuinely different, much larger operation — re-transcode, re-validate) or
+ * series/season/episode/subtitle-track assignment, kept out of this first pass to stay
+ * reviewable. `key={video.id}` on the caller remounts this fresh per video, so its local
+ * state never needs syncing against a changing prop. */
+function EditDetailsModal({ video, onClose }: { video: Video; onClose: () => void }) {
+  const { toast } = useToast();
+  const { data: categories = [] } = useCategories();
+  const updateDetails = useUpdateVideoDetails();
+
+  const [title, setTitle] = React.useState(video.title);
+  const [description, setDescription] = React.useState(video.synopsis);
+  const [categoryIds, setCategoryIds] = React.useState<string[]>(video.categoryIds);
+  const [tags, setTags] = React.useState<string[]>(video.tags);
+  const [tagDraft, setTagDraft] = React.useState("");
+  const [ageRating, setAgeRating] = React.useState<AgeRating>(video.rights.ageRating);
+  const [contentLabels, setContentLabels] = React.useState<string[]>(video.rights.contentLabels);
+  const [accessModels, setAccessModels] = React.useState<AccessModel[]>(video.pricing.accessModels);
+  const [sponsored, setSponsored] = React.useState(Boolean(video.pricing.sponsored));
+  const [sponsorName, setSponsorName] = React.useState(video.pricing.sponsorName ?? "");
+
+  const canSave = title.trim().length >= 3 && categoryIds.length > 0;
+
+  const handleSave = async () => {
+    const patch: VideoDetailsPatch = {
+      title: title.trim(),
+      description,
+      categoryIds,
+      tags,
+      rights: {
+        declaredOwner: video.rights.declaredOwner,
+        ownershipConfirmed: video.rights.ownershipConfirmed,
+        licenceStart: video.rights.licenceStart,
+        licenceEnd: video.rights.licenceEnd,
+        permittedCountries: video.rights.permittedCountries,
+        blockedCountries: video.rights.blockedCountries,
+        ageRating,
+        contentLabels,
+      },
+      pricing: {
+        accessModels,
+        sponsored,
+        sponsorName: sponsored ? sponsorName.trim() || undefined : undefined,
+      },
+    };
+    try {
+      await updateDetails.mutateAsync({ videoId: video.id, patch });
+      toast({ title: "Details updated" });
+      onClose();
+    } catch (err) {
+      toast({
+        tone: "error",
+        title: "Couldn't update details",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+      });
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Edit details" size="lg">
+      <div className="space-y-4">
+        <Field label="Title" htmlFor="edit-title">
+          <Input id="edit-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
+        <Field label="Description" htmlFor="edit-description">
+          <Textarea
+            id="edit-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+          />
+        </Field>
+        <Field label="Categories" htmlFor="edit-categories" hint="At least one is required.">
+          <MultiSelect
+            id="edit-categories"
+            options={categories.map((category) => ({
+              value: category.id,
+              label: category.name,
+              group: CONTENT_TYPE_LABELS[category.contentType],
+            }))}
+            value={categoryIds}
+            onChange={setCategoryIds}
+            placeholder="Choose at least one"
+          />
+        </Field>
+        <Field label="Tags" htmlFor="edit-tags" hint="Press Enter to add.">
+          <Input
+            id="edit-tags"
+            value={tagDraft}
+            onChange={(e) => setTagDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && tagDraft.trim()) {
+                e.preventDefault();
+                setTags((current) => Array.from(new Set([...current, tagDraft.trim()])));
+                setTagDraft("");
+              }
+            }}
+            placeholder="cinematography, lenses, tutorial"
+          />
+          {tags.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {tags.map((tag) => (
+                <Badge key={tag} tone="outline" size="sm" className="gap-1">
+                  {tag}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${tag}`}
+                    onClick={() => setTags((current) => current.filter((t) => t !== tag))}
+                  >
+                    ×
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Age rating" htmlFor="edit-age-rating">
+            <Select id="edit-age-rating" value={ageRating} onChange={(e) => setAgeRating(e.target.value as AgeRating)}>
+              {AGE_RATINGS.map((rating) => (
+                <option key={rating} value={rating}>
+                  {rating}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Access" htmlFor="edit-access">
+            <Select
+              id="edit-access"
+              value={accessModels[0] ?? "free"}
+              onChange={(e) => setAccessModels([e.target.value as AccessModel])}
+            >
+              {ACCESS_MODELS.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Field label="Content labels" htmlFor="edit-labels">
+          <MultiSelect
+            id="edit-labels"
+            options={CONTENT_LABELS}
+            value={contentLabels}
+            onChange={setContentLabels}
+            placeholder="None"
+          />
+        </Field>
+        <Checkbox
+          checked={sponsored}
+          onChange={(e) => setSponsored(e.target.checked)}
+          label="Paid partnership / sponsored content"
+        />
+        {sponsored ? (
+          <Field label="Sponsor name" htmlFor="edit-sponsor-name">
+            <Input id="edit-sponsor-name" value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} />
+          </Field>
+        ) : null}
+      </div>
+      <div className="mt-5 flex justify-end gap-2 border-t border-border pt-4">
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" loading={updateDetails.isPending} disabled={!canSave} onClick={handleSave}>
+          Save changes
+        </Button>
+      </div>
+    </Modal>
   );
 }

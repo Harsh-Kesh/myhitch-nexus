@@ -19,7 +19,6 @@ import { probeMasterAsset } from "./videoValidation";
 import { scanMasterAssetForMalware } from "./malwareScan";
 import { generateSuggestedThumbnails as generateFrames, type ThumbnailSuggestion } from "./thumbnailSuggestions";
 import { seriesBelongsToChannel } from "./series";
-import { flagForReview } from "./moderation";
 import { syncVideoSearchIndex } from "./typesense";
 import { pickGradient } from "../utils";
 
@@ -193,10 +192,17 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return { outcome: "malware_detected", signature: scan.signature };
   }
 
-  // Same review-routing rule the mock wizard already documents client-side — sponsored
-  // or heavily-rated content doesn't go straight to `published` even when requested.
-  const needsReview = input.pricing.sponsored || input.rights.ageRating === "18" || input.rights.contentLabels.length > 0;
-  const status = input.status === "published" && needsReview ? "pending" : input.status;
+  // Client policy, 2026-09-26 (the same "no platform staff in ordinary product flows"
+  // direction already applied to ad-campaign approval — see campaigns.ts's
+  // autoActivateCampaign()): sponsored, 18+ and content-labelled videos used to be
+  // silently downgraded from the creator's requested `published` to `pending`, sitting
+  // invisible until a moderator acted. That's gone — a creator's chosen status is now
+  // trusted outright, same as any other status. The automated checks that already ran
+  // before this point (probeMasterAsset's real ffprobe validation, scanMasterAssetForMalware's
+  // real ClamAV scan) are the real, automatable safety gate; moderator review of a video
+  // is now purely reactive, via the existing viewer-report flow (moderation.ts), not a
+  // mandatory pre-publish step.
+  const status = input.status;
   const slug = slugify(input.title);
   const now = new Date();
 
@@ -305,22 +311,6 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return id;
   });
 
-  // The moderation-queue counterpart of the needsReview override above — a video routed
-  // to 'pending' is otherwise invisible to /admin/reviews, which reads this table, not
-  // videos.status directly (docs/DEVELOPMENT-PLAN.md's admin-screens entry).
-  if (status === "pending") {
-    await flagForReview({
-      kind: "content",
-      targetId: videoId,
-      title: input.title.trim().slice(0, 200),
-      channelId: input.channelId,
-      queue: "pending-review",
-      notes: input.pricing.sponsored
-        ? "Routed to review: paid partnership declared."
-        : "Routed to review: an 18+ rating or a content label is present.",
-    });
-  }
-
   // Postgres is the source of truth and already reflects this; Explore/search is 100%
   // Typesense-backed and was never told about it any other way (see this function's own
   // absence from the previously-only indexing path, scripts/index-catalogue.mjs).
@@ -338,9 +328,9 @@ export type UpdateVideoStatusResult =
   | { outcome: "invalid"; reason: string };
 
 /** Real counterpart of the mock's updateVideoStatus() — post-creation status changes
- * from Studio's content list. Re-derives the same needsReview gate publishVideo() itself
- * enforces (a bypass attempt via this route, not just at creation, must still fail —
- * same AC-3 spirit) rather than trusting the caller's requested status outright. */
+ * from Studio's content list. A creator's requested status is trusted outright (2026-09-26
+ * — see publishVideo()'s own comment on why the old sponsored/18+/labelled-content
+ * review-routing is gone); this no longer re-derives or overrides it. */
 export async function updateVideoStatus(
   accountId: string,
   videoId: string,
@@ -358,48 +348,191 @@ export async function updateVideoStatus(
     return { outcome: "invalid", reason: "That status can't be set directly." };
   }
 
-  let effectiveStatus = status;
-  if (status === "published") {
-    const [rights, pricing] = await Promise.all([
-      queryOne<{ age_rating: string; content_labels: string[] }>(
-        `select age_rating, content_labels from video_rights where video_id = $1`,
-        [videoId],
-      ),
-      queryOne<{ sponsored: boolean }>(`select sponsored from video_pricing where video_id = $1`, [videoId]),
-    ]);
-    const needsReview = Boolean(pricing?.sponsored) || rights?.age_rating === "18" || (rights?.content_labels.length ?? 0) > 0;
-    if (needsReview) effectiveStatus = "pending";
-  }
-
   await query(
     `update videos set status = $2, published_at = case when $2 = 'published' then coalesce(published_at, now()) else published_at end
      where id = $1`,
-    [videoId, effectiveStatus],
+    [videoId, status],
   );
-
-  if (effectiveStatus === "pending") {
-    await flagForReview({
-      kind: "content",
-      targetId: videoId,
-      title: video.title,
-      channelId: video.channel_id,
-      queue: "pending-review",
-      notes: "Routed to review: sponsored content, an 18+ rating, or a content label is present.",
-    });
-  } else {
-    // The creator moved it somewhere else themselves (e.g. pulled it back to draft, or
-    // archived it) — whatever triggered an earlier review is moot now, so don't leave a
-    // phantom "open" queue item for an admin to act on (same reasoning as
-    // moderateComment()'s own dismissal in engagement.ts).
-    await query(
-      `update moderation_queue set status = 'dismissed' where kind = 'content' and target_id = $1 and status = 'open'`,
-      [videoId],
-    );
-  }
 
   await syncVideoSearchIndex(videoId);
 
-  return { outcome: "success", status: effectiveStatus };
+  return { outcome: "success", status };
+}
+
+export interface UpdateVideoDetailsInput {
+  title?: string;
+  description?: string;
+  contentType?: string;
+  categoryIds?: string[];
+  tags?: string[];
+  participants?: string[];
+  productionCompany?: string | null;
+  releaseDate?: string | null;
+  language?: string;
+  country?: string;
+  customThumbnailUrl?: string | null;
+  rights?: {
+    declaredOwner: string;
+    ownershipConfirmed: boolean;
+    licenceStart: string | null;
+    licenceEnd: string | null;
+    permittedCountries: string[];
+    blockedCountries: string[];
+    ageRating: string;
+    contentLabels: string[];
+  };
+  pricing?: {
+    accessModels: string[];
+    rentPrice?: { amount: number; currency: string };
+    buyPrice?: { amount: number; currency: string };
+    ppvPrice?: { amount: number; currency: string };
+    rentalWindowHours?: number;
+    sponsored: boolean;
+    sponsorName?: string;
+  };
+}
+
+export type UpdateVideoDetailsResult =
+  | { outcome: "success" }
+  | { outcome: "not_channel_member" }
+  | { outcome: "not_found" }
+  | { outcome: "invalid"; reason: string };
+
+/** Real post-publish metadata editing — found live 2026-09-26: "Edit details" in Studio's
+ * content list was a pure stub ("Editing isn't available yet... re-upload to change it"),
+ * so a creator could never fix a typo'd title or an outdated category without deleting
+ * and re-uploading the whole video. The master asset itself (file, kind, channel) still
+ * isn't editable here — that's a genuinely different, much larger operation (re-transcode,
+ * re-validate) — but everything else publishVideo() collects at creation is now a real,
+ * ownership-checked update instead of a one-time-only insert. Deliberately excludes
+ * series/season/episode and subtitle-track reassignment for this first pass — kept out to
+ * stay reviewable, not because either is technically harder than what's here. */
+export async function updateVideoDetails(
+  accountId: string,
+  videoId: string,
+  patch: UpdateVideoDetailsInput,
+): Promise<UpdateVideoDetailsResult> {
+  const video = await queryOne<{ channel_id: string }>(`select channel_id from videos where id = $1`, [videoId]);
+  if (!video) return { outcome: "not_found" };
+  if (!(await isChannelMember(accountId, video.channel_id))) {
+    return { outcome: "not_channel_member" };
+  }
+  if (patch.title !== undefined && patch.title.trim().length < 3) {
+    return { outcome: "invalid", reason: "A title of at least 3 characters is required." };
+  }
+  if (patch.categoryIds !== undefined && patch.categoryIds.length === 0) {
+    return { outcome: "invalid", reason: "At least one category is required." };
+  }
+  if (patch.rights && (!patch.rights.declaredOwner.trim() || !patch.rights.ownershipConfirmed)) {
+    return { outcome: "invalid", reason: "Declared rights holder and ownership confirmation are required." };
+  }
+
+  await withTransaction(async (tx) => {
+    await tx.query(
+      `update videos set
+         title = coalesce($2, title),
+         synopsis = case when $3 then $4 else synopsis end,
+         content_type = coalesce($5, content_type),
+         production_company = case when $6 then $7 else production_company end,
+         release_date = case when $8 then $9 else release_date end,
+         language = coalesce($10, language),
+         country = coalesce($11, country),
+         thumbnail_url = case when $12 then $13 else thumbnail_url end
+       where id = $1`,
+      [
+        videoId,
+        patch.title?.trim().slice(0, 200) ?? null,
+        "description" in patch,
+        patch.description?.trim().slice(0, 5000) || null,
+        patch.contentType ?? null,
+        "productionCompany" in patch,
+        patch.productionCompany?.trim() || null,
+        "releaseDate" in patch,
+        patch.releaseDate ?? null,
+        patch.language ?? null,
+        patch.country ?? null,
+        "customThumbnailUrl" in patch,
+        patch.customThumbnailUrl ?? null,
+      ],
+    );
+
+    if (patch.categoryIds) {
+      await tx.query(`delete from video_categories where video_id = $1`, [videoId]);
+      for (const categoryId of patch.categoryIds) {
+        await tx.query(
+          `insert into video_categories (video_id, category_id) values ($1, $2) on conflict do nothing`,
+          [videoId, categoryId],
+        );
+      }
+    }
+
+    if (patch.tags) {
+      await tx.query(`delete from video_tags where video_id = $1`, [videoId]);
+      for (const tag of patch.tags) {
+        await tx.query(`insert into video_tags (video_id, tag) values ($1, $2) on conflict do nothing`, [
+          videoId,
+          tag,
+        ]);
+      }
+    }
+
+    if (patch.participants) {
+      await tx.query(`delete from video_credits where video_id = $1 and role = 'Participant'`, [videoId]);
+      for (const [index, name] of patch.participants.entries()) {
+        await tx.query(
+          `insert into video_credits (video_id, role, name, ordering) values ($1, 'Participant', $2, $3)`,
+          [videoId, name, index],
+        );
+      }
+    }
+
+    if (patch.rights) {
+      await tx.query(
+        `update video_rights set
+           declared_owner = $2, ownership_confirmed = $3, licence_start = $4, licence_end = $5,
+           permitted_countries = $6, blocked_countries = $7, age_rating = $8, content_labels = $9
+         where video_id = $1`,
+        [
+          videoId,
+          patch.rights.declaredOwner.trim(),
+          patch.rights.ownershipConfirmed,
+          patch.rights.licenceStart,
+          patch.rights.licenceEnd,
+          patch.rights.permittedCountries,
+          patch.rights.blockedCountries,
+          patch.rights.ageRating,
+          patch.rights.contentLabels,
+        ],
+      );
+    }
+
+    if (patch.pricing) {
+      await tx.query(
+        `update video_pricing set
+           access_models = $2, rent_price_minor = $3, rent_price_currency = $4,
+           buy_price_minor = $5, buy_price_currency = $6, ppv_price_minor = $7, ppv_price_currency = $8,
+           rental_window_hours = $9, sponsored = $10, sponsor_name = $11
+         where video_id = $1`,
+        [
+          videoId,
+          patch.pricing.accessModels,
+          patch.pricing.rentPrice?.amount ?? null,
+          patch.pricing.rentPrice?.currency ?? null,
+          patch.pricing.buyPrice?.amount ?? null,
+          patch.pricing.buyPrice?.currency ?? null,
+          patch.pricing.ppvPrice?.amount ?? null,
+          patch.pricing.ppvPrice?.currency ?? null,
+          patch.pricing.rentalWindowHours ?? null,
+          patch.pricing.sponsored,
+          patch.pricing.sponsorName?.trim() || null,
+        ],
+      );
+    }
+  });
+
+  await syncVideoSearchIndex(videoId);
+
+  return { outcome: "success" };
 }
 
 /** Flips any video whose scheduled_for has arrived to published — a pull-based

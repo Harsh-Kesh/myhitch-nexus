@@ -1957,15 +1957,10 @@ export async function publishDraft(
   const session = store.uploadSessions[draft.uploadSessionId];
   const now = new Date().toISOString();
 
-  // Anything sponsored or age-rated above PG goes to human review first —
-  // this is what makes Draft → Pending Review → Published observable.
-  const needsReview =
-    draft.pricing.sponsored ||
-    draft.rights.ageRating === "18" ||
-    draft.rights.contentLabels.length > 0;
-
-  const status: ContentStatus =
-    draft.status === "published" && needsReview ? "pending" : draft.status;
+  // Client policy, 2026-09-26 — see videoPublishing.ts's publishVideo() for the real
+  // counterpart of this same change: a creator's requested status is trusted outright,
+  // no more silent downgrade to Pending Review for sponsored/18+/labelled content.
+  const status: ContentStatus = draft.status;
 
   const video: Video = {
     id: nextId("vid"),
@@ -2028,29 +2023,6 @@ export async function publishDraft(
     }
   }
 
-  if (status === "pending") {
-    store.moderationQueue = [
-      {
-        id: nextId("mod"),
-        kind: "content",
-        targetId: video.id,
-        title: video.title,
-        channelId: video.channelId,
-        submittedAt: now,
-        priority: "normal",
-        queue: "pending-review",
-        reportReasons: [],
-        reportCount: 0,
-        status: "open",
-        assignedTo: null,
-        notes: draft.pricing.sponsored
-          ? "Auto-flagged: paid partnership declared at upload."
-          : "Auto-flagged: age rating or content label requires review.",
-      },
-      ...store.moderationQueue,
-    ];
-  }
-
   recordAudit({
     actor: store.user.name,
     actorRole: "creator",
@@ -2099,6 +2071,63 @@ export async function updateVideoStatus(
     severity: "info",
   });
   return clone(video);
+}
+
+export interface VideoDetailsPatch {
+  title?: string;
+  description?: string;
+  contentType?: string;
+  categoryIds?: string[];
+  tags?: string[];
+  participants?: string[];
+  productionCompany?: string | null;
+  releaseDate?: string | null;
+  language?: string;
+  country?: string;
+  customThumbnailUrl?: string | null;
+  rights?: {
+    declaredOwner: string;
+    ownershipConfirmed: boolean;
+    licenceStart: string | null;
+    licenceEnd: string | null;
+    permittedCountries: string[];
+    blockedCountries: string[];
+    ageRating: string;
+    contentLabels: string[];
+  };
+  pricing?: {
+    accessModels: string[];
+    rentPrice?: { amount: number; currency: string };
+    buyPrice?: { amount: number; currency: string };
+    ppvPrice?: { amount: number; currency: string };
+    rentalWindowHours?: number;
+    sponsored: boolean;
+    sponsorName?: string;
+  };
+}
+
+/** Real counterpart of the Studio content list's "Edit details" action — found live
+ * 2026-09-26 as a pure stub ("Editing isn't available yet"). Real videos only; a mock
+ * video keeps the same local-only edit it always had, no server round trip. */
+export async function updateVideoDetails(videoId: string, patch: VideoDetailsPatch): Promise<void> {
+  if (looksLikeRealId(videoId)) {
+    const res = await fetch(`/api/studio/videos/${videoId}/`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ details: patch }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Could not update the video's details.");
+    }
+    return;
+  }
+
+  await latency();
+  const video = store.videos.find((item) => item.id === videoId);
+  if (!video) return;
+  if (patch.title !== undefined) video.title = patch.title;
+  if (patch.description !== undefined) video.synopsis = patch.description;
 }
 
 export async function deleteVideo(videoId: string): Promise<boolean> {
