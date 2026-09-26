@@ -536,7 +536,7 @@ export interface Subscription {
    * existed — found live 2026-09-24, an account with an active Business plan was told on
    * one page it had "an active Nexus Business Plan" and on another that it needed to
    * upgrade to unlock /business, because each page re-derived plan identity its own way. */
-  plan?: "premium" | "family" | "business";
+  plan?: "premium" | "family" | "business" | "enterprise";
   channelId?: string;
   price: Money;
   interval: "monthly" | "annual";

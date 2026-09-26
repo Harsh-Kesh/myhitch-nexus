@@ -3,7 +3,7 @@
 // for why that's the honest scope given the existing audit_log table's shape).
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
-import { resolveOrgIdForAccount, isEnterpriseOrgActive, NoOrganizationError, listOrgAuditLog } from "@/lib/server/enterprise";
+import { resolveOrgIdForAccount, hasActiveEnterpriseSubscription, NoOrganizationError, listOrgAuditLog } from "@/lib/server/enterprise";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
     throw err;
   }
-  if (!(await isEnterpriseOrgActive(orgId))) {
+  if (!(await hasActiveEnterpriseSubscription(account.id))) {
     return NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 });
   }
 

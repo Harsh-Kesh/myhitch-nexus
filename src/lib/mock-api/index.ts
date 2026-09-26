@@ -3949,6 +3949,18 @@ const PLAN_DISPLAY: Record<string, { name: string; benefits: string[] }> = {
       "Priority business support",
     ],
   },
+  enterprise: {
+    name: "Nexus Enterprise",
+    benefits: [
+      "All Business features",
+      "Secure media workspace",
+      "Large file transfer & storage",
+      "Client review & approval workflow",
+      "Version control & audit trail",
+      "Developer & Partner API access",
+      "Custom contracts & support",
+    ],
+  },
 };
 
 export async function getSubscriptions(): Promise<Subscription[]> {
@@ -3958,7 +3970,7 @@ export async function getSubscriptions(): Promise<Subscription[]> {
     const data = (await res.json()) as {
       items: Array<{
         id: string;
-        plan: "premium" | "family" | "business";
+        plan: "premium" | "family" | "business" | "enterprise";
         billingInterval: "month" | "year";
         status: string;
         priceMinor: number;

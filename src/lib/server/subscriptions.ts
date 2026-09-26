@@ -10,14 +10,18 @@ import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { SITE_URL } from "@/lib/utils";
 
-export type PlanId = "premium" | "family" | "business";
+export type PlanId = "premium" | "family" | "business" | "enterprise";
 export type BillingInterval = "month" | "year";
 
 interface PlanDefinition {
   productName: string;
   currency: string;
   /** Only the intervals this plan actually offers — Family is month-only in the
-   * pricing model, Premium/Business offer both with the graphic's own "save 17%". */
+   * pricing model, Premium/Business offer both with the graphic's own "save 17%".
+   * Enterprise has none here on purpose: its real price is negotiated per organization
+   * (organizations.enterprise_price_minor/enterprise_billing_interval), never a fixed
+   * catalog number — see startEnterpriseSubscription() below, which is the only path
+   * that ever creates one. */
   prices: Partial<Record<BillingInterval, number>>;
 }
 
@@ -41,6 +45,11 @@ export const PLAN_CATALOG: Record<PlanId, PlanDefinition> = {
     productName: "Nexus Business",
     currency: "aud",
     prices: { month: 2900, year: 29000 },
+  },
+  enterprise: {
+    productName: "Nexus Enterprise",
+    currency: "aud",
+    prices: {},
   },
 };
 
@@ -179,6 +188,75 @@ export async function startOrChangePlan(
   return { outcome: "checkout_required", url: session.url };
 }
 
+export type StartEnterpriseSubscriptionResult =
+  | { outcome: "checkout_required"; url: string }
+  | { outcome: "already_subscribed" }
+  | { outcome: "not_awaiting_payment" };
+
+/** Enterprise's real checkout — deliberately not routed through startOrChangePlan()
+ * above, which assumes a fixed PLAN_CATALOG price. Enterprise's price is whatever a
+ * super-admin negotiated and set on this specific organization (see
+ * adminEnterprise.ts's approveEnterpriseApplication()) — same real Stripe Checkout
+ * Session shape as a brand-new premium/family/business subscribe, just with the amount
+ * read from the organization instead of a catalog. There's no "change" branch: an
+ * Enterprise account only ever has one negotiated price to pay for, not several tiers to
+ * switch between. `orgId` is threaded into the subscription's own metadata (unlike the
+ * other plans) so the webhook can flip organizations.enterprise_status to 'active' once
+ * the first invoice is actually paid. */
+export async function startEnterpriseSubscription(
+  accountId: string,
+  accountEmail: string,
+  orgId: string,
+  returnPath: string,
+): Promise<StartEnterpriseSubscriptionResult> {
+  const org = await queryOne<{
+    name: string;
+    enterprise_status: "pending" | "awaiting_payment" | "active" | "rejected" | null;
+    enterprise_price_minor: number | null;
+    enterprise_billing_interval: BillingInterval | null;
+  }>(
+    `select name, enterprise_status, enterprise_price_minor, enterprise_billing_interval
+     from organizations where id = $1`,
+    [orgId],
+  );
+  if (
+    !org ||
+    org.enterprise_status !== "awaiting_payment" ||
+    !org.enterprise_price_minor ||
+    !org.enterprise_billing_interval
+  ) {
+    return { outcome: "not_awaiting_payment" };
+  }
+
+  const existing = await queryOne<{ id: string }>(
+    `select id from subscriptions where account_id = $1 and plan = 'enterprise' and status in ('active', 'past_due') limit 1`,
+    [accountId],
+  );
+  if (existing) return { outcome: "already_subscribed" };
+
+  const session = await getStripe().checkout.sessions.create({
+    mode: "subscription",
+    customer_email: accountEmail,
+    line_items: [
+      {
+        price_data: {
+          currency: "aud",
+          product_data: { name: `Nexus Enterprise — ${org.name}` },
+          unit_amount: org.enterprise_price_minor,
+          recurring: { interval: org.enterprise_billing_interval },
+        },
+        quantity: 1,
+      },
+    ],
+    subscription_data: { metadata: { accountId, plan: "enterprise", orgId } },
+    success_url: `${SITE_URL}${returnPath}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${SITE_URL}${returnPath}?checkout=cancelled`,
+    metadata: { accountId, plan: "enterprise", orgId },
+  });
+  if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
+  return { outcome: "checkout_required", url: session.url };
+}
+
 function mapStripeStatus(status: Stripe.Subscription.Status): "active" | "past_due" | "cancelled" | "incomplete" {
   if (status === "active" || status === "trialing") return "active";
   if (status === "past_due" || status === "unpaid") return "past_due";
@@ -239,6 +317,8 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
   const periodEnd = item?.current_period_end ? new Date(item.current_period_end * 1000) : null;
   const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
 
+  const status = mapStripeStatus(subscription.status);
+
   await query(
     `insert into subscriptions (
        account_id, plan, billing_interval, stripe_customer_id, stripe_subscription_id,
@@ -253,13 +333,27 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
       billingInterval,
       customerId,
       subscription.id,
-      mapStripeStatus(subscription.status),
+      status,
       priceMinor,
       currency,
       periodEnd,
       subscription.cancel_at_period_end,
     ],
   );
+
+  // Enterprise-only: organizations.enterprise_status is the pre-payment workflow state
+  // (pending/awaiting_payment/rejected) an admin drives — real access is always gated on
+  // this real Stripe status (checkRealPlanActive(), same as Business), never on the
+  // stored flag alone. Setting it to 'active'/'awaiting_payment' here purely keeps the
+  // admin's own application list honest about who's actually paying versus who lapsed,
+  // without it ever being the thing that grants or revokes access.
+  const orgId = subscription.metadata?.orgId;
+  if (plan === "enterprise" && orgId) {
+    await query(
+      `update organizations set enterprise_status = $2 where id = $1 and enterprise_status is distinct from 'rejected'`,
+      [orgId, status === "active" ? "active" : "awaiting_payment"],
+    );
+  }
 }
 
 /** Premium and Family both carry the full content-access benefit in the pricing model

@@ -9,7 +9,8 @@
 // own Enterprise Hub, because this list only ever named "business"/"advertiser".
 import { requireRole } from "@/lib/server/rbac";
 import { checkRealPlanActive } from "@/lib/server/subscriptions";
-import { getOrgEnterpriseStatus, resolveOrgIdForAccount, NoOrganizationError } from "@/lib/server/enterprise";
+import { queryOne } from "@/lib/server/db";
+import { getOrgEnterpriseStatus, hasActiveEnterpriseSubscription, resolveOrgIdForAccount, NoOrganizationError } from "@/lib/server/enterprise";
 import { BusinessShell } from "./business-shell";
 import { BusinessUpgradeGate } from "./business-upgrade-gate";
 import { EnterprisePendingGate } from "./enterprise-pending-gate";
@@ -22,26 +23,45 @@ export default async function BusinessLayout({
   const account = await requireRole(["business", "advertiser", "producer"]);
 
   // Nexus Business is a real, self-serve $29/mo Stripe subscription — checkRealPlanActive()
-  // enforces that. Nexus Enterprise has no such self-serve product at all (PlanId only
-  // ever covers premium/family/business — see subscriptions.ts): it's real, but priced
-  // and contracted outside Stripe ("Contact Sales" on /plans). Its real gate is
-  // organizations.enterprise_status — pending until a super-admin activates it once an
-  // actual deal closes (see admin/enterprise/page.tsx), never a Stripe check against a
-  // product that doesn't exist.
+  // enforces that. Nexus Enterprise's price is custom, negotiated per organization, but
+  // once a price is set it's the exact same real mechanism: a real Stripe subscription
+  // has to be active for real access, never a stored admin flag alone (that flag —
+  // organizations.enterprise_status — is only the pre-payment workflow state: pending
+  // admin review, awaiting the customer's payment, or rejected).
   const isEnterprise = account.roles.includes("producer");
   if (isEnterprise) {
-    let orgId: string;
-    try {
-      orgId = await resolveOrgIdForAccount(account.id);
-    } catch (err) {
-      if (err instanceof NoOrganizationError) {
-        return <EnterprisePendingGate status="pending" />;
+    const hasEnterprisePlan = await hasActiveEnterpriseSubscription(account.id);
+    if (!hasEnterprisePlan) {
+      let orgId: string;
+      try {
+        orgId = await resolveOrgIdForAccount(account.id);
+      } catch (err) {
+        if (err instanceof NoOrganizationError) {
+          return <EnterprisePendingGate status="pending" priceMinor={null} billingInterval={null} />;
+        }
+        throw err;
       }
-      throw err;
-    }
-    const status = await getOrgEnterpriseStatus(orgId);
-    if (status !== "active") {
-      return <EnterprisePendingGate status={status === "rejected" ? "rejected" : "pending"} />;
+      const status = await getOrgEnterpriseStatus(orgId);
+      if (status === "awaiting_payment") {
+        const org = await queryOne<{ enterprise_price_minor: number | null; enterprise_billing_interval: "month" | "year" | null }>(
+          `select enterprise_price_minor, enterprise_billing_interval from organizations where id = $1`,
+          [orgId],
+        );
+        return (
+          <EnterprisePendingGate
+            status="awaiting_payment"
+            priceMinor={org?.enterprise_price_minor ?? null}
+            billingInterval={org?.enterprise_billing_interval ?? null}
+          />
+        );
+      }
+      return (
+        <EnterprisePendingGate
+          status={status === "rejected" ? "rejected" : "pending"}
+          priceMinor={null}
+          billingInterval={null}
+        />
+      );
     }
   } else {
     const hasBusinessPlan = await checkRealPlanActive(account.id, "business");

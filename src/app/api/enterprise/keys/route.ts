@@ -7,7 +7,7 @@ import {
   listApiKeys,
   revokeApiKey,
   resolveOrgIdForAccount,
-  isEnterpriseOrgActive,
+  hasActiveEnterpriseSubscription,
   sanitizeApiKeyScopes,
   NoOrganizationError,
 } from "@/lib/server/enterprise";
@@ -32,7 +32,7 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
     }
     throw err;
   }
-  if (!(await isEnterpriseOrgActive(orgId))) {
+  if (!(await hasActiveEnterpriseSubscription(account.id))) {
     return { error: NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 }) };
   }
   return { orgId };

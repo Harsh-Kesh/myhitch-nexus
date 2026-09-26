@@ -3,7 +3,7 @@
 // config) vs not (an actual SAML login flow — no identity-provider integration exists).
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
-import { resolveOrgIdForAccount, isEnterpriseOrgActive, NoOrganizationError, getSsoConfig, saveSsoConfig } from "@/lib/server/enterprise";
+import { resolveOrgIdForAccount, hasActiveEnterpriseSubscription, NoOrganizationError, getSsoConfig, saveSsoConfig } from "@/lib/server/enterprise";
 
 async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
@@ -22,7 +22,7 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
     }
     throw err;
   }
-  if (!(await isEnterpriseOrgActive(orgId))) {
+  if (!(await hasActiveEnterpriseSubscription(account.id))) {
     return { error: NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 }) };
   }
   return { orgId };

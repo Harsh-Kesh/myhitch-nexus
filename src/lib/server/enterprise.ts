@@ -3,6 +3,7 @@
 import "server-only";
 import { randomBytes, createHash } from "node:crypto";
 import { query, queryOne } from "./db";
+import { checkRealPlanActive } from "./subscriptions";
 import { SITE_URL } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
@@ -38,8 +39,8 @@ export async function resolveOrgIdForAccount(accountId: string): Promise<string>
  * account, since a producer org that somehow has no row yet was never decided either. */
 export async function getOrgEnterpriseStatus(
   orgId: string,
-): Promise<"pending" | "active" | "rejected" | null> {
-  const row = await queryOne<{ enterprise_status: "pending" | "active" | "rejected" | null }>(
+): Promise<"pending" | "awaiting_payment" | "active" | "rejected" | null> {
+  const row = await queryOne<{ enterprise_status: "pending" | "awaiting_payment" | "active" | "rejected" | null }>(
     `select enterprise_status from organizations where id = $1`,
     [orgId],
   );
@@ -47,10 +48,15 @@ export async function getOrgEnterpriseStatus(
 }
 
 /** The same real gate business/layout.tsx enforces for the page, re-checked at the API
- * layer too — a pending/rejected Enterprise account must not be able to reach any real
- * Enterprise-only route directly, only because it hasn't loaded the (gated) page. */
-export async function isEnterpriseOrgActive(orgId: string): Promise<boolean> {
-  return (await getOrgEnterpriseStatus(orgId)) === "active";
+ * layer too — an account whose real Stripe subscription isn't active (still pending
+ * admin approval, awaiting payment, rejected, or lapsed after being active) must not be
+ * able to reach any real Enterprise-only route directly, only because it hasn't loaded
+ * the (gated) page. Deliberately the REAL subscription status
+ * (checkRealPlanActive(accountId, 'enterprise')), not organizations.enterprise_status —
+ * that column is the pre-payment admin workflow state only, same "real Stripe status is
+ * the only real gate" principle Nexus Business already uses. */
+export async function hasActiveEnterpriseSubscription(accountId: string): Promise<boolean> {
+  return checkRealPlanActive(accountId, "enterprise");
 }
 
 /* -------------------------------------------------------------------------- */

@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { queryOne } from "@/lib/server/db";
 import { createMasterDownloadUrl, masterAssetExists } from "@/lib/server/storage";
-import { createVideoVersion, listVideoVersions, isEnterpriseOrgActive } from "@/lib/server/enterprise";
+import { createVideoVersion, listVideoVersions, hasActiveEnterpriseSubscription } from "@/lib/server/enterprise";
 
 // Version history is the "Version control" line item on the Nexus Enterprise plan, not
 // Business — previously gated only on video ownership, so any business channel's own
@@ -36,7 +36,7 @@ async function requireOwnedVideo(
   if (!membership) {
     return { error: NextResponse.json({ error: "You don't own this video." }, { status: 403 }) };
   }
-  if (!(await isEnterpriseOrgActive(video.channel_id))) {
+  if (!(await hasActiveEnterpriseSubscription(account.id))) {
     return { error: NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 }) };
   }
   return { channelId: video.channel_id, kind: video.kind, accountId: account.id };

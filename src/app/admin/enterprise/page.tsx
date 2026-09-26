@@ -1,27 +1,32 @@
 "use client";
 
-import { IconBuildingSkyscraper, IconCheck, IconMail, IconX } from "@tabler/icons-react";
+import { IconArrowUp, IconBuildingSkyscraper, IconCheck, IconMail, IconX } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { formatDate, relativeTime } from "@/lib/utils";
+import { formatCurrency, formatDate, relativeTime } from "@/lib/utils";
 
 interface EnterpriseApplication {
   id: string;
   name: string;
   country: string | null;
-  enterpriseStatus: "pending" | "active" | "rejected" | null;
+  orgType: string;
+  isUpgradeRequest: boolean;
+  enterpriseStatus: "pending" | "awaiting_payment" | "active" | "rejected" | null;
+  enterprisePriceMinor: number | null;
+  enterpriseBillingInterval: "month" | "year" | null;
   enterpriseDecidedAt: string | null;
   enterpriseDecidedByName: string | null;
   enterpriseNotes: string | null;
   createdAt: string;
+  ownerAccountId: string | null;
   ownerName: string | null;
   ownerEmail: string | null;
 }
@@ -38,7 +43,15 @@ interface SalesInquiry {
 
 const STATUS_TONE = {
   pending: "pending",
+  awaiting_payment: "info",
   active: "published",
+  rejected: "rejected",
+} as const;
+
+const STATUS_LABEL = {
+  pending: "pending review",
+  awaiting_payment: "awaiting payment",
+  active: "active",
   rejected: "rejected",
 } as const;
 
@@ -50,8 +63,10 @@ export default function AdminEnterprisePage() {
   const [tab, setTab] = React.useState("pending");
 
   const [selected, setSelected] = React.useState<EnterpriseApplication | null>(null);
-  const [decision, setDecision] = React.useState<"active" | "rejected">("active");
+  const [decision, setDecision] = React.useState<"approved" | "rejected">("approved");
   const [notes, setNotes] = React.useState("");
+  const [price, setPrice] = React.useState("");
+  const [billingInterval, setBillingInterval] = React.useState<"month" | "year">("month");
   const [deciding, setDeciding] = React.useState(false);
 
   const loadData = React.useCallback(async () => {
@@ -77,29 +92,45 @@ export default function AdminEnterprisePage() {
     loadData();
   }, [loadData]);
 
+  const statusOf = (app: EnterpriseApplication) => app.enterpriseStatus ?? "pending";
+
   const counts = {
-    pending: applications.filter((a) => a.enterpriseStatus === "pending").length,
-    active: applications.filter((a) => a.enterpriseStatus === "active").length,
-    rejected: applications.filter((a) => a.enterpriseStatus === "rejected").length,
+    pending: applications.filter((a) => statusOf(a) === "pending").length,
+    awaiting_payment: applications.filter((a) => statusOf(a) === "awaiting_payment").length,
+    active: applications.filter((a) => statusOf(a) === "active").length,
+    rejected: applications.filter((a) => statusOf(a) === "rejected").length,
   };
 
-  const filtered = tab === "all" ? applications : applications.filter((a) => a.enterpriseStatus === tab);
+  const filtered = tab === "all" ? applications : applications.filter((a) => statusOf(a) === tab);
 
   const submitDecision = async () => {
     if (!selected) return;
+    if (decision === "approved") {
+      const priceMinor = Math.round(Number(price || 0) * 100);
+      if (!priceMinor || priceMinor <= 0) {
+        toast({ title: "Enter a valid price", tone: "error" });
+        return;
+      }
+    }
     setDeciding(true);
     try {
       const res = await fetch(`/api/admin/enterprise/${selected.id}/`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: decision, notes }),
+        body: JSON.stringify({
+          status: decision,
+          notes,
+          ...(decision === "approved"
+            ? { priceMinor: Math.round(Number(price || 0) * 100), billingInterval }
+            : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to record the decision.");
       toast({
-        title: decision === "active" ? "Enterprise plan activated" : "Application rejected",
+        title: decision === "approved" ? "Price set — awaiting customer payment" : "Application rejected",
         description: "Recorded in the audit log.",
-        tone: decision === "active" ? "success" : "warning",
+        tone: decision === "approved" ? "success" : "warning",
       });
       setSelected(null);
       loadData();
@@ -118,12 +149,13 @@ export default function AdminEnterprisePage() {
     <>
       <PageHeader
         title="Enterprise applications"
-        description="Nexus Enterprise has no self-serve checkout — activate a real account here once a sales deal actually closes."
+        description="Nexus Enterprise has no self-serve checkout — set a real negotiated price here once a sales deal closes. Real access unlocks only once the customer actually pays it."
       />
 
       <PageBody className="space-y-5">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Awaiting approval" value={String(counts.pending)} icon={<IconBuildingSkyscraper />} />
+        <div className="grid gap-3 sm:grid-cols-4">
+          <Stat label="Awaiting review" value={String(counts.pending)} icon={<IconBuildingSkyscraper />} />
+          <Stat label="Awaiting payment" value={String(counts.awaiting_payment)} />
           <Stat label="Active" value={String(counts.active)} />
           <Stat label="Rejected" value={String(counts.rejected)} />
         </div>
@@ -133,6 +165,7 @@ export default function AdminEnterprisePage() {
           onChange={setTab}
           items={[
             { value: "pending", label: "Pending", count: counts.pending },
+            { value: "awaiting_payment", label: "Awaiting payment", count: counts.awaiting_payment },
             { value: "active", label: "Active", count: counts.active },
             { value: "rejected", label: "Rejected", count: counts.rejected },
             { value: "all", label: "All", count: applications.length },
@@ -153,14 +186,24 @@ export default function AdminEnterprisePage() {
                   title={
                     <span className="flex flex-wrap items-center gap-2">
                       {app.name}
-                      <Badge tone={STATUS_TONE[app.enterpriseStatus ?? "pending"]} size="sm">
-                        {app.enterpriseStatus ?? "pending"}
+                      <Badge tone={STATUS_TONE[statusOf(app)]} size="sm">
+                        {STATUS_LABEL[statusOf(app)]}
                       </Badge>
+                      {app.isUpgradeRequest ? (
+                        <Badge tone="outline" size="sm">
+                          <IconArrowUp className="size-3" />
+                          Upgrade from {app.orgType}
+                        </Badge>
+                      ) : null}
                     </span>
                   }
-                  description={`${app.ownerEmail ?? "No owner"} · ${app.country ?? "—"} · registered ${relativeTime(app.createdAt)}`}
+                  description={`${app.ownerEmail ?? "No owner"} · ${app.country ?? "—"} · registered ${relativeTime(app.createdAt)}${
+                    app.enterprisePriceMinor
+                      ? ` · ${formatCurrency(app.enterprisePriceMinor, "AUD")}/${app.enterpriseBillingInterval}`
+                      : ""
+                  }`}
                   action={
-                    app.enterpriseStatus === "pending" ? (
+                    statusOf(app) === "pending" || statusOf(app) === "awaiting_payment" ? (
                       <div className="flex gap-2">
                         <Button
                           variant="secondary"
@@ -179,12 +222,14 @@ export default function AdminEnterprisePage() {
                           size="sm"
                           onClick={() => {
                             setSelected(app);
-                            setDecision("active");
+                            setDecision("approved");
                             setNotes("");
+                            setPrice(app.enterprisePriceMinor ? String(app.enterprisePriceMinor / 100) : "");
+                            setBillingInterval(app.enterpriseBillingInterval ?? "month");
                           }}
                         >
                           <IconCheck />
-                          Activate
+                          {statusOf(app) === "awaiting_payment" ? "Update price" : "Approve & set price"}
                         </Button>
                       </div>
                     ) : (
@@ -193,8 +238,10 @@ export default function AdminEnterprisePage() {
                         size="sm"
                         onClick={() => {
                           setSelected(app);
-                          setDecision(app.enterpriseStatus === "active" ? "rejected" : "active");
+                          setDecision(statusOf(app) === "active" ? "rejected" : "approved");
                           setNotes("");
+                          setPrice(app.enterprisePriceMinor ? String(app.enterprisePriceMinor / 100) : "");
+                          setBillingInterval(app.enterpriseBillingInterval ?? "month");
                         }}
                       >
                         Change decision
@@ -230,6 +277,9 @@ export default function AdminEnterprisePage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm text-fg">
                       {inquiry.fullName} <span className="text-fg-subtle">· {inquiry.email}</span>
+                      {!inquiry.accountId ? (
+                        <span className="ml-2 text-2xs text-fg-subtle">(no account — ask them to register)</span>
+                      ) : null}
                     </p>
                     {inquiry.company ? <p className="text-xs text-fg-muted">{inquiry.company}</p> : null}
                     {inquiry.message ? <p className="mt-1 text-xs text-fg-muted">{inquiry.message}</p> : null}
@@ -245,10 +295,10 @@ export default function AdminEnterprisePage() {
       <Modal
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
-        title={`${decision === "active" ? "Activate" : "Reject"} ${selected?.name ?? ""}`}
+        title={`${decision === "approved" ? "Approve & set price for" : "Reject"} ${selected?.name ?? ""}`}
         description={
-          decision === "active"
-            ? "The organisation's owner gets real access to Business Studio and the Enterprise Hub immediately."
+          decision === "approved"
+            ? "The customer gets a real Stripe checkout for exactly this price — access unlocks once they actually pay it, not immediately."
             : "The organisation stays locked out of Business Studio until reconsidered."
         }
         tone={decision === "rejected" ? "danger" : "default"}
@@ -259,28 +309,53 @@ export default function AdminEnterprisePage() {
               Cancel
             </Button>
             <Button
-              variant={decision === "active" ? "primary" : "danger"}
+              variant={decision === "approved" ? "primary" : "danger"}
               loading={deciding}
               onClick={submitDecision}
             >
-              {decision === "active" ? "Activate" : "Reject"}
+              {decision === "approved" ? "Save price" : "Reject"}
             </Button>
           </>
         }
       >
-        <Field label="Notes" htmlFor="ent-notes" hint="Written to the audit log. Optional.">
-          <Textarea
-            id="ent-notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            rows={3}
-            placeholder={
-              decision === "active"
-                ? "Signed contract confirmed 2026-09-26, annual term."
-                : "No response to follow-up after 3 attempts."
-            }
-          />
-        </Field>
+        <div className="space-y-3">
+          {decision === "approved" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Price (AUD)" htmlFor="ent-price" required>
+                <Input
+                  id="ent-price"
+                  value={price}
+                  onChange={(event) => setPrice(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="1200.00"
+                />
+              </Field>
+              <Field label="Billing interval" htmlFor="ent-interval">
+                <Select
+                  id="ent-interval"
+                  value={billingInterval}
+                  onChange={(event) => setBillingInterval(event.target.value as "month" | "year")}
+                >
+                  <option value="month">Monthly</option>
+                  <option value="year">Yearly</option>
+                </Select>
+              </Field>
+            </div>
+          ) : null}
+          <Field label="Notes" htmlFor="ent-notes" hint="Written to the audit log. Optional.">
+            <Textarea
+              id="ent-notes"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              rows={3}
+              placeholder={
+                decision === "approved"
+                  ? "Signed annual contract 2026-09-26."
+                  : "No response to follow-up after 3 attempts."
+              }
+            />
+          </Field>
+        </div>
       </Modal>
     </>
   );

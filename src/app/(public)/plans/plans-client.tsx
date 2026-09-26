@@ -451,7 +451,7 @@ export function PlansClient() {
             } else {
               ctaContent = (
                 <Button variant="secondary" block onClick={() => setSalesOpen(true)}>
-                  {plan.cta}
+                  {isBusiness ? "Request Enterprise upgrade" : plan.cta}
                 </Button>
               );
             }
@@ -506,7 +506,7 @@ export function PlansClient() {
         .
       </p>
 
-      <SalesInquiryModal open={salesOpen} onClose={() => setSalesOpen(false)} />
+      <SalesInquiryModal open={salesOpen} onClose={() => setSalesOpen(false)} isUpgrade={isBusiness} />
 
       <ConfirmModal
         open={Boolean(pendingChange)}
@@ -534,7 +534,15 @@ export function PlansClient() {
   );
 }
 
-function SalesInquiryModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function SalesInquiryModal({
+  open,
+  onClose,
+  isUpgrade,
+}: {
+  open: boolean;
+  onClose: () => void;
+  isUpgrade: boolean;
+}) {
   const { data: currentUser } = useCurrentUser();
   const { toast } = useToast();
   const [fullName, setFullName] = React.useState("");
@@ -562,7 +570,12 @@ function SalesInquiryModal({ open, onClose }: { open: boolean; onClose: () => vo
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? "Could not send your enquiry.");
       }
-      toast({ title: "Thanks — our team will be in touch", description: "We've received your enquiry." });
+      toast({
+        title: "Thanks — our team will be in touch",
+        description: isUpgrade
+          ? "We've received your upgrade request. Once your plan is approved, you'll get a real checkout to complete it — no need to re-register."
+          : "We've received your enquiry.",
+      });
       onClose();
       setFullName("");
       setEmail("");
@@ -583,8 +596,12 @@ function SalesInquiryModal({ open, onClose }: { open: boolean; onClose: () => vo
     <Modal
       open={open}
       onClose={onClose}
-      title="Talk to sales"
-      description="Tell us about your organisation and we'll be in touch about Nexus Enterprise."
+      title={isUpgrade ? "Request an Enterprise upgrade" : "Talk to sales"}
+      description={
+        isUpgrade
+          ? "Tell us what you need — we'll follow up, agree a price, and send you a real checkout to complete the upgrade."
+          : "Tell us about your organisation and we'll be in touch about Nexus Enterprise."
+      }
       size="sm"
       footer={
         <>
