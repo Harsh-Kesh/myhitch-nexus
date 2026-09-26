@@ -48,10 +48,13 @@ export const qk = {
   moderationComments: (channelId: string) => ["moderation-comments", channelId] as const,
   myRating: (videoId: string) => ["my-rating", videoId] as const,
   watchlist: ["watchlist"] as const,
-  myPlaylists: (videoId?: string) => ["my-playlists", videoId] as const,
+  // profileId included in every one of these three keys — see useActiveProfileId's own
+  // comment for why: none of this data means the same thing for two different profiles
+  // on the same account, so the query key has to say which profile it's for.
+  myPlaylists: (videoId?: string, profileId?: string | null) => ["my-playlists", videoId, profileId ?? null] as const,
   playlistDetail: (id: string) => ["playlist-detail", id] as const,
-  continueWatching: ["continue-watching"] as const,
-  watchProgress: (videoId: string) => ["watch-progress", videoId] as const,
+  continueWatching: (profileId?: string | null) => ["continue-watching", profileId ?? null] as const,
+  watchProgress: (videoId: string, profileId?: string | null) => ["watch-progress", videoId, profileId ?? null] as const,
   liveEvents: (status?: LiveEvent["status"]) => ["live-events", status] as const,
   liveEvent: (id: string) => ["live-event", id] as const,
   channelLive: (id: string) => ["channel-live", id] as const,
@@ -242,15 +245,19 @@ export function useStartSubscription() {
 
 /* ------------------------------ Playback -------------------------------- */
 
-export const useWatchProgress = (videoId: string) =>
-  useQuery({
-    queryKey: qk.watchProgress(videoId),
+export const useWatchProgress = (videoId: string) => {
+  const profileId = useActiveProfileId();
+  return useQuery({
+    queryKey: qk.watchProgress(videoId, profileId),
     queryFn: () => api.getWatchProgress(videoId),
     enabled: Boolean(videoId),
   });
+};
 
-export const useContinueWatching = () =>
-  useQuery({ queryKey: qk.continueWatching, queryFn: api.getContinueWatching });
+export const useContinueWatching = () => {
+  const profileId = useActiveProfileId();
+  return useQuery({ queryKey: qk.continueWatching(profileId), queryFn: api.getContinueWatching });
+};
 
 export function useSaveWatchProgress() {
   const client = useQueryClient();
@@ -468,8 +475,10 @@ export function useToggleWatchlist() {
 
 // videoId, if given, adds a `containsVideo` flag per playlist (the "Save to playlist"
 // modal's checkbox state) computed server-side in the same query.
-export const useMyPlaylists = (videoId?: string) =>
-  useQuery({ queryKey: qk.myPlaylists(videoId), queryFn: () => api.getMyPlaylists(videoId) });
+export const useMyPlaylists = (videoId?: string) => {
+  const profileId = useActiveProfileId();
+  return useQuery({ queryKey: qk.myPlaylists(videoId, profileId), queryFn: () => api.getMyPlaylists(videoId) });
+};
 
 // Prefix-only key, used for invalidation — invalidateQueries matches by prefix, so this
 // clears every useMyPlaylists() variant (with or without a videoId) in one call, not just
@@ -517,13 +526,14 @@ export function useDeletePlaylist() {
 // useToggleWatchlist's optimistic update above.
 function useOptimisticPlaylistToggle(nowIn: boolean) {
   const client = useQueryClient();
+  const profileId = useActiveProfileId();
   return useMutation({
     mutationFn: ({ playlistId, videoId }: { playlistId: string; videoId: string }) =>
       nowIn
         ? api.addVideoToPlaylist(playlistId, videoId)
         : api.removeVideoFromPlaylist(playlistId, videoId),
     onMutate: async ({ playlistId, videoId }) => {
-      const key = qk.myPlaylists(videoId);
+      const key = qk.myPlaylists(videoId, profileId);
       await client.cancelQueries({ queryKey: key });
       const previous = client.getQueryData<ViewerPlaylist[]>(key);
       client.setQueryData<ViewerPlaylist[]>(key, (current = []) =>
@@ -1056,6 +1066,18 @@ export function useUpdateConfigTable() {
 export const useCurrentUser = () =>
   useQuery({ queryKey: qk.user, queryFn: api.getCurrentUser });
 
+/** The one thing every profile-scoped query (continue watching, watch progress, "my
+ * playlists") needs baked into its own query key — otherwise React Query treats
+ * "Sarah's continue-watching" and "Tommy's" as the exact same cache entry, since nothing
+ * about the key itself changed when the active profile did. Found live 2026-09-26: a
+ * profile switch correctly updated the account's activeProfileId (see mock-api/index.ts's
+ * applyRealAccount() fix) but every one of these rails kept showing whichever profile's
+ * data happened to be cached first, because their query keys never varied by profile. */
+export const useActiveProfileId = (): string | null => {
+  const { data: user } = useCurrentUser();
+  return user?.activeProfileId ?? null;
+};
+
 export function useLogin() {
   const client = useQueryClient();
   return useMutation({
@@ -1154,7 +1176,11 @@ export function useLogout() {
     onSuccess: () => {
       client.invalidateQueries({ queryKey: qk.user });
       client.invalidateQueries({ queryKey: qk.featured });
-      client.invalidateQueries({ queryKey: qk.continueWatching });
+      // Prefix match — clears every profile's cached continue-watching/my-playlists
+      // variant at once, not just whichever profile happened to be active when this
+      // fired (queryKey now includes profileId — see useActiveProfileId's own comment).
+      client.invalidateQueries({ queryKey: ["continue-watching"] });
+      client.invalidateQueries({ queryKey: MY_PLAYLISTS_PREFIX });
       client.invalidateQueries({ queryKey: qk.watchlist });
       client.invalidateQueries({ queryKey: qk.following });
     },

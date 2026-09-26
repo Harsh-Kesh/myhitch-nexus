@@ -1195,7 +1195,12 @@ async function playlistsFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getMyPlaylists(videoId?: string): Promise<ViewerPlaylist[]> {
-  const query = videoId ? `?videoId=${encodeURIComponent(videoId)}` : "";
+  const params = new URLSearchParams();
+  if (videoId) params.set("videoId", videoId);
+  if (looksLikeRealId(store.user.activeProfileId ?? "")) {
+    params.set("profileId", store.user.activeProfileId!);
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
   const data = await fetch(`/api/playlists/${query}`)
     .then((res) => (res.ok ? res.json() : { items: [] }))
     .then((d) => d as { items: ViewerPlaylist[] })
@@ -1218,19 +1223,41 @@ export async function createMyPlaylist(input: {
   title: string;
   description?: string;
   visibility?: ViewerPlaylist["visibility"];
+  /** "profile" scopes it to whichever household profile is active right now (invisible
+   * to the account's other profiles); "account" (the default) makes it visible to all of
+   * them, matching every playlist's behavior before profile-scoping existed. Silently
+   * behaves as "account" when there's no real active profile to scope to. */
+  scope?: "profile" | "account";
 }): Promise<ViewerPlaylist> {
+  const { scope, ...rest } = input;
+  const profileId =
+    scope === "profile" && looksLikeRealId(store.user.activeProfileId ?? "")
+      ? store.user.activeProfileId
+      : undefined;
   const data = await playlistsFetch<{ playlist: ViewerPlaylist }>("/api/playlists/", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...rest, profileId }),
   });
   return data.playlist;
 }
 
 export async function updateMyPlaylist(
   playlistId: string,
-  patch: { title?: string; description?: string; visibility?: ViewerPlaylist["visibility"] },
+  patch: {
+    title?: string;
+    description?: string;
+    visibility?: ViewerPlaylist["visibility"];
+    scope?: "profile" | "account";
+  },
 ): Promise<void> {
-  await playlistsFetch(`/api/playlists/${playlistId}/`, { method: "PATCH", body: JSON.stringify(patch) });
+  const { scope, ...rest } = patch;
+  const body: typeof rest & { profileId?: string | "account" } = { ...rest };
+  if (scope === "account") {
+    body.profileId = "account";
+  } else if (scope === "profile" && looksLikeRealId(store.user.activeProfileId ?? "")) {
+    body.profileId = store.user.activeProfileId!;
+  }
+  await playlistsFetch(`/api/playlists/${playlistId}/`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
 export async function deletePlaylist(playlistId: string): Promise<void> {

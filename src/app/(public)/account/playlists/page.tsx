@@ -1,6 +1,6 @@
 "use client";
 
-import { IconLock, IconPlaylist, IconPlus, IconTrash, IconWorld } from "@tabler/icons-react";
+import { IconLock, IconPlaylist, IconPlus, IconTrash, IconUser, IconWorld } from "@tabler/icons-react";
 import Link from "next/link";
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import {
   useCreateMyPlaylist,
+  useCurrentUser,
   useDeletePlaylist,
   useMyPlaylists,
 } from "@/lib/mock-api/hooks";
@@ -24,6 +25,7 @@ const VISIBILITY_META = {
 };
 
 export default function PlaylistsPage() {
+  const { data: user } = useCurrentUser();
   const { data: playlists = [], isLoading } = useMyPlaylists();
   const createPlaylist = useCreateMyPlaylist();
   const deletePlaylist = useDeletePlaylist();
@@ -31,12 +33,20 @@ export default function PlaylistsPage() {
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
+  // Scope only matters once there's more than one real household profile to keep a
+  // playlist private from — with zero or one profile, "just for me" and "everyone on
+  // this account" mean the exact same thing, so the toggle would just be confusing.
+  const [scope, setScope] = React.useState<"account" | "profile">("account");
+  const canScopeToProfile = (user?.profiles.length ?? 0) > 1;
+  const activeProfileName = user?.profiles.find((p) => p.id === user.activeProfileId)?.name;
+  const profileNameById = new Map((user?.profiles ?? []).map((p) => [p.id, p.name]));
 
   const handleCreate = async () => {
     if (!title.trim()) return;
     try {
-      await createPlaylist.mutateAsync({ title: title.trim() });
+      await createPlaylist.mutateAsync({ title: title.trim(), scope: canScopeToProfile ? scope : "account" });
       setTitle("");
+      setScope("account");
       setCreateOpen(false);
       toast({ title: "Playlist created" });
     } catch (err) {
@@ -91,10 +101,18 @@ export default function PlaylistsPage() {
                   <CardBody>
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="min-w-0 truncate font-medium text-fg">{playlist.title}</h3>
-                      <Badge tone="outline" size="sm" className="shrink-0 gap-1">
-                        {meta.icon}
-                        {meta.label}
-                      </Badge>
+                      <div className="flex shrink-0 gap-1">
+                        {playlist.profileId ? (
+                          <Badge tone="outline" size="sm" className="gap-1">
+                            <IconUser className="size-3" />
+                            {profileNameById.get(playlist.profileId) ?? "Profile"}
+                          </Badge>
+                        ) : null}
+                        <Badge tone="outline" size="sm" className="gap-1">
+                          {meta.icon}
+                          {meta.label}
+                        </Badge>
+                      </div>
                     </div>
                     {playlist.description ? (
                       <p className="mt-1 nx-clamp-2 text-xs text-fg-muted">{playlist.description}</p>
@@ -130,6 +148,35 @@ export default function PlaylistsPage() {
             if (e.key === "Enter") handleCreate();
           }}
         />
+        {canScopeToProfile ? (
+          <div className="mt-4 space-y-1.5">
+            <p className="text-xs font-medium text-fg-muted">Visible to</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScope("account")}
+                className={`flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                  scope === "account" ? "border-accent bg-accent/10 text-fg" : "border-border text-fg-muted"
+                }`}
+              >
+                <span className="block font-medium">Everyone</span>
+                <span className="block text-xs text-fg-subtle">All profiles on this account</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setScope("profile")}
+                className={`flex-1 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                  scope === "profile" ? "border-accent bg-accent/10 text-fg" : "border-border text-fg-muted"
+                }`}
+              >
+                <span className="block font-medium">Just me</span>
+                <span className="block text-xs text-fg-subtle">
+                  {activeProfileName ? `Only ${activeProfileName}` : "Only this profile"}
+                </span>
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={() => setCreateOpen(false)}>
             Cancel

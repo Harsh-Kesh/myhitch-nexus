@@ -6,6 +6,7 @@ import {
   updatePlaylist,
   type PlaylistVisibility,
 } from "@/lib/server/viewerPlaylists";
+import { verifyOwnProfileId } from "@/lib/server/familyProfiles";
 import { getRequestAccount } from "@/lib/server/rbac";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -25,14 +26,31 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
   const { id } = await params;
 
-  let body: { title?: string; description?: string; visibility?: PlaylistVisibility };
+  let body: {
+    title?: string;
+    description?: string;
+    visibility?: PlaylistVisibility;
+    /** "account" clears the playlist's profile scope (profileId: null downstream);
+     * omitted leaves it untouched. Never a raw profile id from the client — resolved to
+     * one below, ownership-verified, exactly like every other profileId in this app. */
+    profileId?: string | "account";
+  };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const result = await updatePlaylist(account.id, id, body);
+  const patch: Parameters<typeof updatePlaylist>[2] = {
+    title: body.title,
+    description: body.description,
+    visibility: body.visibility,
+  };
+  if ("profileId" in body) {
+    patch.profileId = body.profileId === "account" ? null : await verifyOwnProfileId(account.id, body.profileId);
+  }
+
+  const result = await updatePlaylist(account.id, id, patch);
   if (result.outcome === "not_found") {
     return NextResponse.json({ error: "Playlist not found." }, { status: 404 });
   }

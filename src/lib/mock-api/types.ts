@@ -316,6 +316,9 @@ export interface Playlist {
 export interface ViewerPlaylist {
   id: string;
   accountId: string;
+  /** Real only — which household profile this playlist is private to, or null when it's
+   * account-wide (visible to every profile on the account). */
+  profileId: string | null;
   title: string;
   description: string | null;
   visibility: "public" | "unlisted" | "private";
