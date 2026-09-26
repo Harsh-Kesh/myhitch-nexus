@@ -31,6 +31,28 @@ export async function resolveOrgIdForAccount(accountId: string): Promise<string>
   return memberRow.organization_id;
 }
 
+/** Real gate for Nexus Enterprise's real business model: no self-serve checkout, a
+ * super-admin activates it once a sales deal actually closes (see the 20260930000012
+ * migration's own header). `null` covers every non-Enterprise org (the column is simply
+ * not applicable to them) — callers treat that the same as "pending" for a producer-role
+ * account, since a producer org that somehow has no row yet was never decided either. */
+export async function getOrgEnterpriseStatus(
+  orgId: string,
+): Promise<"pending" | "active" | "rejected" | null> {
+  const row = await queryOne<{ enterprise_status: "pending" | "active" | "rejected" | null }>(
+    `select enterprise_status from organizations where id = $1`,
+    [orgId],
+  );
+  return row?.enterprise_status ?? null;
+}
+
+/** The same real gate business/layout.tsx enforces for the page, re-checked at the API
+ * layer too — a pending/rejected Enterprise account must not be able to reach any real
+ * Enterprise-only route directly, only because it hasn't loaded the (gated) page. */
+export async function isEnterpriseOrgActive(orgId: string): Promise<boolean> {
+  return (await getOrgEnterpriseStatus(orgId)) === "active";
+}
+
 /* -------------------------------------------------------------------------- */
 /*                            1. API Key Management (TPI-9)                   */
 /* -------------------------------------------------------------------------- */
@@ -292,24 +314,29 @@ export interface EnterpriseTransferRow {
   file_name: string;
   file_size_bytes: string;
   download_url: string | null;
+  asset_path: string | null;
   status: "active" | "expired";
   download_count: number;
   expires_at: string;
   created_at: string;
 }
 
+/** `assetPath` is a real, already-uploaded storage path (verified via
+ * enterpriseTransferAssetExists() at the route level, same gate video versions/
+ * campaign creatives already use) — this was previously a `downloadUrl` string a client
+ * typed in by hand, with no real file behind it at all. */
 export async function createEnterpriseTransfer(input: {
   orgId: string;
   title: string;
   fileName: string;
   fileSizeBytes: number;
-  downloadUrl?: string | null;
+  assetPath: string;
   expiresDays?: number;
 }): Promise<EnterpriseTransferRow> {
   const expiresDays = input.expiresDays ?? 14;
   const row = await queryOne<EnterpriseTransferRow>(
     `insert into enterprise_transfers (
-      org_id, title, file_name, file_size_bytes, download_url, expires_at
+      org_id, title, file_name, file_size_bytes, asset_path, expires_at
     ) values ($1, $2, $3, $4, $5, now() + ($6 || ' days')::interval)
     returning *`,
     [
@@ -317,7 +344,7 @@ export async function createEnterpriseTransfer(input: {
       input.title.trim(),
       input.fileName.trim(),
       input.fileSizeBytes,
-      input.downloadUrl ?? null,
+      input.assetPath,
       expiresDays.toString(),
     ],
   );
@@ -450,57 +477,107 @@ export interface SsoConfigRow {
   idpMetadataUrl: string | null;
   ssoDomain: string | null;
   enabled: boolean;
+  metadataVerified: boolean;
+  metadataCheckedAt: string | null;
   updatedAt: string;
 }
 
 /** Storing the IdP metadata URL and domain is real; actually authenticating a sign-in
  * against it is not — real SAML requires a certificate-validated assertion exchange this
  * app has no identity-provider integration for yet (Auth0 is this app's own IdP, not a
- * SAML relying party). This is the config surface an enterprise admin fills in, honestly
- * stopping short of a working SSO login flow. */
+ * SAML relying party — see docs/DEVELOPMENT-PLAN.md's Auth0 blocker, "no tenant to call
+ * yet"). This is the config surface an enterprise admin fills in, honestly stopping
+ * short of a working SSO login flow. What IS real: metadataVerified confirms the URL
+ * actually resolves to real SAML metadata XML, not a typo or a placeholder — see
+ * verifyIdpMetadataUrl() below. */
 export async function getSsoConfig(organizationId: string): Promise<SsoConfigRow> {
   const row = await queryOne<{
     organization_id: string;
     idp_metadata_url: string | null;
     sso_domain: string | null;
     enabled: boolean;
+    metadata_verified: boolean;
+    metadata_checked_at: string | null;
     updated_at: string;
   }>(`select * from enterprise_sso_configs where organization_id = $1`, [organizationId]);
   if (!row) {
-    return { organizationId, idpMetadataUrl: null, ssoDomain: null, enabled: false, updatedAt: new Date(0).toISOString() };
+    return {
+      organizationId,
+      idpMetadataUrl: null,
+      ssoDomain: null,
+      enabled: false,
+      metadataVerified: false,
+      metadataCheckedAt: null,
+      updatedAt: new Date(0).toISOString(),
+    };
   }
   return {
     organizationId: row.organization_id,
     idpMetadataUrl: row.idp_metadata_url,
     ssoDomain: row.sso_domain,
     enabled: row.enabled,
+    metadataVerified: row.metadata_verified,
+    metadataCheckedAt: row.metadata_checked_at,
     updatedAt: row.updated_at,
   };
+}
+
+/** Real, bounded check: does this URL actually resolve to real SAML metadata XML? Not a
+ * substitute for a real IdP integration (nothing here validates a signing certificate or
+ * performs an assertion exchange) — it's the one part of "paste your IdP's metadata URL"
+ * that's honestly checkable without one. Never throws — a network failure or a
+ * non-metadata response is a real "false", not an error. */
+async function verifyIdpMetadataUrl(url: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return false;
+    const text = await res.text();
+    return /<(\w+:)?EntityDescriptor[\s>]/i.test(text);
+  } catch {
+    return false;
+  }
 }
 
 export async function saveSsoConfig(
   organizationId: string,
   input: { idpMetadataUrl?: string | null; ssoDomain?: string | null; enabled?: boolean },
 ): Promise<SsoConfigRow> {
+  const idpMetadataUrl = input.idpMetadataUrl?.trim() || null;
+  const metadataVerified = idpMetadataUrl ? await verifyIdpMetadataUrl(idpMetadataUrl) : false;
+
   const row = await queryOne<{
     organization_id: string;
     idp_metadata_url: string | null;
     sso_domain: string | null;
     enabled: boolean;
+    metadata_verified: boolean;
+    metadata_checked_at: string | null;
     updated_at: string;
   }>(
-    `insert into enterprise_sso_configs (organization_id, idp_metadata_url, sso_domain, enabled)
-     values ($1, $2, $3, $4)
+    `insert into enterprise_sso_configs (organization_id, idp_metadata_url, sso_domain, enabled, metadata_verified, metadata_checked_at)
+     values ($1, $2, $3, $4, $5, $6)
      on conflict (organization_id) do update set
-       idp_metadata_url = $2, sso_domain = $3, enabled = $4, updated_at = now()
+       idp_metadata_url = $2, sso_domain = $3, enabled = $4, metadata_verified = $5, metadata_checked_at = $6, updated_at = now()
      returning *`,
-    [organizationId, input.idpMetadataUrl?.trim() || null, input.ssoDomain?.trim() || null, input.enabled ?? false],
+    [
+      organizationId,
+      idpMetadataUrl,
+      input.ssoDomain?.trim() || null,
+      input.enabled ?? false,
+      metadataVerified,
+      idpMetadataUrl ? new Date().toISOString() : null,
+    ],
   );
   return {
     organizationId: row!.organization_id,
     idpMetadataUrl: row!.idp_metadata_url,
     ssoDomain: row!.sso_domain,
     enabled: row!.enabled,
+    metadataVerified: row!.metadata_verified,
+    metadataCheckedAt: row!.metadata_checked_at,
     updatedAt: row!.updated_at,
   };
 }

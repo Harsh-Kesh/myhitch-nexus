@@ -7,6 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { queryOne } from "@/lib/server/db";
 import { createMasterUploadUrl } from "@/lib/server/storage";
+import { isEnterpriseOrgActive } from "@/lib/server/enterprise";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const account = await getRequestAccount(request);
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   );
   if (!membership) {
     return NextResponse.json({ error: "You don't own this video." }, { status: 403 });
+  }
+  if (!(await isEnterpriseOrgActive(video.channel_id))) {
+    return NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 });
   }
 
   let body: { fileName?: string; fileSizeBytes?: number };

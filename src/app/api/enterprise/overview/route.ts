@@ -4,6 +4,7 @@ import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import {
   getEnterpriseOverview,
   resolveOrgIdForAccount,
+  isEnterpriseOrgActive,
   NoOrganizationError,
 } from "@/lib/server/enterprise";
 
@@ -24,6 +25,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "You aren't a member of any organization." }, { status: 403 });
     }
     throw err;
+  }
+  if (!(await isEnterpriseOrgActive(orgId))) {
+    return NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 });
   }
 
   const overview = await getEnterpriseOverview(orgId);

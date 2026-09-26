@@ -44,10 +44,18 @@ export async function provisionChannelForRole(
   const orgType = ROLE_TO_ORG_TYPE[dbRole];
   if (!orgType) return null;
 
+  // Nexus Enterprise has no self-serve checkout — registering with this role creates the
+  // account and organization for real, but full Enterprise Hub access stays behind a real
+  // pending/active/rejected gate a super-admin decides once an actual sales deal closes
+  // (see business/layout.tsx and admin/enterprise/page.tsx). Every other org type has no
+  // such gate at provisioning time — enterprise_status stays null for them, meaning "not
+  // applicable," not "pending."
+  const enterpriseStatus = orgType === "producer" ? "pending" : null;
+
   const rows = await query<{ id: string }>(
     `insert into organizations
-       (name, type, country, business_email, banner_gradient, avatar_gradient, joined_at)
-     values ($1, $2, $3, $4, $5, $6, now())
+       (name, type, country, business_email, banner_gradient, avatar_gradient, joined_at, enterprise_status)
+     values ($1, $2, $3, $4, $5, $6, now(), $7)
      returning id`,
     [
       input.name,
@@ -56,6 +64,7 @@ export async function provisionChannelForRole(
       input.email,
       pickGradient(`${accountId}:banner`),
       pickGradient(accountId),
+      enterpriseStatus,
     ],
   );
   const organizationId = rows[0].id;

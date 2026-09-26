@@ -5,8 +5,10 @@ import {
   createEnterpriseTransfer,
   listEnterpriseTransfers,
   resolveOrgIdForAccount,
+  isEnterpriseOrgActive,
   NoOrganizationError,
 } from "@/lib/server/enterprise";
+import { createEnterpriseTransferDownloadUrl, enterpriseTransferAssetExists } from "@/lib/server/storage";
 
 async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
@@ -16,14 +18,19 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
   if (!hasAnyRole(account, ["producer"])) {
     return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
+  let orgId: string;
   try {
-    return { orgId: await resolveOrgIdForAccount(account.id) };
+    orgId = await resolveOrgIdForAccount(account.id);
   } catch (err) {
     if (err instanceof NoOrganizationError) {
       return { error: NextResponse.json({ error: "You aren't a member of any organization." }, { status: 403 }) };
     }
     throw err;
   }
+  if (!(await isEnterpriseOrgActive(orgId))) {
+    return { error: NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 }) };
+  }
+  return { orgId };
 }
 
 export async function GET(request: NextRequest) {
@@ -31,7 +38,19 @@ export async function GET(request: NextRequest) {
   if ("error" in resolved) return resolved.error;
 
   const transfers = await listEnterpriseTransfers(resolved.orgId);
-  return NextResponse.json({ transfers });
+  // A real signed link, minted fresh on every read (never a permanent/public URL that
+  // could go stale or leak indefinitely) — same reasoning as video versions' own
+  // download-URL minting. Falls back to a legacy manually-entered download_url for any
+  // transfer created before real uploads existed.
+  const withUrls = await Promise.all(
+    transfers.map(async (transfer) => ({
+      ...transfer,
+      resolvedDownloadUrl: transfer.asset_path
+        ? await createEnterpriseTransferDownloadUrl(transfer.asset_path).catch(() => null)
+        : transfer.download_url,
+    })),
+  );
+  return NextResponse.json({ transfers: withUrls });
 }
 
 export async function POST(request: NextRequest) {
@@ -42,7 +61,7 @@ export async function POST(request: NextRequest) {
     title?: string;
     fileName?: string;
     fileSizeBytes?: number;
-    downloadUrl?: string;
+    assetPath?: string;
     expiresDays?: number;
   };
 
@@ -52,11 +71,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.title || !body.fileName || !body.fileSizeBytes) {
+  if (!body.title || !body.fileName || !body.fileSizeBytes || !body.assetPath) {
     return NextResponse.json(
-      { error: "title, fileName, and fileSizeBytes are required" },
+      { error: "title, fileName, fileSizeBytes, and assetPath are required" },
       { status: 400 },
     );
+  }
+
+  const exists = await enterpriseTransferAssetExists(body.assetPath);
+  if (!exists) {
+    return NextResponse.json({ error: "That upload hasn't completed yet." }, { status: 409 });
   }
 
   const created = await createEnterpriseTransfer({
@@ -64,7 +88,7 @@ export async function POST(request: NextRequest) {
     title: body.title,
     fileName: body.fileName,
     fileSizeBytes: body.fileSizeBytes,
-    downloadUrl: body.downloadUrl,
+    assetPath: body.assetPath,
     expiresDays: body.expiresDays,
   });
 

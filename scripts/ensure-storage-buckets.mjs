@@ -19,6 +19,7 @@ const BUCKETS = [
   { id: "thumbnails", public: true },
   { id: "business-documents", public: false },
   { id: "ad-creatives", public: true },
+  { id: "enterprise-transfers", public: false },
 ];
 
 const { data: existing, error: listError } = await client.storage.listBuckets();

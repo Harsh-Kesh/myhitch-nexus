@@ -18,6 +18,18 @@ const AUDIO_MASTERS_BUCKET = "audio-masters";
 const THUMBNAILS_BUCKET = "thumbnails";
 const BUSINESS_DOCUMENTS_BUCKET = "business-documents";
 const AD_CREATIVES_BUCKET = "ad-creatives";
+const ENTERPRISE_TRANSFERS_BUCKET = "enterprise-transfers";
+
+// Enterprise Large File Transfers used to be metadata-only — download_url was whatever
+// link an org member typed in by hand, never a real upload through Nexus. This is the
+// one feature that's actually named for large files ("up to 500GB" on /business/enterprise's
+// own header), so it gets a higher cap than a video master — but 500GB in one signed PUT
+// from a browser isn't realistic in this preview build (no resumable/multipart upload
+// exists here yet); this cap is real and enforced, just not yet the full marketing
+// promise. Override via env var, same convention as MAX_MASTER_UPLOAD_BYTES.
+export const MAX_ENTERPRISE_TRANSFER_BYTES = Number(
+  process.env.MAX_ENTERPRISE_TRANSFER_BYTES ?? 5 * 1024 * 1024 * 1024,
+);
 
 // A real ad creative is a short pre-roll clip (typically 5-30s), not a camera master —
 // capped well below MAX_MASTER_UPLOAD_BYTES.
@@ -178,6 +190,57 @@ export async function adCreativeAssetExists(path: string): Promise<boolean> {
   const fileName = segments.pop()!;
   const dir = segments.join("/");
   const { data, error } = await client.storage.from(AD_CREATIVES_BUCKET).list(dir, { search: fileName });
+  if (error || !data?.length) return false;
+  return data.some((entry) => entry.name === fileName);
+}
+
+/** Same signed-upload shape as createMasterUploadUrl() — private bucket (unlike ad
+ * creatives, a large transfer is never meant to be publicly reachable, only via the
+ * signed download URL a real recipient was actually sent), namespaced by org. */
+export async function createEnterpriseTransferUploadUrl(
+  orgId: string,
+  fileName: string,
+  fileSizeBytes: number,
+): Promise<{ path: string; signedUrl: string; token: string }> {
+  if (fileSizeBytes > MAX_ENTERPRISE_TRANSFER_BYTES) {
+    throw new Error(
+      `File is too large for this preview build (max ${Math.round(MAX_ENTERPRISE_TRANSFER_BYTES / (1024 * 1024 * 1024))}GB).`,
+    );
+  }
+  const path = `${orgId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const client = getClient();
+  const { data, error } = await client.storage.from(ENTERPRISE_TRANSFERS_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) {
+    throw new Error(`Failed to create an upload URL: ${error?.message ?? "unknown error"}`);
+  }
+  return { path, signedUrl: data.signedUrl, token: data.token };
+}
+
+/** Fresh signed link on every read, same reasoning as createMasterDownloadUrl() — never
+ * a permanent/public URL that could go stale or leak indefinitely. A longer default
+ * expiry than a video master's (300s) since a transfer recipient may not click through
+ * immediately from wherever the link was shared. */
+export async function createEnterpriseTransferDownloadUrl(
+  path: string,
+  expiresInSeconds = 3600,
+): Promise<string> {
+  const client = getClient();
+  const { data, error } = await client.storage.from(ENTERPRISE_TRANSFERS_BUCKET).createSignedUrl(path, expiresInSeconds);
+  if (error || !data) {
+    throw new Error(`Failed to create a download URL: ${error?.message ?? "unknown error"}`);
+  }
+  return data.signedUrl;
+}
+
+/** Same "confirm the upload actually happened" gate as masterAssetExists()/
+ * adCreativeAssetExists() — a client could otherwise register a transfer row pointing at
+ * a path nothing was ever uploaded to. */
+export async function enterpriseTransferAssetExists(path: string): Promise<boolean> {
+  const client = getClient();
+  const segments = path.split("/");
+  const fileName = segments.pop()!;
+  const dir = segments.join("/");
+  const { data, error } = await client.storage.from(ENTERPRISE_TRANSFERS_BUCKET).list(dir, { search: fileName });
   if (error || !data?.length) return false;
   return data.some((entry) => entry.name === fileName);
 }

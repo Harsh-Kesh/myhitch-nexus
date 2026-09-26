@@ -7,6 +7,7 @@ import {
   listApiKeys,
   revokeApiKey,
   resolveOrgIdForAccount,
+  isEnterpriseOrgActive,
   sanitizeApiKeyScopes,
   NoOrganizationError,
 } from "@/lib/server/enterprise";
@@ -22,14 +23,19 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
   if (!hasAnyRole(account, ["producer"])) {
     return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
+  let orgId: string;
   try {
-    return { orgId: await resolveOrgIdForAccount(account.id) };
+    orgId = await resolveOrgIdForAccount(account.id);
   } catch (err) {
     if (err instanceof NoOrganizationError) {
       return { error: NextResponse.json({ error: "You aren't a member of any organization." }, { status: 403 }) };
     }
     throw err;
   }
+  if (!(await isEnterpriseOrgActive(orgId))) {
+    return { error: NextResponse.json({ error: "Your Enterprise application is still pending approval." }, { status: 403 }) };
+  }
+  return { orgId };
 }
 
 export async function GET(request: NextRequest) {

@@ -3,6 +3,7 @@
 import {
   IconBroadcast,
   IconBuildingCommunity,
+  IconBuildingSkyscraper,
   IconChartBar,
   IconCoin,
   IconFileText,
@@ -77,6 +78,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           label: "Organisations",
           icon: <IconBuildingCommunity />,
           tiers: ["moderator", "super-admin"],
+        },
+        {
+          href: "/admin/enterprise",
+          label: "Enterprise",
+          icon: <IconBuildingSkyscraper />,
+          tiers: ["super-admin"],
         },
         { href: "/admin/content", label: "Content", icon: <IconVideo />, tiers: ["moderator", "super-admin"] },
         { href: "/admin/live", label: "Live", icon: <IconBroadcast />, tiers: ["moderator", "super-admin"] },

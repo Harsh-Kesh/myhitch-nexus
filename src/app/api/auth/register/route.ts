@@ -96,6 +96,24 @@ export async function POST(request: NextRequest) {
 
   await provisionChannelForRole(account.id, dbRole, { name, country, email });
 
+  // Enterprise has no self-serve checkout — registering with this role is the sales
+  // lead, not a purchase. Auto-creating the real sales_inquiries row here (instead of
+  // requiring a second, separate "Contact Sales" form fill-out right after signing up)
+  // is what makes the registration itself the actionable thing an admin approves.
+  if (dbRole === "producer") {
+    await query(
+      `insert into sales_inquiries (account_id, full_name, email, company, message)
+       values ($1, $2, $3, $4, $5)`,
+      [
+        account.id,
+        name,
+        email,
+        name,
+        "Submitted via Enterprise self-registration — awaiting sales approval.",
+      ],
+    );
+  }
+
   const session = await createSession(account.id, {
     remember: true,
     userAgent: request.headers.get("user-agent"),

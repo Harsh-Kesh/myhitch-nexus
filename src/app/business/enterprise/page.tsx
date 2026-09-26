@@ -3,6 +3,7 @@
 import {
   IconClipboardList,
   IconCopy,
+  IconDownload,
   IconExternalLink,
   IconFileZip,
   IconHeadset,
@@ -49,6 +50,8 @@ interface EnterpriseTransferItem {
   file_name: string;
   file_size_bytes: string;
   download_url: string | null;
+  asset_path: string | null;
+  resolvedDownloadUrl: string | null;
   status: "active" | "expired";
   download_count: number;
   expires_at: string;
@@ -83,6 +86,8 @@ interface SsoConfigItem {
   idpMetadataUrl: string | null;
   ssoDomain: string | null;
   enabled: boolean;
+  metadataVerified: boolean;
+  metadataCheckedAt: string | null;
   updatedAt: string;
 }
 
@@ -147,12 +152,11 @@ export default function EnterpriseHubPage() {
   });
 
   const [transferForm, setTransferForm] = React.useState({
-    title: "Final 4K Master (ProRes 422 HQ)",
-    fileName: "Nexus_Anthem_ProRes_Master.mov",
-    fileSizeGB: 14.5,
-    downloadUrl: "https://storage.myhitch.com/enterprise/transfers/master-prores.mov",
+    title: "",
     expiresDays: 14,
   });
+  const [transferFile, setTransferFile] = React.useState<File | null>(null);
+  const [transferUploading, setTransferUploading] = React.useState(false);
 
   const [keyForm, setKeyForm] = React.useState({
     name: "Production CMS Integration",
@@ -232,20 +236,34 @@ export default function EnterpriseHubPage() {
     }
   };
 
-  // Transfer Submission
+  // Transfer Submission — a real signed-upload-then-register round trip (same shape as
+  // the video-versions upload flow): get a signed URL, PUT the actual file bytes to
+  // storage, then register the transfer row once the upload is confirmed to exist.
   const handleCreateTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!transferFile) return;
     setSubmitting(true);
+    setTransferUploading(true);
     try {
-      const fileSizeBytes = Math.round(transferForm.fileSizeGB * 1024 * 1024 * 1024);
+      const urlRes = await fetch("/api/enterprise/transfers/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: transferFile.name, fileSizeBytes: transferFile.size }),
+      });
+      const urlData = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlData.error ?? "Failed to start the upload.");
+
+      const putRes = await fetch(urlData.signedUrl, { method: "PUT", body: transferFile });
+      if (!putRes.ok) throw new Error("The file upload failed partway through — try again.");
+
       const res = await fetch("/api/enterprise/transfers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: transferForm.title,
-          fileName: transferForm.fileName,
-          fileSizeBytes,
-          downloadUrl: transferForm.downloadUrl || null,
+          fileName: transferFile.name,
+          fileSizeBytes: transferFile.size,
+          assetPath: urlData.path,
           expiresDays: transferForm.expiresDays,
         }),
       });
@@ -254,6 +272,8 @@ export default function EnterpriseHubPage() {
 
       setTransfers((prev) => [data.transfer, ...prev]);
       setCreateTransferOpen(false);
+      setTransferForm({ title: "", expiresDays: 14 });
+      setTransferFile(null);
       toast({
         title: "Transfer created",
         description: "Large file transfer is now active.",
@@ -263,6 +283,7 @@ export default function EnterpriseHubPage() {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
       setSubmitting(false);
+      setTransferUploading(false);
     }
   };
 
@@ -325,7 +346,15 @@ export default function EnterpriseHubPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save SSO configuration");
       setSsoConfig(data.config);
-      toast({ title: "SSO configuration saved", tone: "success" });
+      toast({
+        title: "SSO configuration saved",
+        description: data.config.idpMetadataUrl
+          ? data.config.metadataVerified
+            ? "Metadata URL verified — it resolves to real SAML metadata."
+            : "Couldn't verify that metadata URL — check it's reachable and points to real SAML metadata XML."
+          : undefined,
+        tone: data.config.idpMetadataUrl && !data.config.metadataVerified ? "warning" : "success",
+      });
     } catch (err: unknown) {
       toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
     } finally {
@@ -780,15 +809,27 @@ export default function EnterpriseHubPage() {
                             {formatDate(t.expires_at)}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            {t.download_url && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => copyToClipboard(t.download_url!, "Download link copied")}
-                              >
-                                <IconCopy className="size-3.5" />
-                                Copy URL
-                              </Button>
+                            {t.resolvedDownloadUrl && (
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    window.open(t.resolvedDownloadUrl!, "_blank", "noopener,noreferrer")
+                                  }
+                                >
+                                  <IconDownload className="size-3.5" />
+                                  Download
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => copyToClipboard(t.resolvedDownloadUrl!, "Download link copied")}
+                                >
+                                  <IconCopy className="size-3.5" />
+                                  Copy link
+                                </Button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -1032,6 +1073,18 @@ export default function EnterpriseHubPage() {
                       value={ssoForm.idpMetadataUrl}
                       onChange={(e) => setSsoForm({ ...ssoForm, idpMetadataUrl: e.target.value })}
                     />
+                    {ssoConfig?.idpMetadataUrl ? (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs">
+                        {ssoConfig.metadataVerified ? (
+                          <Badge tone="published" size="sm">Metadata verified</Badge>
+                        ) : (
+                          <Badge tone="rejected" size="sm">Couldn&apos;t verify metadata</Badge>
+                        )}
+                        {ssoConfig.metadataCheckedAt ? (
+                          <span className="text-fg-subtle">checked {relativeTime(ssoConfig.metadataCheckedAt)}</span>
+                        ) : null}
+                      </p>
+                    ) : null}
                   </Field>
                   <Field label="SSO domain" htmlFor="sso-domain" hint="Employees signing in with this email domain will use SSO once enabled.">
                     <Input
@@ -1172,12 +1225,12 @@ export default function EnterpriseHubPage() {
         </form>
       </Modal>
 
-      {/* MODAL 2: Create File Transfer */}
+      {/* MODAL 2: Create File Transfer — a real signed upload, not a pasted-in URL */}
       <Modal
         open={createTransferOpen}
         onClose={() => setCreateTransferOpen(false)}
         title="Create Large File Transfer"
-        description="Publish a high-speed download link for master video packages."
+        description="Upload a file — it's stored privately and a fresh download link is minted every time someone opens this page."
       >
         <form onSubmit={handleCreateTransfer} className="space-y-4">
           <div>
@@ -1191,47 +1244,36 @@ export default function EnterpriseHubPage() {
               placeholder="e.g. Master ProRes Package"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-fg-muted">File Name</label>
-              <input
-                type="text"
-                required
-                value={transferForm.fileName}
-                onChange={(e) => setTransferForm({ ...transferForm, fileName: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg"
-                placeholder="master_archive.zip"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-fg-muted">Size (GB)</label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                required
-                value={transferForm.fileSizeGB}
-                onChange={(e) => setTransferForm({ ...transferForm, fileSizeGB: parseFloat(e.target.value) || 1 })}
-                className="mt-1 w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-fg-muted">File</label>
+            <input
+              type="file"
+              required
+              onChange={(e) => setTransferFile(e.target.files?.[0] ?? null)}
+              className="mt-1 w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg file:mr-3 file:rounded file:border-0 file:bg-surface-3 file:px-2 file:py-1 file:text-xs"
+            />
+            {transferFile ? (
+              <p className="mt-1 text-2xs text-fg-subtle">
+                {transferFile.name} · {(transferFile.size / (1024 * 1024)).toFixed(1)}MB
+              </p>
+            ) : null}
           </div>
           <div>
-            <label className="block text-xs font-medium text-fg-muted">Download Storage URL</label>
+            <label className="block text-xs font-medium text-fg-muted">Expires after (days)</label>
             <input
-              type="url"
-              value={transferForm.downloadUrl}
-              onChange={(e) => setTransferForm({ ...transferForm, downloadUrl: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg"
-              placeholder="https://storage.myhitch.com/..."
+              type="number"
+              min="1"
+              value={transferForm.expiresDays}
+              onChange={(e) => setTransferForm({ ...transferForm, expiresDays: parseInt(e.target.value, 10) || 14 })}
+              className="mt-1 w-32 rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg"
             />
           </div>
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="ghost" type="button" onClick={() => setCreateTransferOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" loading={submitting}>
-              Publish Transfer
+            <Button variant="primary" type="submit" loading={submitting} disabled={!transferFile}>
+              {transferUploading ? "Uploading…" : "Upload & Publish"}
             </Button>
           </div>
         </form>
