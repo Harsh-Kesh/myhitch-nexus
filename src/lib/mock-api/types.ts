@@ -56,7 +56,12 @@ export type ChannelKind =
   | "education"
   | "government"
   | "nonprofit"
-  | "news";
+  | "news"
+  // Real-only — a real organizations.type passes straight through as Channel.kind
+  // (catalogue.ts's getChannel()/getChannelBySlug()) and the DB's own check constraint
+  // allows both of these; the client type just never declared them.
+  | "advertiser"
+  | "producer";
 
 export type UserRole =
   | "viewer"

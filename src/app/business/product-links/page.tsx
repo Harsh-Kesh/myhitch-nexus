@@ -1,6 +1,6 @@
 "use client";
 
-import { IconLink, IconPlus, IconShoppingBag } from "@tabler/icons-react";
+import { IconLink, IconPlus, IconShoppingBag, IconTrash } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
@@ -12,20 +12,29 @@ import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
+import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useChannelVideos,
   useCreateProductLink,
+  useCurrentUser,
+  useDeleteProductLink,
   useProductLinks,
 } from "@/lib/mock-api/hooks";
 import type { ProductLink } from "@/lib/mock-api/types";
 import { compactNumber, formatCurrency, formatPercent } from "@/lib/utils";
 
-const CHANNEL_ID = "ch_helio";
+// See leads/page.tsx's identical comment — only ever a fallback for the shared demo
+// persona, never a real signed-in account.
+const MOCK_CHANNEL_ID = "ch_helio";
 
 export default function ProductLinksPage() {
-  const { data: links = [] } = useProductLinks(CHANNEL_ID);
-  const { data: videos = [] } = useChannelVideos(CHANNEL_ID);
-  const createLink = useCreateProductLink(CHANNEL_ID);
+  const { data: user } = useCurrentUser();
+  const channelId =
+    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { data: links = [] } = useProductLinks(channelId);
+  const { data: videos = [] } = useChannelVideos(channelId);
+  const createLink = useCreateProductLink(channelId);
+  const deleteLink = useDeleteProductLink(channelId);
   const { toast } = useToast();
 
   const [open, setOpen] = React.useState(false);
@@ -136,6 +145,31 @@ export default function ProductLinksPage() {
           <span className="text-fg-subtle">Own product</span>
         ),
     },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      cell: (row) => (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Delete ${row.productName}`}
+          onClick={() => {
+            if (!confirm(`Delete "${row.productName}"? This can't be undone.`)) return;
+            deleteLink.mutate(row.id, {
+              onError: (err) =>
+                toast({
+                  tone: "error",
+                  title: "Couldn't delete product link",
+                  description: err instanceof Error ? err.message : undefined,
+                }),
+            });
+          }}
+        >
+          <IconTrash className="size-4 text-danger" />
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -177,9 +211,9 @@ export default function ProductLinksPage() {
         <Card>
           <CardBody>
             <p className="text-xs leading-relaxed text-fg-subtle">
-              Commerce is mocked. Product references point at a fictional Mart
-              catalogue and no external request is made when a viewer taps a
-              “Shop this video” card.
+              {looksLikeRealId(channelId)
+                ? "Product links, clicks and \"Shop this video\" cards are real — but there's no real Mart product catalogue or checkout to link to yet, so mart_product_id is a stand-in identifier, not a real product lookup."
+                : "Commerce is mocked. Product references point at a fictional Mart catalogue and no external request is made when a viewer taps a “Shop this video” card."}
             </p>
           </CardBody>
         </Card>
@@ -202,7 +236,7 @@ export default function ProductLinksPage() {
               loading={createLink.isPending}
               onClick={async () => {
                 await createLink.mutateAsync({
-                  channelId: CHANNEL_ID,
+                  channelId,
                   productName: productName.trim(),
                   martProductId: `mart_${productName.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 24)}`,
                   price: {

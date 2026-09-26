@@ -9,10 +9,15 @@ import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ProgressBar } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/toast";
-import { useCampaigns } from "@/lib/mock-api/hooks";
+import { looksLikeRealId } from "@/lib/mock-api";
+import { useCampaigns, useCurrentUser } from "@/lib/mock-api/hooks";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-const CHANNEL_ID = "ch_helio";
+// The real /api/campaigns route resolves the org from the signed-in account's own
+// session regardless of what's passed here, so this only ever mattered for the React
+// Query cache key — still worth getting right rather than caching every real business's
+// campaigns under the shared demo account's key.
+const MOCK_CHANNEL_ID = "ch_helio";
 
 interface Invoice {
   id: string;
@@ -36,7 +41,10 @@ const INVOICES: Invoice[] = [
 const STATUS_TONE = { paid: "published", due: "pending", overdue: "rejected" } as const;
 
 export default function BillingPage() {
-  const { data: campaigns = [] } = useCampaigns(CHANNEL_ID);
+  const { data: user } = useCurrentUser();
+  const channelId =
+    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { data: campaigns = [] } = useCampaigns(channelId);
   const { toast } = useToast();
 
   const committed = campaigns

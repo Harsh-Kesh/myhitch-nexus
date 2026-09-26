@@ -13,12 +13,15 @@ import { Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { videoById } from "@/lib/mock-api/data/videos";
-import { useLeads, useUpdateLeadStatus } from "@/lib/mock-api/hooks";
+import { downloadLeadsCsv, looksLikeRealId } from "@/lib/mock-api";
+import { useCurrentUser, useLeads, useUpdateLeadStatus, useVideo } from "@/lib/mock-api/hooks";
 import type { Lead } from "@/lib/mock-api/types";
 import { relativeTime } from "@/lib/utils";
 
-const CHANNEL_ID = "ch_helio";
+// Not a plain `?? "ch_helio"` fallback used blindly — see business-shell.tsx's header
+// comment on why a real signed-in account's own channelId is never actually null by the
+// time it reaches here; this only ever falls back for the shared demo persona.
+const MOCK_CHANNEL_ID = "ch_helio";
 
 const STATUS_TONE: Record<Lead["status"], "accent" | "info" | "published" | "archived"> = {
   new: "accent",
@@ -28,8 +31,11 @@ const STATUS_TONE: Record<Lead["status"], "accent" | "info" | "published" | "arc
 };
 
 export default function LeadsPage() {
-  const { data: leads = [] } = useLeads(CHANNEL_ID);
-  const updateStatus = useUpdateLeadStatus(CHANNEL_ID);
+  const { data: user } = useCurrentUser();
+  const channelId =
+    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { data: leads = [] } = useLeads(channelId);
+  const updateStatus = useUpdateLeadStatus(channelId);
   const { toast } = useToast();
 
   const [tab, setTab] = React.useState("all");
@@ -53,13 +59,17 @@ export default function LeadsPage() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() =>
-              toast({
-                title: "Export queued",
-                description: "Mock CSV export — no CRM is connected.",
-                tone: "info",
-              })
-            }
+            onClick={() => {
+              if (!looksLikeRealId(channelId)) {
+                toast({
+                  title: "Export queued",
+                  description: "Mock CSV export — no CRM is connected.",
+                  tone: "info",
+                });
+                return;
+              }
+              downloadLeadsCsv();
+            }}
           >
             <IconDownload />
             Export
@@ -95,69 +105,14 @@ export default function LeadsPage() {
           />
         ) : (
           <ul className="space-y-3">
-            {filtered.map((lead) => {
-              const video = videoById(lead.sourceVideoId);
-              return (
-                <li key={lead.id}>
-                  <Card className="p-4">
-                    <div className="flex flex-wrap items-start gap-4">
-                      <Avatar name={lead.name} size="lg" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-medium text-fg">{lead.name}</p>
-                          <Badge tone={STATUS_TONE[lead.status]} size="sm">
-                            {lead.status}
-                          </Badge>
-                          <span className="text-xs text-fg-subtle">
-                            {relativeTime(lead.createdAt)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-fg-muted">
-                          {lead.company} · {lead.email}
-                        </p>
-                        <p className="mt-2 nx-clamp-2 text-sm leading-relaxed text-fg-muted">
-                          {lead.message}
-                        </p>
-                        {video ? (
-                          <Link
-                            href={`/video/${video.id}`}
-                            className="mt-2 inline-block text-2xs text-fg-subtle transition-colors hover:text-accent"
-                          >
-                            from “{video.title}”
-                          </Link>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Select
-                          value={lead.status}
-                          onChange={(event) =>
-                            updateStatus.mutate({
-                              id: lead.id,
-                              status: event.target.value as Lead["status"],
-                            })
-                          }
-                          sizeVariant="sm"
-                          className="w-32"
-                          aria-label={`Status for ${lead.name}`}
-                        >
-                          <option value="new">New</option>
-                          <option value="contacted">Contacted</option>
-                          <option value="qualified">Qualified</option>
-                          <option value="closed">Closed</option>
-                        </Select>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setDetail(lead)}
-                        >
-                          View
-                        </Button>
-                      </div>
-                    </div>
-                  </Card>
-                </li>
-              );
-            })}
+            {filtered.map((lead) => (
+              <LeadCard
+                key={lead.id}
+                lead={lead}
+                onStatusChange={(status) => updateStatus.mutate({ id: lead.id, status })}
+                onView={() => setDetail(lead)}
+              />
+            ))}
           </ul>
         )}
       </PageBody>
@@ -205,5 +160,70 @@ export default function LeadsPage() {
         ) : null}
       </Modal>
     </>
+  );
+}
+
+/** Its own component so useVideo() (real/mock-aware, same as SubscriptionCard's own
+ * useChannel() elsewhere) can be called once per row without breaking the rules of
+ * hooks inside .map() above. A real lead's sourceVideoId is a real uuid — videoById()
+ * only ever searched the static mock seed array, so it silently found nothing for
+ * every real lead's source video until this. */
+function LeadCard({
+  lead,
+  onStatusChange,
+  onView,
+}: {
+  lead: Lead;
+  onStatusChange: (status: Lead["status"]) => void;
+  onView: () => void;
+}) {
+  const { data: video } = useVideo(lead.sourceVideoId);
+
+  return (
+    <li>
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start gap-4">
+          <Avatar name={lead.name} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium text-fg">{lead.name}</p>
+              <Badge tone={STATUS_TONE[lead.status]} size="sm">
+                {lead.status}
+              </Badge>
+              <span className="text-xs text-fg-subtle">{relativeTime(lead.createdAt)}</span>
+            </div>
+            <p className="mt-0.5 text-xs text-fg-muted">
+              {lead.company} · {lead.email}
+            </p>
+            <p className="mt-2 nx-clamp-2 text-sm leading-relaxed text-fg-muted">{lead.message}</p>
+            {video ? (
+              <Link
+                href={`/video/${video.id}`}
+                className="mt-2 inline-block text-2xs text-fg-subtle transition-colors hover:text-accent"
+              >
+                from “{video.title}”
+              </Link>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={lead.status}
+              onChange={(event) => onStatusChange(event.target.value as Lead["status"])}
+              sizeVariant="sm"
+              className="w-32"
+              aria-label={`Status for ${lead.name}`}
+            >
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualified">Qualified</option>
+              <option value="closed">Closed</option>
+            </Select>
+            <Button variant="secondary" size="sm" onClick={onView}>
+              View
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </li>
   );
 }

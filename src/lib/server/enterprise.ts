@@ -372,3 +372,350 @@ export async function getEnterpriseOverview(orgId: string) {
     keys,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/*                    5. Timecoded Client Review Comments                     */
+/* -------------------------------------------------------------------------- */
+
+export interface ReviewCommentRow {
+  id: string;
+  reviewId: string;
+  authorName: string;
+  timestampSeconds: number;
+  content: string;
+  createdAt: string;
+}
+
+/** Public — a review token, not an account, authorizes reading/adding comments here
+ * (same trust model client_reviews itself already uses: knowing the token is what grants
+ * access, there's no login for an external client). */
+export async function listReviewComments(reviewId: string): Promise<ReviewCommentRow[]> {
+  const rows = await query<{
+    id: string;
+    review_id: string;
+    author_name: string;
+    timestamp_seconds: number;
+    content: string;
+    created_at: string;
+  }>(
+    `select * from review_comments where review_id = $1 order by timestamp_seconds asc, created_at asc`,
+    [reviewId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    reviewId: row.review_id,
+    authorName: row.author_name,
+    timestampSeconds: row.timestamp_seconds,
+    content: row.content,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function addReviewComment(
+  reviewId: string,
+  authorName: string,
+  timestampSeconds: number,
+  content: string,
+): Promise<ReviewCommentRow | null> {
+  if (!content.trim()) return null;
+  const row = await queryOne<{
+    id: string;
+    review_id: string;
+    author_name: string;
+    timestamp_seconds: number;
+    content: string;
+    created_at: string;
+  }>(
+    `insert into review_comments (review_id, author_name, timestamp_seconds, content)
+     values ($1, $2, $3, $4) returning *`,
+    [reviewId, authorName.trim().slice(0, 120) || "Client", Math.max(0, Math.round(timestampSeconds)), content.trim().slice(0, 2000)],
+  );
+  if (!row) return null;
+  return {
+    id: row.id,
+    reviewId: row.review_id,
+    authorName: row.author_name,
+    timestampSeconds: row.timestamp_seconds,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                       6. Single Sign-On (SAML) config                      */
+/* -------------------------------------------------------------------------- */
+
+export interface SsoConfigRow {
+  organizationId: string;
+  idpMetadataUrl: string | null;
+  ssoDomain: string | null;
+  enabled: boolean;
+  updatedAt: string;
+}
+
+/** Storing the IdP metadata URL and domain is real; actually authenticating a sign-in
+ * against it is not — real SAML requires a certificate-validated assertion exchange this
+ * app has no identity-provider integration for yet (Auth0 is this app's own IdP, not a
+ * SAML relying party). This is the config surface an enterprise admin fills in, honestly
+ * stopping short of a working SSO login flow. */
+export async function getSsoConfig(organizationId: string): Promise<SsoConfigRow> {
+  const row = await queryOne<{
+    organization_id: string;
+    idp_metadata_url: string | null;
+    sso_domain: string | null;
+    enabled: boolean;
+    updated_at: string;
+  }>(`select * from enterprise_sso_configs where organization_id = $1`, [organizationId]);
+  if (!row) {
+    return { organizationId, idpMetadataUrl: null, ssoDomain: null, enabled: false, updatedAt: new Date(0).toISOString() };
+  }
+  return {
+    organizationId: row.organization_id,
+    idpMetadataUrl: row.idp_metadata_url,
+    ssoDomain: row.sso_domain,
+    enabled: row.enabled,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function saveSsoConfig(
+  organizationId: string,
+  input: { idpMetadataUrl?: string | null; ssoDomain?: string | null; enabled?: boolean },
+): Promise<SsoConfigRow> {
+  const row = await queryOne<{
+    organization_id: string;
+    idp_metadata_url: string | null;
+    sso_domain: string | null;
+    enabled: boolean;
+    updated_at: string;
+  }>(
+    `insert into enterprise_sso_configs (organization_id, idp_metadata_url, sso_domain, enabled)
+     values ($1, $2, $3, $4)
+     on conflict (organization_id) do update set
+       idp_metadata_url = $2, sso_domain = $3, enabled = $4, updated_at = now()
+     returning *`,
+    [organizationId, input.idpMetadataUrl?.trim() || null, input.ssoDomain?.trim() || null, input.enabled ?? false],
+  );
+  return {
+    organizationId: row!.organization_id,
+    idpMetadataUrl: row!.idp_metadata_url,
+    ssoDomain: row!.sso_domain,
+    enabled: row!.enabled,
+    updatedAt: row!.updated_at,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            7. Priority Support                             */
+/* -------------------------------------------------------------------------- */
+
+export interface SupportTicketRow {
+  id: string;
+  organizationId: string;
+  accountId: string | null;
+  subject: string;
+  message: string;
+  priority: "normal" | "high" | "urgent";
+  status: "open" | "in_progress" | "resolved";
+  createdAt: string;
+}
+
+export async function createSupportTicket(input: {
+  organizationId: string;
+  accountId: string;
+  subject: string;
+  message: string;
+  priority?: "normal" | "high" | "urgent";
+}): Promise<{ outcome: "success"; ticket: SupportTicketRow } | { outcome: "invalid"; reason: string }> {
+  if (!input.subject.trim() || !input.message.trim()) {
+    return { outcome: "invalid", reason: "A subject and message are required." };
+  }
+  const row = await queryOne<{
+    id: string;
+    organization_id: string;
+    account_id: string | null;
+    subject: string;
+    message: string;
+    priority: "normal" | "high" | "urgent";
+    status: "open" | "in_progress" | "resolved";
+    created_at: string;
+  }>(
+    `insert into support_tickets (organization_id, account_id, subject, message, priority)
+     values ($1, $2, $3, $4, $5) returning *`,
+    [input.organizationId, input.accountId, input.subject.trim().slice(0, 200), input.message.trim().slice(0, 5000), input.priority ?? "high"],
+  );
+  return {
+    outcome: "success",
+    ticket: {
+      id: row!.id,
+      organizationId: row!.organization_id,
+      accountId: row!.account_id,
+      subject: row!.subject,
+      message: row!.message,
+      priority: row!.priority,
+      status: row!.status,
+      createdAt: row!.created_at,
+    },
+  };
+}
+
+export async function listSupportTickets(organizationId: string): Promise<SupportTicketRow[]> {
+  const rows = await query<{
+    id: string;
+    organization_id: string;
+    account_id: string | null;
+    subject: string;
+    message: string;
+    priority: "normal" | "high" | "urgent";
+    status: "open" | "in_progress" | "resolved";
+    created_at: string;
+  }>(`select * from support_tickets where organization_id = $1 order by created_at desc`, [organizationId]);
+  return rows.map((row) => ({
+    id: row.id,
+    organizationId: row.organization_id,
+    accountId: row.account_id,
+    subject: row.subject,
+    message: row.message,
+    priority: row.priority,
+    status: row.status,
+    createdAt: row.created_at,
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*                       8. Org-scoped Audit Trail                            */
+/* -------------------------------------------------------------------------- */
+
+export interface OrgAuditEntry {
+  id: string;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  severity: string;
+  createdAt: string;
+}
+
+/** audit_log has no organization_id column of its own (confirmed by reading its schema —
+ * it's keyed by actor + target, not by org) — "this organization's audit trail" is real,
+ * but means "actions taken by any of this org's own members," the honest available
+ * definition given the existing table, not "every audit event that ever touched this
+ * org's resources" (which would need a much larger join across videos/campaigns/etc). */
+export async function listOrgAuditLog(
+  organizationId: string,
+  filters: { severity?: string; targetType?: string } = {},
+): Promise<OrgAuditEntry[]> {
+  const conditions = ["actor_account_id in (select account_id from memberships where organization_id = $1)"];
+  const params: unknown[] = [organizationId];
+  if (filters.severity) {
+    params.push(filters.severity);
+    conditions.push(`severity = $${params.length}`);
+  }
+  if (filters.targetType) {
+    params.push(filters.targetType);
+    conditions.push(`target_type = $${params.length}`);
+  }
+  const rows = await query<{
+    id: string;
+    actor_name: string;
+    actor_role: string;
+    action: string;
+    target_type: string;
+    target_id: string;
+    reason: string;
+    severity: string;
+    created_at: string;
+  }>(
+    `select id, actor_name, actor_role, action, target_type, target_id, reason, severity, created_at
+     from audit_log where ${conditions.join(" and ")} order by created_at desc limit 300`,
+    params,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    actorName: row.actor_name,
+    actorRole: row.actor_role,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    reason: row.reason,
+    severity: row.severity,
+    createdAt: row.created_at,
+  }));
+}
+
+/* -------------------------------------------------------------------------- */
+/*                          9. Video Asset Versioning                         */
+/* -------------------------------------------------------------------------- */
+
+export interface VideoVersionRow {
+  id: string;
+  videoId: string;
+  versionNumber: number;
+  title: string;
+  assetUrl: string;
+  changesNotes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export async function listVideoVersions(videoId: string): Promise<VideoVersionRow[]> {
+  const rows = await query<{
+    id: string;
+    video_id: string;
+    version_number: number;
+    title: string;
+    asset_url: string;
+    changes_notes: string | null;
+    created_by: string | null;
+    created_at: string;
+  }>(`select * from video_versions where video_id = $1 order by version_number desc`, [videoId]);
+  return rows.map((row) => ({
+    id: row.id,
+    videoId: row.video_id,
+    versionNumber: row.version_number,
+    title: row.title,
+    assetUrl: row.asset_url,
+    changesNotes: row.changes_notes,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  }));
+}
+
+export async function createVideoVersion(input: {
+  videoId: string;
+  title: string;
+  assetUrl: string;
+  changesNotes?: string | null;
+  createdBy: string;
+}): Promise<VideoVersionRow> {
+  const nextVersion = await queryOne<{ next: number }>(
+    `select coalesce(max(version_number), 0) + 1 as next from video_versions where video_id = $1`,
+    [input.videoId],
+  );
+  const row = await queryOne<{
+    id: string;
+    video_id: string;
+    version_number: number;
+    title: string;
+    asset_url: string;
+    changes_notes: string | null;
+    created_by: string | null;
+    created_at: string;
+  }>(
+    `insert into video_versions (video_id, version_number, title, asset_url, changes_notes, created_by)
+     values ($1, $2, $3, $4, $5, $6) returning *`,
+    [input.videoId, nextVersion?.next ?? 1, input.title.trim().slice(0, 200), input.assetUrl, input.changesNotes?.trim() || null, input.createdBy],
+  );
+  return {
+    id: row!.id,
+    videoId: row!.video_id,
+    versionNumber: row!.version_number,
+    title: row!.title,
+    assetUrl: row!.asset_url,
+    changesNotes: row!.changes_notes,
+    createdBy: row!.created_by,
+    createdAt: row!.created_at,
+  };
+}

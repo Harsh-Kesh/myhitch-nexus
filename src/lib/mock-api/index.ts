@@ -2733,7 +2733,42 @@ export async function submitCampaign(campaignId: string): Promise<{ status: "act
   return res.json();
 }
 
+interface RealLead {
+  id: string;
+  organizationId: string;
+  sourceVideoId: string | null;
+  name: string;
+  email: string;
+  company: string | null;
+  message: string;
+  status: Lead["status"];
+  createdAt: string;
+}
+
+function mapRealLead(row: RealLead): Lead {
+  return {
+    id: row.id,
+    channelId: row.organizationId,
+    name: row.name,
+    email: row.email,
+    company: row.company ?? "",
+    sourceVideoId: row.sourceVideoId ?? "",
+    message: row.message,
+    status: row.status,
+    createdAt: row.createdAt,
+  };
+}
+
+/** Was 100% mock — real branch found live 2026-09-27: a real business account's Leads
+ * page always showed the shared demo persona's seeded leads regardless of `channelId`,
+ * since this had no real branch at all. */
 export async function getLeads(channelId: string): Promise<Lead[]> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch("/api/business/leads/");
+    if (!res.ok) return [];
+    const { leads } = (await res.json()) as { leads: RealLead[] };
+    return leads.map(mapRealLead);
+  }
   await latency("fast");
   return clone(store.leads.filter((lead) => lead.channelId === channelId));
 }
@@ -2742,6 +2777,16 @@ export async function updateLeadStatus(
   id: string,
   status: Lead["status"],
 ): Promise<Lead | null> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch("/api/business/leads/", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    });
+    if (!res.ok) return null;
+    const { lead } = (await res.json()) as { lead: RealLead };
+    return mapRealLead(lead);
+  }
   await latency("fast");
   const lead = store.leads.find((item) => item.id === id);
   if (!lead) return null;
@@ -2749,7 +2794,64 @@ export async function updateLeadStatus(
   return clone(lead);
 }
 
+/** Triggers a real browser download of the org's leads CSV — a real server-built file,
+ * not a client-assembled one, since leads carry real contact details. */
+export function downloadLeadsCsv(): void {
+  window.location.href = "/api/business/leads/export/";
+}
+
+export async function submitVideoLead(
+  videoId: string,
+  input: { name: string; email: string; company?: string; message: string },
+): Promise<void> {
+  const res = await fetch(`/api/videos/${videoId}/leads/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? "Couldn't submit your enquiry.");
+  }
+}
+
+interface RealProductLink {
+  id: string;
+  organizationId: string;
+  productName: string;
+  martProductId: string;
+  priceCents: number;
+  currency: Money["currency"];
+  commissionRate: number;
+  targetUrl: string | null;
+  clicksCount: number;
+  conversionsCount: number;
+  attachedVideoIds: string[];
+  createdAt: string;
+}
+
+function mapRealProductLink(row: RealProductLink): ProductLink {
+  return {
+    id: row.id,
+    channelId: row.organizationId,
+    productName: row.productName,
+    martProductId: row.martProductId,
+    price: { amount: row.priceCents, currency: row.currency },
+    attachedVideoIds: row.attachedVideoIds,
+    clicks: row.clicksCount,
+    conversions: row.conversionsCount,
+    commissionRate: row.commissionRate,
+  };
+}
+
+/** Was 100% mock — same gap as getLeads() above. */
 export async function getProductLinks(channelId: string): Promise<ProductLink[]> {
+  if (looksLikeRealId(channelId)) {
+    const res = await fetch("/api/business/product-links/");
+    if (!res.ok) return [];
+    const { links } = (await res.json()) as { links: RealProductLink[] };
+    return links.map(mapRealProductLink);
+  }
   await latency("fast");
   return clone(store.productLinks.filter((link) => link.channelId === channelId));
 }
@@ -2757,10 +2859,73 @@ export async function getProductLinks(channelId: string): Promise<ProductLink[]>
 export async function createProductLink(
   payload: Omit<ProductLink, "id" | "clicks" | "conversions">,
 ): Promise<ProductLink> {
+  if (looksLikeRealId(payload.channelId)) {
+    const res = await fetch("/api/business/product-links/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        productName: payload.productName,
+        martProductId: payload.martProductId,
+        priceCents: payload.price.amount,
+        currency: payload.price.currency,
+        commissionRate: payload.commissionRate,
+        attachedVideoIds: payload.attachedVideoIds,
+      }),
+    });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Couldn't create the product link.");
+    }
+    const { link } = (await res.json()) as { link: RealProductLink };
+    return mapRealProductLink(link);
+  }
   await latency();
   const link: ProductLink = { ...payload, id: nextId("plk"), clicks: 0, conversions: 0 };
   store.productLinks = [link, ...store.productLinks];
   return clone(link);
+}
+
+export async function deleteProductLink(id: string): Promise<void> {
+  if (looksLikeRealId(id)) {
+    const res = await fetch(`/api/business/product-links/?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error ?? "Couldn't delete the product link.");
+    }
+    return;
+  }
+  await latency();
+  store.productLinks = store.productLinks.filter((link) => link.id !== id);
+}
+
+export interface VideoProductLinkCard {
+  id: string;
+  productName: string;
+  priceCents: number;
+  currency: string;
+  targetUrl: string | null;
+  timestampSeconds: number;
+}
+
+/** Real only — a mock video's "Shop this video" data was never a database-backed
+ * concept to begin with (see video-client.tsx's own mock commerce.affiliateLinks path). */
+export async function getVideoProductLinkCards(videoId: string): Promise<VideoProductLinkCard[]> {
+  if (!looksLikeRealId(videoId)) return [];
+  const res = await fetch(`/api/videos/${videoId}/product-links/`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { links: VideoProductLinkCard[] };
+  return data.links;
+}
+
+export async function recordProductLinkClick(videoId: string, linkId: string, converted = false): Promise<void> {
+  await fetch(`/api/videos/${videoId}/product-links/${linkId}/click/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ converted }),
+  }).catch(() => {
+    // Best-effort — a failed click ping shouldn't block the viewer from reaching the
+    // product's real target URL, which the caller opens regardless.
+  });
 }
 
 /* ================================ Admin ================================== */

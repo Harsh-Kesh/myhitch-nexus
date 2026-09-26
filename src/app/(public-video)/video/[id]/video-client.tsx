@@ -45,7 +45,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { Checkbox, Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { VideoCard } from "@/components/video/video-card";
-import { getVideoDownloadUrl, looksLikeRealId } from "@/lib/mock-api";
+import { getVideoDownloadUrl, looksLikeRealId, recordProductLinkClick, submitVideoLead } from "@/lib/mock-api";
 import { CONTENT_TYPE_LABELS, categoryById } from "@/lib/mock-api/data/categories";
 import {
   useAddVideoToPlaylist,
@@ -68,6 +68,7 @@ import {
   useToggleFollow,
   useToggleWatchlist,
   useVideo,
+  useVideoProductLinkCards,
   useWatchProgress,
   useWatchlist,
   useSubscriptions,
@@ -109,6 +110,8 @@ export function VideoDetailClient() {
   const { data: watchlist = [] } = useWatchlist();
   const { data: myRating } = useMyRating(videoId);
   const { data: following } = useIsFollowing(video?.channelId ?? "");
+  const { data: realProductLinks = [] } = useVideoProductLinkCards(videoId);
+  const isBusinessChannel = channel?.kind === "business" || channel?.kind === "producer";
 
   const toggleWatchlist = useToggleWatchlist();
   const toggleFollow = useToggleFollow();
@@ -182,6 +185,7 @@ export function VideoDetailClient() {
 
   const [purchaseOpen, setPurchaseOpen] = React.useState(false);
   const [pendingPlanChange, setPendingPlanChange] = React.useState<"premium" | "family" | null>(null);
+  const [quoteOpen, setQuoteOpen] = React.useState(false);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [reportOpen, setReportOpen] = React.useState(false);
   const [playlistOpen, setPlaylistOpen] = React.useState(false);
@@ -672,8 +676,11 @@ export function VideoDetailClient() {
               </CardBody>
             </Card>
 
-            {/* Commerce links */}
-            {video.pricing.affiliateLinks?.length ? (
+            {/* Commerce links — real for a real video (business/product-links.ts),
+                mock affiliateLinks for a mock one. Found live 2026-09-27: this card only
+                ever rendered the mock list, so a real business's real product links
+                (built the same pass as this fix) never showed here at all. */}
+            {realProductLinks.length > 0 || video.pricing.affiliateLinks?.length ? (
               <Card className="mt-4">
                 <CardBody>
                   <p className="flex items-center gap-2 text-sm font-medium text-fg">
@@ -681,46 +688,97 @@ export function VideoDetailClient() {
                     Shop this video
                   </p>
                   <p className="mt-1 text-xs text-fg-subtle">
-                    Products featured in this video, linked to Mart. Commerce links
-                    are mocked in this build.
+                    {realProductLinks.length > 0
+                      ? "Products featured in this video."
+                      : "Products featured in this video, linked to Mart. Commerce links are mocked in this build."}
                   </p>
                   <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {video.pricing.affiliateLinks.map((link) => (
-                      <li key={link.id}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            toast({
-                              title: "Mock commerce link",
-                              description: link.productName,
-                              tone: "info",
-                            })
-                          }
-                          className="flex w-full items-center gap-3 rounded border border-border bg-surface-2 p-2.5 text-left transition-colors hover:border-border-strong"
-                        >
-                          <span
-                            aria-hidden
-                            className="size-10 shrink-0 rounded"
-                            style={{
-                              backgroundImage:
-                                "linear-gradient(140deg, rgb(var(--nx-accent)), rgb(var(--nx-accent-press)))",
-                            }}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm text-fg">
-                              {link.productName}
-                            </span>
-                            <span className="block text-xs text-fg-subtle nx-tnum">
-                              {formatCurrency(link.price.amount, link.price.currency)}
-                              {link.timestampSeconds != null
-                                ? ` · at ${formatDuration(link.timestampSeconds)}`
-                                : ""}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
+                    {realProductLinks.length > 0
+                      ? realProductLinks.map((link) => (
+                          <li key={link.id}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                recordProductLinkClick(videoId, link.id, Boolean(link.targetUrl));
+                                if (link.targetUrl) {
+                                  window.open(link.targetUrl, "_blank", "noopener,noreferrer");
+                                } else {
+                                  toast({ title: link.productName, description: "No purchase link set for this product yet." });
+                                }
+                              }}
+                              className="flex w-full items-center gap-3 rounded border border-border bg-surface-2 p-2.5 text-left transition-colors hover:border-border-strong"
+                            >
+                              <span
+                                aria-hidden
+                                className="size-10 shrink-0 rounded"
+                                style={{
+                                  backgroundImage:
+                                    "linear-gradient(140deg, rgb(var(--nx-accent)), rgb(var(--nx-accent-press)))",
+                                }}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm text-fg">{link.productName}</span>
+                                <span className="block text-xs text-fg-subtle nx-tnum">
+                                  {formatCurrency(link.priceCents, link.currency)}
+                                  {link.timestampSeconds ? ` · at ${formatDuration(link.timestampSeconds)}` : ""}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        ))
+                      : video.pricing.affiliateLinks!.map((link) => (
+                          <li key={link.id}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toast({
+                                  title: "Mock commerce link",
+                                  description: link.productName,
+                                  tone: "info",
+                                })
+                              }
+                              className="flex w-full items-center gap-3 rounded border border-border bg-surface-2 p-2.5 text-left transition-colors hover:border-border-strong"
+                            >
+                              <span
+                                aria-hidden
+                                className="size-10 shrink-0 rounded"
+                                style={{
+                                  backgroundImage:
+                                    "linear-gradient(140deg, rgb(var(--nx-accent)), rgb(var(--nx-accent-press)))",
+                                }}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm text-fg">
+                                  {link.productName}
+                                </span>
+                                <span className="block text-xs text-fg-subtle nx-tnum">
+                                  {formatCurrency(link.price.amount, link.price.currency)}
+                                  {link.timestampSeconds != null
+                                    ? ` · at ${formatDuration(link.timestampSeconds)}`
+                                    : ""}
+                                </span>
+                              </span>
+                            </button>
+                          </li>
+                        ))}
                   </ul>
+                </CardBody>
+              </Card>
+            ) : null}
+
+            {/* Real lead capture for a business/enterprise channel's video — found live
+                2026-09-27, previously nowhere for a prospective customer to actually
+                reach the business from a video. */}
+            {isBusinessChannel ? (
+              <Card className="mt-4">
+                <CardBody className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-fg">Interested in working with {channel?.name}?</p>
+                    <p className="mt-0.5 text-xs text-fg-subtle">Send a real enquiry — it lands directly in their leads inbox.</p>
+                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => setQuoteOpen(true)}>
+                    Get a quote
+                  </Button>
                 </CardBody>
               </Card>
             ) : null}
@@ -1039,6 +1097,7 @@ export function VideoDetailClient() {
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} video={video} />
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} videoId={video.id} />
       <PlaylistModal open={playlistOpen} onClose={() => setPlaylistOpen(false)} videoId={video.id} />
+      <QuoteModal open={quoteOpen} onClose={() => setQuoteOpen(false)} videoId={video.id} businessName={channel?.name ?? "this business"} />
     </div>
   );
 }
@@ -1490,6 +1549,78 @@ function OfferRow({
         </Button>
       </div>
     </div>
+  );
+}
+
+/** Real "Get a quote" lead capture — submits directly to the video's own business
+ * channel's leads inbox (business/leads). No sign-in required: a prospective customer
+ * isn't necessarily a Nexus account holder. */
+function QuoteModal({
+  open,
+  onClose,
+  videoId,
+  businessName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  videoId: string;
+  businessName: string;
+}) {
+  const { toast } = useToast();
+  const [name, setName] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [company, setCompany] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+
+  const canSubmit = name.trim() && email.trim() && message.trim();
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await submitVideoLead(videoId, { name, email, company: company || undefined, message });
+      toast({ title: "Enquiry sent", description: `${businessName} will be in touch.` });
+      setName("");
+      setEmail("");
+      setCompany("");
+      setMessage("");
+      onClose();
+    } catch (err) {
+      toast({
+        tone: "error",
+        title: "Couldn't send your enquiry",
+        description: err instanceof Error ? err.message : "Something went wrong.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Contact ${businessName}`} size="sm">
+      <div className="space-y-3">
+        <Field label="Your name" htmlFor="quote-name" required>
+          <Input id="quote-name" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Email" htmlFor="quote-email" required>
+          <Input id="quote-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label="Company" htmlFor="quote-company">
+          <Input id="quote-company" value={company} onChange={(e) => setCompany(e.target.value)} />
+        </Field>
+        <Field label="Message" htmlFor="quote-message" required>
+          <Textarea id="quote-message" rows={4} value={message} onChange={(e) => setMessage(e.target.value)} />
+        </Field>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" loading={submitting} disabled={!canSubmit} onClick={handleSubmit}>
+          Send enquiry
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

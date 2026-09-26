@@ -1,13 +1,16 @@
 "use client";
 
 import {
+  IconClipboardList,
   IconCopy,
   IconExternalLink,
   IconFileZip,
+  IconHeadset,
   IconKey,
   IconPlus,
   IconRefresh,
   IconServer,
+  IconSettings,
   IconShieldCheck,
   IconTrash,
   IconVideo,
@@ -17,10 +20,11 @@ import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
+import { Field, Input, Switch, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, relativeTime } from "@/lib/utils";
 
 interface ClientReviewItem {
   id: string;
@@ -61,6 +65,37 @@ interface ApiKeyItem {
   created_at: string;
 }
 
+interface AuditLogEntry {
+  id: string;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  reason: string;
+  severity: string;
+  createdAt: string;
+}
+
+interface SsoConfigItem {
+  organizationId: string;
+  idpMetadataUrl: string | null;
+  ssoDomain: string | null;
+  enabled: boolean;
+  updatedAt: string;
+}
+
+interface SupportTicketItem {
+  id: string;
+  organizationId: string;
+  accountId: string | null;
+  subject: string;
+  message: string;
+  priority: "normal" | "high" | "urgent";
+  status: "open" | "in_progress" | "resolved";
+  createdAt: string;
+}
+
 export default function EnterpriseHubPage() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = React.useState("overview");
@@ -69,12 +104,28 @@ export default function EnterpriseHubPage() {
   const [reviews, setReviews] = React.useState<ClientReviewItem[]>([]);
   const [transfers, setTransfers] = React.useState<EnterpriseTransferItem[]>([]);
   const [keys, setKeys] = React.useState<ApiKeyItem[]>([]);
+  const [auditLogs, setAuditLogs] = React.useState<AuditLogEntry[]>([]);
+  const [ssoConfig, setSsoConfig] = React.useState<SsoConfigItem | null>(null);
+  const [tickets, setTickets] = React.useState<SupportTicketItem[]>([]);
 
   // Modals
   const [createReviewOpen, setCreateReviewOpen] = React.useState(false);
   const [createTransferOpen, setCreateTransferOpen] = React.useState(false);
   const [createKeyOpen, setCreateKeyOpen] = React.useState(false);
   const [revealedKey, setRevealedKey] = React.useState<string | null>(null);
+  const [supportOpen, setSupportOpen] = React.useState(false);
+
+  // SSO form
+  const [ssoForm, setSsoForm] = React.useState({ idpMetadataUrl: "", ssoDomain: "", enabled: false });
+  const [savingSso, setSavingSso] = React.useState(false);
+
+  // Support ticket form
+  const [ticketForm, setTicketForm] = React.useState<{ subject: string; message: string; priority: "normal" | "high" | "urgent" }>({
+    subject: "",
+    message: "",
+    priority: "urgent",
+  });
+  const [submittingTicket, setSubmittingTicket] = React.useState(false);
 
   // Form states
   const [reviewForm, setReviewForm] = React.useState({
@@ -105,15 +156,28 @@ export default function EnterpriseHubPage() {
   const loadData = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [resReviews, resTransfers, resKeys] = await Promise.all([
+      const [resReviews, resTransfers, resKeys, resAudit, resSso, resTickets] = await Promise.all([
         fetch("/api/enterprise/reviews").then((r) => r.json()),
         fetch("/api/enterprise/transfers").then((r) => r.json()),
         fetch("/api/enterprise/keys").then((r) => r.json()),
+        fetch("/api/enterprise/audit-logs").then((r) => r.json()),
+        fetch("/api/enterprise/sso").then((r) => r.json()),
+        fetch("/api/business/support").then((r) => r.json()),
       ]);
 
       if (resReviews.reviews) setReviews(resReviews.reviews);
       if (resTransfers.transfers) setTransfers(resTransfers.transfers);
       if (resKeys.keys) setKeys(resKeys.keys);
+      if (resAudit.entries) setAuditLogs(resAudit.entries);
+      if (resSso.config) {
+        setSsoConfig(resSso.config);
+        setSsoForm({
+          idpMetadataUrl: resSso.config.idpMetadataUrl ?? "",
+          ssoDomain: resSso.config.ssoDomain ?? "",
+          enabled: resSso.config.enabled ?? false,
+        });
+      }
+      if (resTickets.tickets) setTickets(resTickets.tickets);
     } catch (err: unknown) {
       toast({
         title: "Error loading enterprise data",
@@ -239,6 +303,48 @@ export default function EnterpriseHubPage() {
     }
   };
 
+  const handleSaveSso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSso(true);
+    try {
+      const res = await fetch("/api/enterprise/sso", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ssoForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save SSO configuration");
+      setSsoConfig(data.config);
+      toast({ title: "SSO configuration saved", tone: "success" });
+    } catch (err: unknown) {
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
+    } finally {
+      setSavingSso(false);
+    }
+  };
+
+  const handleCreateTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingTicket(true);
+    try {
+      const res = await fetch("/api/business/support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ticketForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to submit ticket");
+      setTickets((prev) => [data.ticket, ...prev]);
+      setSupportOpen(false);
+      setTicketForm({ subject: "", message: "", priority: "urgent" });
+      toast({ title: "Support ticket submitted", description: "Our team will reach out shortly.", tone: "success" });
+    } catch (err: unknown) {
+      toast({ title: "Failed", description: err instanceof Error ? err.message : "An error occurred", tone: "error" });
+    } finally {
+      setSubmittingTicket(false);
+    }
+  };
+
   const copyToClipboard = (text: string, label = "Copied") => {
     navigator.clipboard.writeText(text);
     toast({ title: label, description: text, tone: "success" });
@@ -264,6 +370,17 @@ export default function EnterpriseHubPage() {
       icon: <IconKey className="size-4" />,
       count: keys.length,
     },
+    {
+      value: "audit",
+      label: "Audit Trail",
+      icon: <IconClipboardList className="size-4" />,
+      count: auditLogs.length,
+    },
+    {
+      value: "settings",
+      label: "Settings",
+      icon: <IconSettings className="size-4" />,
+    },
   ];
 
   const pendingReviews = reviews.filter((r) => r.status === "pending").length;
@@ -277,6 +394,10 @@ export default function EnterpriseHubPage() {
         description="Secure media workspace, client review & approval workflows, large file transfers (up to 500GB), version control, Partner API integrations (TPI-9), and dedicated infrastructure."
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSupportOpen(true)}>
+              <IconHeadset className="size-4" />
+              Priority Support
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -796,6 +917,148 @@ export default function EnterpriseHubPage() {
             </Card>
           </div>
         )}
+
+        {/* TAB 5: AUDIT TRAIL */}
+        {activeTab === "audit" && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-semibold text-fg">Audit Trail</h3>
+              <p className="text-xs text-fg-muted">
+                Real actions taken by anyone on your team — the platform's own audit log, scoped to your
+                organization&apos;s members.
+              </p>
+            </div>
+            {auditLogs.length === 0 ? (
+              <Card>
+                <CardBody className="py-12 text-center">
+                  <IconClipboardList className="mx-auto size-10 text-fg-muted/40" />
+                  <h3 className="mt-3 font-semibold text-fg">No audit events yet</h3>
+                  <p className="mt-1 text-xs text-fg-muted">
+                    Actions your team takes across Studio and Business will show up here.
+                  </p>
+                </CardBody>
+              </Card>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-border/60 bg-bg-surface">
+                <table className="w-full text-left text-sm">
+                  <thead className="border-b border-border/60 bg-bg-subtle/40 text-xs text-fg-muted">
+                    <tr>
+                      <th className="px-4 py-3 font-medium">Actor</th>
+                      <th className="px-4 py-3 font-medium">Action</th>
+                      <th className="px-4 py-3 font-medium">Target</th>
+                      <th className="px-4 py-3 font-medium">Severity</th>
+                      <th className="px-4 py-3 font-medium">When</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/30">
+                    {auditLogs.map((entry) => (
+                      <tr key={entry.id} className="hover:bg-bg-subtle/30">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-fg">{entry.actorName}</div>
+                          <div className="text-xs text-fg-muted">{entry.actorRole}</div>
+                        </td>
+                        <td className="px-4 py-3 text-fg">{entry.action}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-fg-muted">
+                          {entry.targetType}/{entry.targetId.slice(0, 8)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            tone={entry.severity === "danger" ? "danger" : entry.severity === "warning" ? "warning" : "neutral"}
+                            size="sm"
+                          >
+                            {entry.severity}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-fg-muted">{relativeTime(entry.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 6: SETTINGS (SSO) */}
+        {activeTab === "settings" && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader
+                title="Single Sign-On (SSO / SAML)"
+                description="Store your identity provider's metadata so your team can be provisioned for SSO."
+              />
+              <CardBody>
+                <form onSubmit={handleSaveSso} className="space-y-4">
+                  <Field label="IdP Metadata URL" htmlFor="sso-metadata">
+                    <Input
+                      id="sso-metadata"
+                      type="url"
+                      placeholder="https://your-idp.example.com/metadata.xml"
+                      value={ssoForm.idpMetadataUrl}
+                      onChange={(e) => setSsoForm({ ...ssoForm, idpMetadataUrl: e.target.value })}
+                    />
+                  </Field>
+                  <Field label="SSO domain" htmlFor="sso-domain" hint="Employees signing in with this email domain will use SSO once enabled.">
+                    <Input
+                      id="sso-domain"
+                      placeholder="yourcompany.com"
+                      value={ssoForm.ssoDomain}
+                      onChange={(e) => setSsoForm({ ...ssoForm, ssoDomain: e.target.value })}
+                    />
+                  </Field>
+                  <Switch
+                    checked={ssoForm.enabled}
+                    onCheckedChange={(checked) => setSsoForm({ ...ssoForm, enabled: checked })}
+                    label="Enable SSO for this organization"
+                  />
+                  <p className="text-xs leading-relaxed text-fg-subtle">
+                    This stores your real configuration — actually authenticating a sign-in against it needs a
+                    real SAML identity-provider integration, which doesn&apos;t exist yet (this app&apos;s own sign-in
+                    is Auth0-backed, not a SAML relying party). Disclosed here rather than implied as working.
+                  </p>
+                  <div className="flex items-center justify-between">
+                    {ssoConfig?.updatedAt ? (
+                      <span className="text-xs text-fg-subtle">Last saved {relativeTime(ssoConfig.updatedAt)}</span>
+                    ) : (
+                      <span />
+                    )}
+                    <Button type="submit" variant="primary" loading={savingSso}>
+                      Save configuration
+                    </Button>
+                  </div>
+                </form>
+              </CardBody>
+            </Card>
+
+            <Card>
+              <CardHeader title="Priority Support" description="Your recent tickets" />
+              <CardBody className="space-y-3">
+                {tickets.length === 0 ? (
+                  <p className="text-sm text-fg-muted">No support tickets submitted yet.</p>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {tickets.map((ticket) => (
+                      <li key={ticket.id} className="flex items-center justify-between gap-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-fg">{ticket.subject}</p>
+                          <p className="text-xs text-fg-muted">{relativeTime(ticket.createdAt)}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Badge tone={ticket.priority === "urgent" ? "danger" : "warning"} size="sm">
+                            {ticket.priority}
+                          </Badge>
+                          <Badge tone={ticket.status === "resolved" ? "success" : "neutral"} size="sm">
+                            {ticket.status}
+                          </Badge>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        )}
       </PageBody>
 
       {/* MODAL 1: Create Review Link */}
@@ -1034,6 +1297,56 @@ export default function EnterpriseHubPage() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* MODAL 5: Priority Support Ticket */}
+      <Modal
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        title="Priority Support"
+        description="Your enterprise ticket goes straight to the front of the queue."
+      >
+        <form onSubmit={handleCreateTicket} className="space-y-4">
+          <Field label="Subject" htmlFor="ticket-subject" required>
+            <Input
+              id="ticket-subject"
+              required
+              value={ticketForm.subject}
+              onChange={(e) => setTicketForm({ ...ticketForm, subject: e.target.value })}
+              placeholder="e.g. Playback failing for our Enterprise account"
+            />
+          </Field>
+          <Field label="Priority" htmlFor="ticket-priority">
+            <select
+              id="ticket-priority"
+              value={ticketForm.priority}
+              onChange={(e) => setTicketForm({ ...ticketForm, priority: e.target.value as typeof ticketForm.priority })}
+              className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg"
+            >
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+            </select>
+          </Field>
+          <Field label="Message" htmlFor="ticket-message" required>
+            <Textarea
+              id="ticket-message"
+              rows={4}
+              required
+              value={ticketForm.message}
+              onChange={(e) => setTicketForm({ ...ticketForm, message: e.target.value })}
+              placeholder="Describe the issue in detail."
+            />
+          </Field>
+          <div className="flex justify-end gap-2 pt-3">
+            <Button variant="ghost" type="button" onClick={() => setSupportOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit" loading={submittingTicket}>
+              Submit ticket
+            </Button>
+          </div>
+        </form>
       </Modal>
     </>
   );

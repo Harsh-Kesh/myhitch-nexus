@@ -8,6 +8,8 @@ export const CHANNEL_KIND_LABELS: Record<ChannelKind, string> = {
   government: "Government",
   nonprofit: "Non-profit",
   news: "News organisation",
+  advertiser: "Advertiser",
+  producer: "Enterprise",
 };
 
 const rawChannels: Channel[] = [

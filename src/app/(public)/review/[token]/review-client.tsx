@@ -5,6 +5,7 @@ import {
   IconClock,
   IconEdit,
   IconLock,
+  IconMessageCircle,
   IconShieldCheck,
   IconThumbUp,
 } from "@tabler/icons-react";
@@ -13,7 +14,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDuration } from "@/lib/utils";
+
+interface ReviewComment {
+  id: string;
+  reviewId: string;
+  authorName: string;
+  timestampSeconds: number;
+  content: string;
+  createdAt: string;
+}
 
 interface ReviewData {
   review: {
@@ -54,9 +64,52 @@ export function ReviewClient({
   const [showFeedbackBox, setShowFeedbackBox] = React.useState(false);
   const [feedbackText, setFeedbackText] = React.useState(data.review.feedback ?? "");
   const [actionType, setActionType] = React.useState<"approved" | "changes_requested" | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const [comments, setComments] = React.useState<ReviewComment[]>([]);
+  const [commentDraft, setCommentDraft] = React.useState("");
+  const [commentTimestamp, setCommentTimestamp] = React.useState(0);
+  const [postingComment, setPostingComment] = React.useState(false);
 
   const review = data.review;
   const video = data.video;
+
+  React.useEffect(() => {
+    fetch(`/api/review/${token}/comments/`)
+      .then((res) => (res.ok ? res.json() : { comments: [] }))
+      .then((body: { comments: ReviewComment[] }) => setComments(body.comments ?? []))
+      .catch(() => {});
+  }, [token]);
+
+  const handlePostComment = async () => {
+    if (!commentDraft.trim()) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/review/${token}/comments/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authorName: review.client_name,
+          timestampSeconds: Math.round(commentTimestamp),
+          content: commentDraft,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error ?? "Failed to add comment");
+      setComments((prev) => [...prev, result.comment].sort((a, b) => a.timestampSeconds - b.timestampSeconds));
+      setCommentDraft("");
+    } catch (err: unknown) {
+      toast({ title: "Couldn't add comment", description: err instanceof Error ? err.message : undefined, tone: "error" });
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const seekTo = (seconds: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+      videoRef.current.play().catch(() => {});
+    }
+  };
 
   const handleSubmitDecision = async (status: "approved" | "changes_requested") => {
     setSubmitting(true);
@@ -204,11 +257,13 @@ export function ReviewClient({
           <Card className="overflow-hidden border border-border/60 bg-black/95 shadow-xl">
             <div className="relative aspect-video w-full">
               <video
+                ref={videoRef}
                 src={video.sampleSrc}
                 controls
                 className="size-full object-contain"
                 playsInline
                 preload="metadata"
+                onTimeUpdate={(e) => setCommentTimestamp(e.currentTarget.currentTime)}
               />
               {/* Draft Watermark */}
               <div className="pointer-events-none absolute inset-x-0 bottom-12 flex justify-center opacity-40">
@@ -217,6 +272,59 @@ export function ReviewClient({
                 </span>
               </div>
             </div>
+          </Card>
+
+          {/* Timecoded Feedback Timeline — real comments pinned to a moment in the
+              video, not just the one free-text field client_reviews.feedback already
+              had. Found live 2026-09-27: there was no way to say "at 1:24, the audio
+              cuts out" without it getting lost in one big paragraph. */}
+          <Card className="border border-border/60">
+            <CardBody className="space-y-4 p-6">
+              <h3 className="flex items-center gap-2 font-semibold text-fg">
+                <IconMessageCircle className="size-4 text-accent" />
+                Feedback timeline
+              </h3>
+              <div className="flex items-end gap-2">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs font-medium text-fg-muted">
+                    Comment at {formatDuration(Math.round(commentTimestamp))}
+                  </label>
+                  <textarea
+                    className="w-full rounded-lg border border-border bg-bg-subtle p-3 text-sm text-fg placeholder:text-fg-subtle focus:border-accent focus:outline-none"
+                    rows={2}
+                    placeholder="Leave a note at the current playback position…"
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                  />
+                </div>
+                <Button variant="secondary" loading={postingComment} disabled={!commentDraft.trim()} onClick={handlePostComment}>
+                  Add
+                </Button>
+              </div>
+              {comments.length === 0 ? (
+                <p className="text-xs text-fg-muted">No timecoded comments yet — play the video and leave a note at any moment.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {comments.map((comment) => (
+                    <li key={comment.id} className="flex items-start gap-3 rounded-lg border border-border bg-bg-subtle/50 p-3">
+                      <button
+                        type="button"
+                        onClick={() => seekTo(comment.timestampSeconds)}
+                        className="shrink-0 rounded bg-accent/15 px-2 py-1 font-mono text-xs text-accent hover:bg-accent/25"
+                      >
+                        {formatDuration(comment.timestampSeconds)}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-fg">{comment.content}</p>
+                        <p className="mt-0.5 text-xs text-fg-subtle">
+                          {comment.authorName} · {formatDate(comment.createdAt)}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
           </Card>
 
           {/* Review Status & Feedback Box */}

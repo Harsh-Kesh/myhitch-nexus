@@ -75,6 +75,7 @@ export const qk = {
   campaignSeries: (id: string) => ["campaign-series", id] as const,
   leads: (channelId: string) => ["leads", channelId] as const,
   productLinks: (channelId: string) => ["product-links", channelId] as const,
+  videoProductLinks: (videoId: string) => ["video-product-links", videoId] as const,
   adminSummary: ["admin-summary"] as const,
   adminFinance: ["admin-finance"] as const,
   moderationQueue: (queue?: ModerationItem["queue"]) => ["moderation-queue", queue] as const,
@@ -899,6 +900,25 @@ export function useCreateProductLink(channelId: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: qk.productLinks(channelId) }),
   });
 }
+
+export function useDeleteProductLink(channelId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteProductLink,
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.productLinks(channelId) }),
+  });
+}
+
+/** Real product links attached to this specific video — separate from useProductLinks()
+ * above, which is the owner's full org-wide list in Studio. A mock video's own affiliate
+ * links stay on video.pricing.affiliateLinks, untouched — this only ever has data for a
+ * real video. */
+export const useVideoProductLinkCards = (videoId: string) =>
+  useQuery({
+    queryKey: qk.videoProductLinks(videoId),
+    queryFn: () => api.getVideoProductLinkCards(videoId),
+    enabled: Boolean(videoId),
+  });
 
 /* -------------------------------- Admin --------------------------------- */
 
