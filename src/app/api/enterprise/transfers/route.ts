@@ -1,6 +1,6 @@
 // Enterprise API: Large File Transfers (GET, POST)
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import {
   createEnterpriseTransfer,
   listEnterpriseTransfers,
@@ -12,6 +12,9 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
   try {
     return { orgId: await resolveOrgIdForAccount(account.id) };

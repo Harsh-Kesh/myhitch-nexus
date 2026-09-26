@@ -2733,6 +2733,26 @@ export async function submitCampaign(campaignId: string): Promise<{ status: "act
   return res.json();
 }
 
+export interface CampaignAudienceEstimate {
+  matchedViewers: number;
+  totalViewers: number;
+}
+
+/** Real only — the campaign wizard keeps its own locally-computed illustrative figure for
+ * the shared mock demo persona (see business/campaigns/new/page.tsx), since there's no
+ * real watch-activity data behind that account's fictional 12M-viewer figure. */
+export async function getCampaignAudienceEstimate(
+  countries: string[],
+  devices: string[],
+): Promise<CampaignAudienceEstimate> {
+  const params = new URLSearchParams();
+  if (countries.length) params.set("countries", countries.join(","));
+  if (devices.length) params.set("devices", devices.join(","));
+  const res = await fetch(`/api/campaigns/estimate/?${params.toString()}`);
+  if (!res.ok) return { matchedViewers: 0, totalViewers: 0 };
+  return res.json();
+}
+
 interface RealLead {
   id: string;
   organizationId: string;

@@ -2,13 +2,20 @@
 // organization (actions taken by any of its members — see listOrgAuditLog()'s own header
 // for why that's the honest scope given the existing audit_log table's shape).
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { resolveOrgIdForAccount, NoOrganizationError, listOrgAuditLog } from "@/lib/server/enterprise";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  // Enterprise Hub tab — Nexus Enterprise only, not Business (which has its own set of
+  // features and never included this one — see PLANS' own "All Business features" +
+  // list of add-ons on the Enterprise tier). Previously any org member of any tier could
+  // reach this, since resolveOrgIdForAccount() below only checks org membership.
+  if (!hasAnyRole(account, ["producer"])) {
+    return NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 });
   }
   let orgId: string;
   try {

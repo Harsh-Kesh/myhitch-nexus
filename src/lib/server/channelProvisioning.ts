@@ -15,8 +15,14 @@ const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
   creator: "creator",
   business: "business",
   advertiser: "business",
-  enterprise: "film-studio",
-  producer: "film-studio",
+  // Both the "enterprise" self-registration role and the "producer" spelling now map to
+  // the real DB role "producer" (see rbac.ts's MOCK_TO_DB_ROLE) — this key is keyed on
+  // that post-toDbRole() spelling, so only "producer" is ever actually looked up here.
+  // Previously mapped to "film-studio" (a real but wrong organizations.type — a genuine
+  // content-vertical value, not an Enterprise-plan marker), so every real Enterprise
+  // signup landed as a mislabeled Film Studio org instead of the real "producer" type
+  // CHANNEL_KIND_LABELS already displays as "Enterprise".
+  producer: "producer",
   education: "education",
   // account_roles has one combined "organisation" role where organizations.type still
   // distinguishes government/nonprofit (ChannelKind predates this role) — nonprofit is

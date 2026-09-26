@@ -24,6 +24,7 @@ import { Field, Input, Switch, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
+import { useCurrentUser } from "@/lib/mock-api/hooks";
 import { formatDate, relativeTime } from "@/lib/utils";
 
 interface ClientReviewItem {
@@ -98,6 +99,14 @@ interface SupportTicketItem {
 
 export default function EnterpriseHubPage() {
   const { toast } = useToast();
+  const { data: user } = useCurrentUser();
+  // This whole hub — reviews, transfers, version control, audit trail, API keys — is a
+  // Nexus Enterprise add-on, not part of Nexus Business (see the /plans page's own
+  // feature list: "All Business features" plus these on the Enterprise tier). The API
+  // routes behind every tab now enforce this for real; this just avoids firing eight
+  // doomed requests and shows an honest blocked state instead of a broken-looking page
+  // for a Business-tier account that lands here directly.
+  const isEnterprise = Boolean(user?.roles.includes("producer"));
   const [activeTab, setActiveTab] = React.useState("overview");
   const [loading, setLoading] = React.useState(true);
 
@@ -190,8 +199,9 @@ export default function EnterpriseHubPage() {
   }, [toast]);
 
   React.useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (isEnterprise) loadData();
+    else setLoading(false);
+  }, [loadData, isEnterprise]);
 
   // Review Submission
   const handleCreateReview = async (e: React.FormEvent) => {
@@ -386,6 +396,31 @@ export default function EnterpriseHubPage() {
   const pendingReviews = reviews.filter((r) => r.status === "pending").length;
   const approvedReviews = reviews.filter((r) => r.status === "approved").length;
   const activeTransfers = transfers.filter((t) => t.status === "active").length;
+
+  if (user && !isEnterprise) {
+    return (
+      <>
+        <PageHeader
+          title="Enterprise Suite"
+          description="Secure media workspace, client review & approval workflows, large file transfers, version control, and Partner API integrations."
+        />
+        <PageBody>
+          <Card>
+            <CardBody className="flex flex-col items-center gap-3 py-16 text-center">
+              <IconKey className="size-10 text-fg-muted/40" />
+              <p className="text-base font-medium text-fg">Included with Nexus Enterprise</p>
+              <p className="max-w-md text-sm text-fg-muted">
+                Client review workflows, large file transfers, version control, an audit
+                trail and API access are part of the Nexus Enterprise plan. Your current
+                plan doesn&apos;t include them.
+              </p>
+              <Button href="/plans">View plans</Button>
+            </CardBody>
+          </Card>
+        </PageBody>
+      </>
+    );
+  }
 
   return (
     <>

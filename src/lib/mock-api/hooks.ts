@@ -849,6 +849,14 @@ export function useCreateCampaign() {
   });
 }
 
+export function useCampaignAudienceEstimate(countries: string[], devices: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: ["campaign-audience-estimate", countries, devices],
+    queryFn: () => api.getCampaignAudienceEstimate(countries, devices),
+    enabled,
+  });
+}
+
 export function useSubmitCampaign() {
   const client = useQueryClient();
   return useMutation({

@@ -589,3 +589,44 @@ export async function getCampaignSeries(campaignId: string, days = 28): Promise<
     spendMinor: Number(row.spend_minor),
   }));
 }
+
+/** Real "addressable audience" for the campaign wizard's live estimate panel — replaces a
+ * fabricated formula (a hardcoded 12M-viewer base scaled by made-up ratios per targeting
+ * dimension) with an actual count of real recent viewers matching the campaign's own
+ * country/device targeting, from the same watch_progress table analytics.ts's platform
+ * breakdowns already read. On this platform's real current data this will be a small,
+ * honest number, not an inflated one — that's correct, not a bug: it's real usage, not a
+ * forecast. `country`/`device_type` are nullable on watch_progress (not every session
+ * captured them) — a null never matches a specific filter, but still counts toward the
+ * unfiltered total. */
+export async function estimateCampaignAudience(
+  targeting: { countries: string[]; devices: string[] },
+  days = 28,
+): Promise<{ matchedViewers: number; totalViewers: number }> {
+  const since = new Date(Date.now() - days * 86_400_000);
+
+  const totalRow = await queryOne<{ n: string }>(
+    `select count(distinct account_id) as n from watch_progress where updated_at >= $1`,
+    [since],
+  );
+
+  const conditions = ["updated_at >= $1"];
+  const params: unknown[] = [since];
+  if (targeting.countries.length > 0) {
+    params.push(targeting.countries);
+    conditions.push(`country = any($${params.length}::text[])`);
+  }
+  if (targeting.devices.length > 0) {
+    params.push(targeting.devices);
+    conditions.push(`device_type = any($${params.length}::text[])`);
+  }
+  const matchedRow = await queryOne<{ n: string }>(
+    `select count(distinct account_id) as n from watch_progress where ${conditions.join(" and ")}`,
+    params,
+  );
+
+  return {
+    matchedViewers: Number(matchedRow?.n ?? 0),
+    totalViewers: Number(totalRow?.n ?? 0),
+  };
+}

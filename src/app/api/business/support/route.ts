@@ -1,7 +1,7 @@
 // GET/POST /api/business/support — real priority support tickets for the signed-in
 // account's own organization.
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import {
   resolveOrgIdForAccount,
   NoOrganizationError,
@@ -9,10 +9,19 @@ import {
   listSupportTickets,
 } from "@/lib/server/enterprise";
 
+// "Priority business support" is a Nexus Business benefit in its own right (not an
+// Enterprise-exclusive one — see PLANS' Business tier copy), so this stays open to both
+// Business and Enterprise tiers — just not to a plain creator/viewer/other org type that
+// never paid for either plan.
+const SUPPORT_ELIGIBLE_ROLES = ["business", "advertiser", "producer"];
+
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  if (!hasAnyRole(account, SUPPORT_ELIGIBLE_ROLES)) {
+    return NextResponse.json({ error: "Priority support is included with Nexus Business and Enterprise." }, { status: 403 });
   }
   let orgId: string;
   try {
@@ -31,6 +40,9 @@ export async function POST(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  if (!hasAnyRole(account, SUPPORT_ELIGIBLE_ROLES)) {
+    return NextResponse.json({ error: "Priority support is included with Nexus Business and Enterprise." }, { status: 403 });
   }
   let orgId: string;
   try {

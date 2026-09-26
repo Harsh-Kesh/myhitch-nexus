@@ -2,13 +2,16 @@
 // account's own organization. See saveSsoConfig()'s header for what's real here (the
 // config) vs not (an actual SAML login flow — no identity-provider integration exists).
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { resolveOrgIdForAccount, NoOrganizationError, getSsoConfig, saveSsoConfig } from "@/lib/server/enterprise";
 
 async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required." }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
   try {
     return { orgId: await resolveOrgIdForAccount(account.id) };

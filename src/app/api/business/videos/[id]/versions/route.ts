@@ -3,11 +3,14 @@
 // upload-url sub-route (createMasterUploadUrl's real signed-URL flow) — it never accepts
 // a raw file itself.
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { queryOne } from "@/lib/server/db";
 import { createMasterDownloadUrl, masterAssetExists } from "@/lib/server/storage";
 import { createVideoVersion, listVideoVersions } from "@/lib/server/enterprise";
 
+// Version history is the "Version control" line item on the Nexus Enterprise plan, not
+// Business — previously gated only on video ownership, so any business channel's own
+// videos got real version history for free.
 async function requireOwnedVideo(
   request: NextRequest,
   videoId: string,
@@ -15,6 +18,9 @@ async function requireOwnedVideo(
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required." }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
   const video = await queryOne<{ channel_id: string; kind: "video" | "audio" }>(
     `select channel_id, kind from videos where id = $1`,

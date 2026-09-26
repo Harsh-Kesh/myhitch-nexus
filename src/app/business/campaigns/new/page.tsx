@@ -28,9 +28,76 @@ import {
   PLACEMENT_FORMATS,
 } from "@/lib/mock-api/data/advertising";
 import { categories } from "@/lib/mock-api/data/categories";
-import { useChannel, useCreateCampaign, useCurrentUser, useSubmitCampaign } from "@/lib/mock-api/hooks";
+import {
+  useCampaignAudienceEstimate,
+  useChannel,
+  useCreateCampaign,
+  useCurrentUser,
+  useSubmitCampaign,
+} from "@/lib/mock-api/hooks";
 import type { AgeRating, Campaign, CampaignCreative } from "@/lib/mock-api/types";
 import { cn, compactNumber, formatCurrency } from "@/lib/utils";
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function addDaysIso(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// A wizard-in-progress lives only in React state — nothing is saved to the database until
+// the final "Submit for approval" step actually creates the campaign. Autosaving a plain
+// draft to localStorage (best-effort — a private window or blocked storage just means no
+// draft, not a broken wizard) is what makes "progress is saved" true across a reload or an
+// accidental navigation away, without inventing a server-side draft-campaign concept the
+// backend doesn't have.
+const DRAFT_KEY = "nexus_campaign_draft_v1";
+
+interface CampaignDraft {
+  name: string;
+  objective: Campaign["objective"];
+  startDate: string;
+  endDate: string;
+  budget: string;
+  dailyCap: string;
+  cpm: string;
+  countries: string[];
+  languages: string[];
+  ageBands: string[];
+  interests: string[];
+  categoryIds: string[];
+  devices: string[];
+  creatives: CampaignCreative[];
+  placements: string[];
+  frequencyImpressions: string;
+  frequencyHours: string;
+  excludedLabels: string[];
+  minAgeRating: AgeRating;
+  blockUserGenerated: boolean;
+  step: number;
+  furthest: number;
+}
+
+function loadDraft(): Partial<CampaignDraft> | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as Partial<CampaignDraft>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(): void {
+  try {
+    window.localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // best-effort
+  }
+}
 
 const MOCK_ADVERTISER_CHANNEL = "ch_helio";
 const MOCK_ADVERTISER_NAME = "Helio Motors";
@@ -69,41 +136,69 @@ export default function NewCampaignPage() {
   const { data: advertiserChannel } = useChannel(advertiserId);
   const advertiserName = looksLikeRealId(advertiserId) ? (advertiserChannel?.name ?? "Your account") : MOCK_ADVERTISER_NAME;
 
-  const [step, setStep] = React.useState(0);
-  const [furthest, setFurthest] = React.useState(0);
+  const [step, setStep] = React.useState(() => loadDraft()?.step ?? 0);
+  const [furthest, setFurthest] = React.useState(() => loadDraft()?.furthest ?? 0);
 
   // Basics
-  const [name, setName] = React.useState("");
-  const [objective, setObjective] = React.useState<Campaign["objective"]>("awareness");
-  const [startDate, setStartDate] = React.useState("2026-08-20");
-  const [endDate, setEndDate] = React.useState("2026-09-20");
+  const [name, setName] = React.useState(() => loadDraft()?.name ?? "");
+  const [objective, setObjective] = React.useState<Campaign["objective"]>(
+    () => loadDraft()?.objective ?? "awareness",
+  );
+  const [startDate, setStartDate] = React.useState(() => loadDraft()?.startDate ?? todayIso());
+  const [endDate, setEndDate] = React.useState(() => loadDraft()?.endDate ?? addDaysIso(30));
 
   // Budget
-  const [budget, setBudget] = React.useState("25000");
-  const [dailyCap, setDailyCap] = React.useState("1200");
-  const [cpm, setCpm] = React.useState("3.50");
+  const [budget, setBudget] = React.useState(() => loadDraft()?.budget ?? "25000");
+  const [dailyCap, setDailyCap] = React.useState(() => loadDraft()?.dailyCap ?? "1200");
+  const [cpm, setCpm] = React.useState(() => loadDraft()?.cpm ?? "3.50");
 
   // Targeting
-  const [countries, setCountries] = React.useState<string[]>(["GB"]);
-  const [languages, setLanguages] = React.useState<string[]>(["English"]);
-  const [ageBands, setAgeBands] = React.useState<string[]>([]);
-  const [interests, setInterests] = React.useState<string[]>([]);
-  const [categoryIds, setCategoryIds] = React.useState<string[]>([]);
-  const [devices, setDevices] = React.useState<string[]>([]);
+  const [countries, setCountries] = React.useState<string[]>(() => loadDraft()?.countries ?? ["GB"]);
+  const [languages, setLanguages] = React.useState<string[]>(() => loadDraft()?.languages ?? ["English"]);
+  const [ageBands, setAgeBands] = React.useState<string[]>(() => loadDraft()?.ageBands ?? []);
+  const [interests, setInterests] = React.useState<string[]>(() => loadDraft()?.interests ?? []);
+  const [categoryIds, setCategoryIds] = React.useState<string[]>(() => loadDraft()?.categoryIds ?? []);
+  const [devices, setDevices] = React.useState<string[]>(() => loadDraft()?.devices ?? []);
 
-  // Creative
-  const [creatives, setCreatives] = React.useState<CampaignCreative[]>([]);
-  const [placements, setPlacements] = React.useState<string[]>(["pre-roll"]);
-  const [frequencyImpressions, setFrequencyImpressions] = React.useState("3");
-  const [frequencyHours, setFrequencyHours] = React.useState("24");
+  // Creative — a restored creative keeps its metadata but never its File (that can't be
+  // serialized to localStorage); creativeFiles below stays empty for one, so its badge
+  // correctly shows "No file" until the advertiser re-attaches it.
+  const [creatives, setCreatives] = React.useState<CampaignCreative[]>(() => loadDraft()?.creatives ?? []);
+  const [placements, setPlacements] = React.useState<string[]>(() => loadDraft()?.placements ?? ["pre-roll"]);
+  const [frequencyImpressions, setFrequencyImpressions] = React.useState(
+    () => loadDraft()?.frequencyImpressions ?? "3",
+  );
+  const [frequencyHours, setFrequencyHours] = React.useState(() => loadDraft()?.frequencyHours ?? "24");
 
   // Brand safety
-  const [excludedLabels, setExcludedLabels] = React.useState<string[]>([
-    "Graphic content",
-    "Gambling",
+  const [excludedLabels, setExcludedLabels] = React.useState<string[]>(
+    () => loadDraft()?.excludedLabels ?? ["Graphic content", "Gambling"],
+  );
+  const [minAgeRating, setMinAgeRating] = React.useState<AgeRating>(() => loadDraft()?.minAgeRating ?? "U");
+  const [blockUserGenerated, setBlockUserGenerated] = React.useState(
+    () => loadDraft()?.blockUserGenerated ?? false,
+  );
+
+  // Autosave — best-effort, so a full/blocked localStorage just means no draft rather
+  // than a broken wizard. Cleared once the campaign is actually created (see submit()).
+  React.useEffect(() => {
+    const draft: CampaignDraft = {
+      name, objective, startDate, endDate, budget, dailyCap, cpm,
+      countries, languages, ageBands, interests, categoryIds, devices,
+      creatives, placements, frequencyImpressions, frequencyHours,
+      excludedLabels, minAgeRating, blockUserGenerated, step, furthest,
+    };
+    try {
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    } catch {
+      // best-effort
+    }
+  }, [
+    name, objective, startDate, endDate, budget, dailyCap, cpm,
+    countries, languages, ageBands, interests, categoryIds, devices,
+    creatives, placements, frequencyImpressions, frequencyHours,
+    excludedLabels, minAgeRating, blockUserGenerated, step, furthest,
   ]);
-  const [minAgeRating, setMinAgeRating] = React.useState<AgeRating>("U");
-  const [blockUserGenerated, setBlockUserGenerated] = React.useState(false);
 
   const budgetMinor = Math.round(Number(budget || 0) * 100);
   const dailyMinor = Math.round(Number(dailyCap || 0) * 100);
@@ -141,6 +236,13 @@ export default function NewCampaignPage() {
     cpmMinor,
   ]);
 
+  // A real advertiser gets a real "addressable audience" — an actual count of real
+  // recent viewers matching this campaign's own country/device targeting, not the
+  // illustrative formula above (kept only for the shared mock demo persona, which has no
+  // real watch-activity data behind it).
+  const isRealAdvertiser = looksLikeRealId(advertiserId);
+  const { data: audienceEstimate } = useCampaignAudienceEstimate(countries, devices, isRealAdvertiser);
+
   const canContinue = (() => {
     switch (STEPS[step].id) {
       case "basics":
@@ -176,25 +278,43 @@ export default function NewCampaignPage() {
   };
 
   const submit = async () => {
-    const campaign = await createCampaign.mutateAsync({
-      advertiserId,
-      advertiserName,
-      name: name.trim(),
-      objective,
-      budget: { amount: budgetMinor, currency: "AUD" },
-      dailyCap: { amount: dailyMinor, currency: "AUD" },
-      cpm: { amount: cpmMinor, currency: "AUD" },
-      startDate: new Date(startDate).toISOString(),
-      endDate: new Date(endDate).toISOString(),
-      targeting: { countries, languages, ageBands, interests, categoryIds, devices },
-      creatives,
-      placements,
-      frequencyCap: {
-        impressions: Number(frequencyImpressions) || 3,
-        perHours: Number(frequencyHours) || 24,
-      },
-      brandSafety: { excludedLabels, minAgeRating, blockUserGenerated },
-    });
+    let campaign: Campaign;
+    try {
+      campaign = await createCampaign.mutateAsync({
+        advertiserId,
+        advertiserName,
+        name: name.trim(),
+        objective,
+        budget: { amount: budgetMinor, currency: "AUD" },
+        dailyCap: { amount: dailyMinor, currency: "AUD" },
+        cpm: { amount: cpmMinor, currency: "AUD" },
+        startDate: new Date(startDate).toISOString(),
+        endDate: new Date(endDate).toISOString(),
+        targeting: { countries, languages, ageBands, interests, categoryIds, devices },
+        creatives,
+        placements,
+        frequencyCap: {
+          impressions: Number(frequencyImpressions) || 3,
+          perHours: Number(frequencyHours) || 24,
+        },
+        brandSafety: { excludedLabels, minAgeRating, blockUserGenerated },
+      });
+    } catch (err) {
+      // Previously uncaught — a failed create (a 400 from a missing field, a 403 from an
+      // account with no advertiser channel, a real 500) threw out of this async function
+      // with nothing to show for it: no toast, no navigation, "nothing happens" from the
+      // advertiser's side. The draft stays saved either way, so nothing is lost.
+      toast({
+        title: "Couldn't create the campaign",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        tone: "error",
+      });
+      return;
+    }
+
+    // The campaign now exists for real — no reason to keep resurrecting this wizard's
+    // draft on a future visit.
+    clearDraft();
 
     // Real campaigns only — a mock campaign's creatives were already fully built into
     // the payload above (gradient and all); a real one needs its staged files actually
@@ -867,15 +987,31 @@ export default function NewCampaignPage() {
                       />
                       <ReviewRow
                         label="Status on submit"
-                        value={<Badge tone="pending" size="sm">Pending approval</Badge>}
+                        value={
+                          isRealAdvertiser ? (
+                            <Badge tone="published" size="sm">Automated review → live</Badge>
+                          ) : (
+                            <Badge tone="pending" size="sm">Pending approval</Badge>
+                          )
+                        }
                       />
                     </dl>
 
-                    <p className="flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs leading-relaxed text-fg-muted">
-                      <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
-                      Submitting sends this campaign to the platform review queue. It
-                      will not deliver until an admin approves it.
-                    </p>
+                    {isRealAdvertiser ? (
+                      <p className="flex items-start gap-2 rounded border border-info/30 bg-info/10 p-3 text-xs leading-relaxed text-fg-muted">
+                        <IconShieldCheck className="mt-0.5 size-4 shrink-0 text-info" />
+                        Submitting runs real automated checks on your creative — a playable-file
+                        check and a malware scan, the same technical checks a human reviewer
+                        would have relied on anyway. No manual approval step: if your creative
+                        passes, the campaign goes live immediately.
+                      </p>
+                    ) : (
+                      <p className="flex items-start gap-2 rounded border border-warning/30 bg-warning/10 p-3 text-xs leading-relaxed text-fg-muted">
+                        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
+                        Submitting sends this campaign to the platform review queue. It
+                        will not deliver until an admin approves it.
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </CardBody>
@@ -931,18 +1067,26 @@ export default function NewCampaignPage() {
                     Addressable audience
                   </p>
                   <p className="font-display text-2xl font-semibold text-fg nx-tnum">
-                    {compactNumber(estimate.reach)}
+                    {compactNumber(isRealAdvertiser ? audienceEstimate?.matchedViewers ?? 0 : estimate.reach)}
                   </p>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
                     <div
                       className="h-full rounded-full bg-accent transition-[width] duration-300"
                       style={{
-                        width: `${Math.min(100, (estimate.reach / 12_000_000) * 100)}%`,
+                        width: isRealAdvertiser
+                          ? `${
+                              audienceEstimate && audienceEstimate.totalViewers > 0
+                                ? Math.min(100, (audienceEstimate.matchedViewers / audienceEstimate.totalViewers) * 100)
+                                : 0
+                            }%`
+                          : `${Math.min(100, (estimate.reach / 12_000_000) * 100)}%`,
                       }}
                     />
                   </div>
                   <p className="mt-1.5 text-2xs text-fg-subtle">
-                    of 12.0M monthly viewers
+                    {isRealAdvertiser
+                      ? `of ${compactNumber(audienceEstimate?.totalViewers ?? 0)} viewers active in the last 28 days`
+                      : "of 12.0M monthly viewers"}
                   </p>
                 </div>
 
@@ -965,8 +1109,9 @@ export default function NewCampaignPage() {
 
                 <p className="flex items-start gap-2 border-t border-border pt-3 text-2xs leading-relaxed text-fg-subtle">
                   <IconEye className="mt-0.5 size-3.5 shrink-0" />
-                  Figures are illustrative and generated locally. No forecasting or
-                  measurement service is called.
+                  {isRealAdvertiser
+                    ? "Addressable audience is real — counted from real viewer activity on Nexus in the last 28 days, filtered by your targeting. Impressions are calculated directly from your budget and CPM, not forecast."
+                    : "Figures are illustrative and generated locally. No forecasting or measurement service is called."}
                 </p>
               </CardBody>
             </Card>

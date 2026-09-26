@@ -4,7 +4,7 @@
 // Supabase Storage, then calls POST /api/business/videos/[id]/versions with the
 // returned `path` to actually register the version row.
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { queryOne } from "@/lib/server/db";
 import { createMasterUploadUrl } from "@/lib/server/storage";
 
@@ -12,6 +12,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 });
   }
   const { id } = await params;
 

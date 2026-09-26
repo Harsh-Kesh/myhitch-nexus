@@ -1,6 +1,6 @@
 // Enterprise API: Keys Management (GET, POST, DELETE)
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { checkRateLimit } from "@/lib/server/rateLimit";
 import {
   generateApiKey,
@@ -11,10 +11,16 @@ import {
   NoOrganizationError,
 } from "@/lib/server/enterprise";
 
+// Developer/Partner API access is a Nexus Enterprise feature, not Business — previously
+// ungated here, so any org member of any tier (a Business account included) could
+// generate real API keys, since resolveOrgIdForAccount() below only checks membership.
 async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
   try {
     return { orgId: await resolveOrgIdForAccount(account.id) };

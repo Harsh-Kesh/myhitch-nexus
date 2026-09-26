@@ -33,6 +33,13 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
   const newLeads = leads.filter((lead) => lead.status === "new").length;
   const pendingCampaigns = campaigns.filter((c) => c.status === "pending").length;
 
+  // "Enterprise & API" is a Nexus Enterprise-only add-on (large file transfers, client
+  // review workflow, video version control + audit trail, developer API access — see
+  // the /plans page's own Enterprise-tier feature list), not part of Nexus Business.
+  // Previously shown to every Business Studio account regardless of plan — the linked
+  // page's own API routes now enforce this too, so this is UX, not the real gate.
+  const isEnterprise = Boolean(user?.roles.includes("producer"));
+
   return (
     <WorkspaceShell
       workspace={{
@@ -109,16 +116,20 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
             },
           ],
         },
-        {
-          title: "Enterprise",
-          items: [
-            {
-              href: "/business/enterprise",
-              label: "Enterprise & API",
-              icon: <IconKey />,
-            },
-          ],
-        },
+        ...(isEnterprise
+          ? [
+              {
+                title: "Enterprise",
+                items: [
+                  {
+                    href: "/business/enterprise",
+                    label: "Enterprise & API",
+                    icon: <IconKey />,
+                  },
+                ],
+              },
+            ]
+          : []),
       ]}
     >
       {children}

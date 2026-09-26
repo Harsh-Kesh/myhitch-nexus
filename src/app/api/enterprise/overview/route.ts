@@ -1,6 +1,6 @@
 // Enterprise API: Overview & Summary Metrics (GET)
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import {
   getEnterpriseOverview,
   resolveOrgIdForAccount,
@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
   if (!account) {
     return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 });
   }
 
   let orgId: string;

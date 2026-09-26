@@ -1,12 +1,14 @@
 "use client";
 
-import { IconCreditCard, IconDownload, IconFileInvoice } from "@tabler/icons-react";
+import { IconCreditCard, IconDownload, IconFileInvoice, IconHeadset } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
 import { ProgressBar } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
@@ -46,6 +48,42 @@ export default function BillingPage() {
     user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
   const { data: campaigns = [] } = useCampaigns(channelId);
   const { toast } = useToast();
+
+  // "Priority business support" is a real, included Business-plan benefit (see /plans'
+  // own Business-tier copy) — the only place to actually file a ticket used to be the
+  // Enterprise Hub page, which is now correctly gated to Nexus Enterprise only. This is
+  // the real entry point Business accounts need so that benefit still does something.
+  const [supportOpen, setSupportOpen] = React.useState(false);
+  const [supportSubject, setSupportSubject] = React.useState("");
+  const [supportMessage, setSupportMessage] = React.useState("");
+  const [submittingTicket, setSubmittingTicket] = React.useState(false);
+
+  const submitSupportTicket = async () => {
+    setSubmittingTicket(true);
+    try {
+      const res = await fetch("/api/business/support/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject: supportSubject, message: supportMessage, priority: "high" }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Couldn't submit your ticket.");
+      }
+      toast({ title: "Support ticket sent", description: "Our team will follow up shortly." });
+      setSupportOpen(false);
+      setSupportSubject("");
+      setSupportMessage("");
+    } catch (err) {
+      toast({
+        title: "Couldn't submit your ticket",
+        description: err instanceof Error ? err.message : "Something went wrong — try again.",
+        tone: "error",
+      });
+    } finally {
+      setSubmittingTicket(false);
+    }
+  };
 
   const committed = campaigns
     .filter((c) => c.status === "active" || c.status === "pending")
@@ -164,6 +202,15 @@ export default function BillingPage() {
                 <p className="text-xs text-fg-muted">Priority Business Support</p>
                 <p className="font-semibold text-fg">Active SLA Support</p>
                 <p className="text-xs text-fg-subtle">Priority ticket routing</p>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  className="mt-2"
+                  onClick={() => setSupportOpen(true)}
+                >
+                  <IconHeadset className="size-3.5" />
+                  Contact support
+                </Button>
               </div>
             </div>
           </CardBody>
@@ -264,6 +311,48 @@ export default function BillingPage() {
           </CardBody>
         </Card>
       </PageBody>
+
+      <Modal
+        open={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        title="Contact support"
+        description="Priority routing — included with Nexus Business."
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSupportOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              loading={submittingTicket}
+              disabled={!supportSubject.trim() || !supportMessage.trim()}
+              onClick={submitSupportTicket}
+            >
+              Send
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="Subject" htmlFor="support-subject" required>
+            <Input
+              id="support-subject"
+              value={supportSubject}
+              onChange={(e) => setSupportSubject(e.target.value)}
+              placeholder="Campaign not delivering impressions"
+            />
+          </Field>
+          <Field label="Message" htmlFor="support-message" required>
+            <Textarea
+              id="support-message"
+              rows={4}
+              value={supportMessage}
+              onChange={(e) => setSupportMessage(e.target.value)}
+            />
+          </Field>
+        </div>
+      </Modal>
     </>
   );
 }

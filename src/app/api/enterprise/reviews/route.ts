@@ -1,6 +1,6 @@
 // Enterprise API: Client Reviews Management (GET, POST)
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import {
   createClientReview,
   listClientReviews,
@@ -8,10 +8,16 @@ import {
   NoOrganizationError,
 } from "@/lib/server/enterprise";
 
+// Creating/listing review links from the org side is Nexus Enterprise-only — the public
+// /api/review/[token] page a client opens to actually watch and comment is unaffected
+// (the token itself is the authorization there, not the viewer's own account).
 async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { error: NextResponse }> {
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required" }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["producer"])) {
+    return { error: NextResponse.json({ error: "This feature is included with Nexus Enterprise." }, { status: 403 }) };
   }
   try {
     return { orgId: await resolveOrgIdForAccount(account.id) };

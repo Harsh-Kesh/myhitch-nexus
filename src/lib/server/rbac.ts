@@ -16,13 +16,22 @@ import {
   type SessionAccount,
 } from "./session";
 
+// "enterprise" (the self-registrable UI role — see auth/register/page.tsx) and "producer"
+// (the same tier's spelling elsewhere, e.g. CHANNEL_KIND_LABELS.producer: "Enterprise")
+// both have to land on the one DB value the real account_roles_role_check constraint
+// actually allows: "producer" — it does not allow "enterprise" at all. This was
+// previously mapped the other way (both -> "enterprise"), which is not a display-only
+// mismatch: it made every Enterprise self-registration's `insert into account_roles`
+// throw a real check-constraint violation (confirmed live, in a rolled-back
+// transaction), and made every hasAnyRole()/toDbRole() check for Enterprise access
+// unsatisfiable, since it was checking for a role value no real row could ever hold.
 const MOCK_TO_DB_ROLE: Record<string, string> = {
   viewer: "viewer",
   creator: "creator",
   business: "business",
-  enterprise: "enterprise",
+  enterprise: "producer",
   advertiser: "business",
-  producer: "enterprise",
+  producer: "producer",
   education: "education",
   organisation: "organisation",
   moderator: "moderator",
