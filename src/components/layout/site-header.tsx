@@ -31,7 +31,10 @@ import { useTheme } from "@/app/providers";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, Input } from "@/components/ui/field";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
+import { Modal } from "@/components/ui/modal";
+import { verifyProfilePin } from "@/lib/mock-api";
 import {
   useCurrentUser,
   useLogout,
@@ -39,6 +42,7 @@ import {
   useSubscriptions,
   useSwitchProfile,
 } from "@/lib/mock-api/hooks";
+import type { ViewerProfile } from "@/lib/mock-api/types";
 import { cn, relativeTime } from "@/lib/utils";
 import { NexusMark } from "./logo";
 
@@ -81,6 +85,10 @@ export function SiteHeader() {
   const [query, setQuery] = React.useState("");
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [pinChallengeProfile, setPinChallengeProfile] = React.useState<ViewerProfile | null>(null);
+  const [enteredPin, setEnteredPin] = React.useState("");
+  const [pinError, setPinError] = React.useState("");
+  const [verifyingPin, setVerifyingPin] = React.useState(false);
 
   const isGuest = !user;
   // Upload only makes sense for an account that actually has a channel to publish to
@@ -114,6 +122,40 @@ export function SiteHeader() {
     logout.mutate(undefined, {
       onSuccess: () => router.push("/"),
     });
+  };
+
+  // Found live 2026-09-26 while fixing the header showing a stale active profile after
+  // a switch: this dropdown's own profile rows switched straight through with no PIN
+  // check at all, unlike switch-profile/page.tsx's identical list, which correctly
+  // prompts for one. Same gate as that page's handleSelectProfile().
+  const handleSelectProfile = (profile: ViewerProfile) => {
+    if ((profile.hasPinSet || profile.pinCode) && profile.id !== user?.activeProfileId) {
+      setPinChallengeProfile(profile);
+      setEnteredPin("");
+      setPinError("");
+      return;
+    }
+    switchProfile.mutate(profile.id);
+  };
+
+  const handleVerifyPin = async () => {
+    if (!pinChallengeProfile) return;
+    setVerifyingPin(true);
+    setPinError("");
+    try {
+      const correct = await verifyProfilePin(pinChallengeProfile.id, enteredPin);
+      if (correct) {
+        const profile = pinChallengeProfile;
+        setPinChallengeProfile(null);
+        switchProfile.mutate(profile.id);
+      } else {
+        setPinError("Incorrect PIN. Please try again.");
+      }
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Couldn't verify the PIN. Try again.");
+    } finally {
+      setVerifyingPin(false);
+    }
   };
 
   return (
@@ -315,7 +357,7 @@ export function SiteHeader() {
                         <MenuItem
                           key={profile.id}
                           active={profile.id === user.activeProfileId}
-                          onClick={() => switchProfile.mutate(profile.id)}
+                          onClick={() => handleSelectProfile(profile)}
                           icon={
                             <Avatar
                               name={profile.name}
@@ -462,6 +504,49 @@ export function SiteHeader() {
           </div>
         </nav>
       ) : null}
+
+      <Modal
+        open={Boolean(pinChallengeProfile)}
+        onClose={() => setPinChallengeProfile(null)}
+        title={`Enter PIN for ${pinChallengeProfile?.name ?? "Profile"}`}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-surface-2 p-3">
+            <Avatar name={pinChallengeProfile?.name ?? ""} gradient={pinChallengeProfile?.avatarGradient} size="md" />
+            <div>
+              <p className="font-semibold text-fg">{pinChallengeProfile?.name}</p>
+              <p className="text-xs text-fg-muted">This profile is protected with a 4-digit PIN.</p>
+            </div>
+          </div>
+
+          <Field label="4-Digit PIN" htmlFor="header-pin-input" error={pinError}>
+            <Input
+              id="header-pin-input"
+              type="password"
+              maxLength={4}
+              autoFocus
+              placeholder="••••"
+              value={enteredPin}
+              onChange={(e) => {
+                setEnteredPin(e.target.value.replace(/\D/g, ""));
+                setPinError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleVerifyPin();
+              }}
+            />
+          </Field>
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setPinChallengeProfile(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleVerifyPin} loading={verifyingPin}>
+              Unlock Profile
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </header>
   );
 }

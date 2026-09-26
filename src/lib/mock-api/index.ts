@@ -12,7 +12,7 @@
 import { pickGradient, sleep } from "@/lib/utils";
 import { buildAdminTrend, buildCampaignSeries, buildCreatorAnalytics, buildRevenueSummary } from "./data/analytics";
 import { NOW, daysAhead } from "./data/videos";
-import { nextId, persistLogin, recordAudit, store } from "./store";
+import { nextId, persistActiveProfile, persistLogin, readPersistedActiveProfile, recordAudit, store } from "./store";
 import type {
   AccessModel,
   AdminCase,
@@ -3390,7 +3390,8 @@ function applyRealAccount(account: RealAccount): void {
   // arrays the first time THIS specific real identity is applied in this store instance
   // (not on every call — a real account's own same-session mock-video toggles, which
   // have nowhere real to persist, should survive a later currentUser refetch).
-  if (store.user.id !== account.id) {
+  const isNewIdentity = store.user.id !== account.id;
+  if (isNewIdentity) {
     store.watchlist = [];
     store.following = [];
     // Same leak, worse: getContinueWatching()'s mock branch merged store.watchProgress's
@@ -3439,20 +3440,30 @@ function applyRealAccount(account: RealAccount): void {
   // real signed-up account saw someone else's family and someone else's initials.
   // Found live 2026-09-20. Until real profile CRUD exists, every real account gets
   // exactly one profile: itself — never the demo seed's fictional household, and never
-  // a real user's data pretending to be from a source it isn't.
-  const selfProfileId = `real-self-${account.id}`;
-  store.user.profiles = [
-    {
-      id: selfProfileId,
-      name: account.fullName,
-      kind: "adult",
-      avatarGradient: store.user.avatarGradient,
-      avatarUrl: account.avatarUrl ?? undefined,
-      maxAgeRating: "18",
-      language: account.preferredLanguage ?? store.user.language,
-    },
-  ];
-  store.user.activeProfileId = selfProfileId;
+  // a real user's data pretending to be from a source it isn't. Only seeded the first
+  // time this identity is applied in this store instance (isNewIdentity) — this used to
+  // run unconditionally on every call, which silently clobbered activeProfileId back to
+  // this synthetic default on every getCurrentUser() refetch. Found live 2026-09-26: a
+  // PIN-verified switch to a real family profile appeared to work (the toast confirmed
+  // it) but reverted a moment later, because switchProfile()'s own onSuccess handler
+  // invalidates and immediately refetches the current user, which ran straight back into
+  // this same unconditional reset before the "keep current profile" check further below
+  // ever got a chance to see the real switch.
+  if (isNewIdentity) {
+    const selfProfileId = `real-self-${account.id}`;
+    store.user.profiles = [
+      {
+        id: selfProfileId,
+        name: account.fullName,
+        kind: "adult",
+        avatarGradient: store.user.avatarGradient,
+        avatarUrl: account.avatarUrl ?? undefined,
+        maxAgeRating: "18",
+        language: account.preferredLanguage ?? store.user.language,
+      },
+    ];
+    store.user.activeProfileId = selfProfileId;
+  }
 }
 
 export async function getCurrentUser(): Promise<User | null> {
@@ -3462,6 +3473,7 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!data.account) {
     store.loggedIn = false;
     persistLogin(false);
+    persistActiveProfile(null);
     return null;
   }
 
@@ -3508,8 +3520,14 @@ export async function getCurrentUser(): Promise<User | null> {
             hasPinSet: p.hasPinSet,
             isKids: p.isKids,
           }));
-          store.user.activeProfileId = store.user.profiles.some((p) => p.id === store.user.activeProfileId)
-            ? store.user.activeProfileId
+          // Prefer a session-persisted choice (survives a full page reload, which this
+          // in-memory store instance does not) over whatever's already in memory, then
+          // validate it against the real, just-fetched profile list before trusting it —
+          // a deleted or foreign-account profile id falls back to profiles[0] exactly
+          // like before.
+          const preferredProfileId = readPersistedActiveProfile() ?? store.user.activeProfileId;
+          store.user.activeProfileId = store.user.profiles.some((p) => p.id === preferredProfileId)
+            ? preferredProfileId
             : store.user.profiles[0]?.id;
         }
       }
@@ -3561,6 +3579,7 @@ export async function updateUser(patch: Partial<User>): Promise<User> {
 export async function switchProfile(profileId: string): Promise<User> {
   await latency("fast");
   store.user.activeProfileId = profileId;
+  persistActiveProfile(profileId);
   return clone(store.user);
 }
 
@@ -3882,6 +3901,7 @@ export async function logout(): Promise<void> {
   });
   store.loggedIn = false;
   persistLogin(false);
+  persistActiveProfile(null);
 }
 
 /* ------------------------------ Magazine -------------------------------- */

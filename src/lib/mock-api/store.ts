@@ -106,6 +106,30 @@ export function persistLogin(loggedIn: boolean) {
   window.sessionStorage.setItem(LOGIN_STORAGE_KEY, String(loggedIn));
 }
 
+/** Same reasoning as LOGIN_STORAGE_KEY above, for the same reason: which household
+ * profile is active has nowhere real to live server-side (no such column exists on
+ * accounts or account_profiles — confirmed by reading the schema), so it only ever lived
+ * in this in-memory store singleton. That meant it reset to the account's default "self"
+ * profile on every fresh load of getCurrentUser() — a real bug found live 2026-09-26: a
+ * PIN-verified switch to a real profile appeared to work (the toast confirmed it) but the
+ * header's own next refetch of the current user silently reverted to the previous
+ * profile, because nothing had told it a different choice had just been made. */
+export const ACTIVE_PROFILE_STORAGE_KEY = "nx-active-profile";
+
+export function readPersistedActiveProfile(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY);
+}
+
+export function persistActiveProfile(profileId: string | null) {
+  if (typeof window === "undefined") return;
+  if (profileId) {
+    window.sessionStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, profileId);
+  } else {
+    window.sessionStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY);
+  }
+}
+
 function seed(): MockStore {
   return {
     videos: videos.map((video) => ({ ...video })),
