@@ -549,7 +549,7 @@ export default function StudioRevenuePage() {
                   <div className="rounded-lg border border-border p-4">
                     <p className="text-xs text-fg-muted">Total Tips & Patronage</p>
                     <p className="mt-1 text-xl font-semibold text-fg">
-                      {tipsData ? formatCurrency(tipsData.totalTipsCents / 100) : "—"}
+                      {tipsData ? formatCurrency(tipsData.totalTipsCents) : "—"}
                     </p>
                     <p className="mt-0.5 text-2xs text-fg-subtle">90% creator share</p>
                   </div>
@@ -558,7 +558,10 @@ export default function StudioRevenuePage() {
                     <p className="mt-1 text-xl font-semibold text-fg">
                       {tipsData ? tipsData.activePatronsCount : "—"}
                     </p>
-                    <p className="mt-0.5 text-2xs text-fg-subtle">Recurring support</p>
+                    {/* A "patron" is a fan on a real, ongoing monthly Stripe
+                        subscription to you (Patreon-style) — different from a
+                        one-time tip, which pays once and isn't counted here. */}
+                    <p className="mt-0.5 text-2xs text-fg-subtle">Fans paying monthly, not one-time tippers</p>
                   </div>
                   <div className="rounded-lg border border-border p-4">
                     <p className="text-xs text-fg-muted">Total Contributions</p>
@@ -581,7 +584,7 @@ export default function StudioRevenuePage() {
                         </div>
                         <div className="text-right">
                           <p className="font-semibold text-fg">
-                            {formatCurrency(tip.amount_cents / 100, tip.currency)}
+                            {formatCurrency(tip.amount_cents, tip.currency)}
                           </p>
                           <Badge tone={tip.is_patron ? "accent" : "outline"} size="sm">
                             {tip.is_patron ? "Monthly Patron" : "One-time Tip"}

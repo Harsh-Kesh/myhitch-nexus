@@ -2378,8 +2378,10 @@ export async function getRevenueSummary(channelId: string): Promise<RevenueSumma
         id: string;
         date: string;
         description: string;
-        kind: "rental" | "purchase" | "ppv";
+        kind: "rental" | "purchase" | "ppv" | "membership" | "ad" | "tip";
         grossMinor: number;
+        feeMinor: number;
+        netMinor: number;
       }>;
     };
     // available/pending/nextPayoutDate are honestly empty — no real payout system
@@ -2404,8 +2406,8 @@ export async function getRevenueSummary(channelId: string): Promise<RevenueSumma
         description: txn.description,
         kind: txn.kind,
         gross: txn.grossMinor,
-        fee: 0,
-        net: txn.grossMinor,
+        fee: txn.feeMinor,
+        net: txn.netMinor,
       })),
     };
   }

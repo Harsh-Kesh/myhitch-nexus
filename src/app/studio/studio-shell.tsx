@@ -12,6 +12,7 @@ import {
   IconSettings,
   IconSpeakerphone,
   IconUpload,
+  IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
@@ -96,6 +97,11 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
               label: "Comments",
               icon: <IconMessage />,
               badge: heldCount,
+            },
+            {
+              href: "/studio/community",
+              label: "Community",
+              icon: <IconUsers />,
             },
             {
               href: "/studio/magazine",

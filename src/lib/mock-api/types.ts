@@ -793,7 +793,7 @@ export interface RevenueSummary {
     id: string;
     date: string;
     description: string;
-    kind: "advertising" | "rental" | "purchase" | "membership" | "ppv" | "payout";
+    kind: "advertising" | "ad" | "rental" | "purchase" | "membership" | "ppv" | "tip" | "payout";
     gross: number;
     fee: number;
     net: number;
