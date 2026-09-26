@@ -44,6 +44,7 @@ import type {
   Money,
   ModerationItem,
   Organisation,
+  PlanPurchase,
   PlatformAnalyticsSummary,
   PlatformConfigTables,
   PlaybackBlockReason,
@@ -3992,6 +3993,35 @@ export async function getSubscriptions(): Promise<Subscription[]> {
 
   await latency("fast");
   return clone(store.subscriptions);
+}
+
+/** Real only — a mock account's fixture data never had genuine Stripe invoices behind
+ * it, so this only ever returns something for a real, signed-in account. */
+export async function getPlanPurchases(): Promise<PlanPurchase[]> {
+  if (!looksLikeRealId(store.user.id) || !store.loggedIn) return [];
+  const res = await fetch(`/api/subscriptions/purchases/`);
+  if (!res.ok) throw new Error(`GET /api/subscriptions/purchases failed with ${res.status}`);
+  const data = (await res.json()) as {
+    items: Array<{
+      id: string;
+      plan: "premium" | "family" | "business";
+      planLabel: string;
+      amountMinor: number;
+      currency: string;
+      invoiceNumber: string;
+      purchasedAt: string;
+      receiptUrl: string | null;
+    }>;
+  };
+  return data.items.map((item) => ({
+    id: item.id,
+    plan: item.plan,
+    planLabel: item.planLabel,
+    price: { amount: item.amountMinor, currency: item.currency as Money["currency"] },
+    invoiceNumber: item.invoiceNumber,
+    purchasedAt: item.purchasedAt,
+    receiptUrl: item.receiptUrl,
+  }));
 }
 
 export async function cancelSubscription(id: string): Promise<Subscription | null> {

@@ -87,6 +87,7 @@ export const qk = {
   user: ["current-user"] as const,
   purchases: ["purchases"] as const,
   subscriptions: ["subscriptions"] as const,
+  planPurchases: ["plan-purchases"] as const,
   notifications: ["notifications"] as const,
   myMagazineArticles: ["my-magazine-articles"] as const,
   magazineArticle: (id: string) => ["magazine-article", id] as const,
@@ -1159,6 +1160,12 @@ export const useSubscriptions = () => {
   // request) closes the window without touching the mock/real branch logic itself.
   const { isLoading: isUserLoading } = useCurrentUser();
   return useQuery({ queryKey: qk.subscriptions, queryFn: api.getSubscriptions, enabled: !isUserLoading });
+};
+
+export const usePlanPurchases = () => {
+  // Same real/mock-branch race as useSubscriptions() above, same fix.
+  const { isLoading: isUserLoading } = useCurrentUser();
+  return useQuery({ queryKey: qk.planPurchases, queryFn: api.getPlanPurchases, enabled: !isUserLoading });
 };
 
 export function useCancelSubscription() {

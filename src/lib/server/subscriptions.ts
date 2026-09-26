@@ -332,6 +332,7 @@ export async function listRealSubscriptions(accountId: string): Promise<RealSubs
 
 export interface PlanPurchaseRow {
   id: string;
+  plan: PlanId;
   planLabel: string;
   amountMinor: number;
   currency: string;
@@ -391,6 +392,7 @@ export async function listRealPlanPurchases(accountId: string): Promise<PlanPurc
       const interval = match?.billing_interval ?? "month";
       rows.push({
         id: invoice.id,
+        plan,
         planLabel: `${PLAN_CATALOG[plan].productName} — ${interval === "year" ? "Yearly" : "Monthly"}`,
         amountMinor: invoice.amount_paid,
         currency: invoice.currency.toUpperCase(),

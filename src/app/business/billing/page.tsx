@@ -1,18 +1,27 @@
 "use client";
 
-import { IconCreditCard, IconDownload, IconFileInvoice, IconHeadset } from "@tabler/icons-react";
+import { IconCreditCard, IconExternalLink, IconFileInvoice, IconHeadset } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Textarea } from "@/components/ui/field";
-import { Modal } from "@/components/ui/modal";
+import { ConfirmModal, Modal } from "@/components/ui/modal";
 import { ProgressBar } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/toast";
 import { looksLikeRealId } from "@/lib/mock-api";
-import { useCampaigns, useCurrentUser } from "@/lib/mock-api/hooks";
+import {
+  useCampaigns,
+  useCancelSubscription,
+  useCurrentUser,
+  usePlanPurchases,
+  useResumeSubscription,
+  useSubscriptions,
+} from "@/lib/mock-api/hooks";
+import type { PlanPurchase } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 // The real /api/campaigns route resolves the org from the signed-in account's own
@@ -21,33 +30,25 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 // campaigns under the shared demo account's key.
 const MOCK_CHANNEL_ID = "ch_helio";
 
-interface Invoice {
-  id: string;
-  number: string;
-  period: string;
-  issued: string;
-  due: string;
-  amount: number;
-  status: "paid" | "due" | "overdue";
-}
-
-const INVOICES: Invoice[] = [
-  { id: "inv_8", number: "NX-ADV-2026-0812", period: "August 2026", issued: "2026-08-01", due: "2026-08-31", amount: 7_284_00, status: "due" },
-  { id: "inv_7", number: "NX-ADV-2026-0711", period: "July 2026", issued: "2026-07-01", due: "2026-07-31", amount: 9_140_00, status: "paid" },
-  { id: "inv_6", number: "NX-ADV-2026-0610", period: "June 2026", issued: "2026-06-01", due: "2026-06-30", amount: 6_402_00, status: "paid" },
-  { id: "inv_5", number: "NX-ADV-2026-0509", period: "May 2026", issued: "2026-05-01", due: "2026-05-31", amount: 11_860_00, status: "paid" },
-  { id: "inv_4", number: "NX-ADV-2026-0408", period: "April 2026", issued: "2026-04-01", due: "2026-04-30", amount: 5_218_00, status: "paid" },
-  { id: "inv_3", number: "NX-ADV-2026-0307", period: "March 2026", issued: "2026-03-01", due: "2026-03-31", amount: 4_940_00, status: "paid" },
-];
-
-const STATUS_TONE = { paid: "published", due: "pending", overdue: "rejected" } as const;
-
 export default function BillingPage() {
   const { data: user } = useCurrentUser();
   const channelId =
     user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
   const { data: campaigns = [] } = useCampaigns(channelId);
   const { toast } = useToast();
+
+  // The real Business plan subscription — /business/layout.tsx's own checkRealPlanActive()
+  // gate already guarantees whoever reaches this page holds an active one, so there's
+  // always exactly one relevant row here once subscriptions have loaded.
+  const isRealAccount = Boolean(user?.id && looksLikeRealId(user.id));
+  const { data: subscriptions = [] } = useSubscriptions();
+  const { data: purchases = [] } = usePlanPurchases();
+  const cancelSubscription = useCancelSubscription();
+  const resumeSubscription = useResumeSubscription();
+  const [cancelling, setCancelling] = React.useState(false);
+
+  const businessSubscription = subscriptions.find((s) => s.plan === "business");
+  const businessPurchases = purchases.filter((p) => p.plan === "business");
 
   // "Priority business support" is a real, included Business-plan benefit (see /plans'
   // own Business-tier copy) — the only place to actually file a ticket used to be the
@@ -89,81 +90,46 @@ export default function BillingPage() {
     .filter((c) => c.status === "active" || c.status === "pending")
     .reduce((total, c) => total + c.budget.amount, 0);
   const spent = campaigns.reduce((total, c) => total + c.spend.amount, 0);
-  const outstanding = INVOICES.filter((i) => i.status !== "paid").reduce(
-    (total, i) => total + i.amount,
-    0,
-  );
 
-  const columns: Array<Column<Invoice>> = [
+  const columns: Array<Column<PlanPurchase>> = [
     {
       key: "number",
       header: "Invoice",
-      sortValue: (row) => row.number,
-      cell: (row) => (
-        <span className="font-mono text-xs text-fg">{row.number}</span>
-      ),
+      sortValue: (row) => row.invoiceNumber,
+      cell: (row) => <span className="font-mono text-xs text-fg">{row.invoiceNumber}</span>,
     },
     {
-      key: "period",
-      header: "Period",
-      sortValue: (row) => row.issued,
-      cell: (row) => <span className="text-fg">{row.period}</span>,
-    },
-    {
-      key: "issued",
-      header: "Issued",
-      secondary: true,
-      sortValue: (row) => row.issued,
-      cell: (row) => <span className="nx-tnum">{formatDate(row.issued)}</span>,
-    },
-    {
-      key: "due",
-      header: "Due",
-      secondary: true,
-      sortValue: (row) => row.due,
-      cell: (row) => <span className="nx-tnum">{formatDate(row.due)}</span>,
+      key: "purchasedAt",
+      header: "Date",
+      sortValue: (row) => row.purchasedAt,
+      cell: (row) => <span className="nx-tnum">{formatDate(row.purchasedAt)}</span>,
     },
     {
       key: "amount",
       header: "Amount",
       align: "right",
-      sortValue: (row) => row.amount,
+      sortValue: (row) => row.price.amount,
       cell: (row) => (
         <span className="nx-tnum font-medium text-fg">
-          {formatCurrency(row.amount)}
+          {formatCurrency(row.price.amount, row.price.currency)}
         </span>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      sortValue: (row) => row.status,
-      cell: (row) => (
-        <Badge tone={STATUS_TONE[row.status]} size="sm">
-          {row.status}
-        </Badge>
       ),
     },
     {
       key: "actions",
       header: "",
       align: "right",
-      cell: (row) => (
-        <Button
-          variant="ghost"
-          size="xs"
-          onClick={() =>
-            toast({
-              title: "Invoice generated",
-              description: `${row.number} — mock PDF, nothing is downloaded.`,
-              tone: "info",
-            })
-          }
-        >
-          <IconDownload />
-          PDF
-        </Button>
-      ),
+      cell: (row) =>
+        row.receiptUrl ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => window.open(row.receiptUrl!, "_blank", "noopener,noreferrer")}
+          >
+            <IconExternalLink />
+            Receipt
+          </Button>
+        ) : null,
     },
   ];
 
@@ -175,15 +141,22 @@ export default function BillingPage() {
       />
 
       <PageBody className="space-y-6">
-        {/* Nexus Business Subscription Overview */}
+        {/* Nexus Business Subscription Overview — real: sourced from the account's own
+            active Stripe subscription, the same one /business/layout.tsx's
+            checkRealPlanActive() gate already requires to reach this page at all. */}
         <Card className="border-warning/30 bg-warning/5">
           <CardHeader
             title="Nexus Business Subscription"
-            description="Your active commercial plan and included enterprise features"
+            description="Your active commercial plan and included features"
             action={
-              <Badge tone="published" size="sm">
-                Active Plan
-              </Badge>
+              businessSubscription ? (
+                <Badge
+                  tone={businessSubscription.cancelAtPeriodEnd ? "archived" : businessSubscription.status === "past-due" ? "danger" : "published"}
+                  size="sm"
+                >
+                  {businessSubscription.cancelAtPeriodEnd ? "Ending" : businessSubscription.status === "past-due" ? "Payment issue" : "Active"}
+                </Badge>
+              ) : null
             }
           />
           <CardBody className="space-y-3 text-sm">
@@ -191,12 +164,22 @@ export default function BillingPage() {
               <div>
                 <p className="text-xs text-fg-muted">Plan Tier</p>
                 <p className="font-semibold text-fg">Nexus Business</p>
-                <p className="text-xs text-fg-subtle">$29.00 / month ($290 / year option)</p>
+                <p className="text-xs text-fg-subtle">
+                  {businessSubscription
+                    ? `${formatCurrency(businessSubscription.price.amount, businessSubscription.price.currency)} / ${businessSubscription.interval === "annual" ? "year" : "month"}`
+                    : "Loading…"}
+                </p>
               </div>
               <div>
-                <p className="text-xs text-fg-muted">Team Allocation</p>
-                <p className="font-semibold text-fg">Up to 5 Team Seats</p>
-                <p className="text-xs text-fg-subtle">Admin, Editor, Analyst roles</p>
+                <p className="text-xs text-fg-muted">
+                  {businessSubscription?.cancelAtPeriodEnd ? "Access ends" : "Renews"}
+                </p>
+                <p className="font-semibold text-fg">
+                  {businessSubscription?.renewsAt ? formatDate(businessSubscription.renewsAt, "long") : "—"}
+                </p>
+                <p className="text-xs text-fg-subtle">
+                  {businessSubscription?.cancelAtPeriodEnd ? "Won't renew" : "Billed automatically"}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-fg-muted">Priority Business Support</p>
@@ -213,18 +196,42 @@ export default function BillingPage() {
                 </Button>
               </div>
             </div>
+            {businessSubscription ? (
+              <div className="flex justify-end gap-2 border-t border-border pt-3">
+                {businessSubscription.cancelAtPeriodEnd ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={resumeSubscription.isPending}
+                    onClick={async () => {
+                      try {
+                        await resumeSubscription.mutateAsync(businessSubscription.id);
+                        toast({ title: "Subscription resumed", description: "It'll keep renewing as normal." });
+                      } catch (err) {
+                        toast({
+                          title: "Couldn't resume",
+                          description: err instanceof Error ? err.message : undefined,
+                          tone: "error",
+                        });
+                      }
+                    }}
+                  >
+                    Resume subscription
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}>
+                    Cancel plan
+                  </Button>
+                )}
+              </div>
+            ) : null}
           </CardBody>
         </Card>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat
-            label="Outstanding"
-            value={formatCurrency(outstanding)}
-            icon={<IconFileInvoice />}
-            hint="Due 31 August"
-          />
+        <div className="grid gap-3 sm:grid-cols-2">
           <Stat
             label="Spent to date"
             value={formatCurrency(spent, "AUD", { compact: true })}
+            icon={<IconFileInvoice />}
           />
           <Stat
             label="Committed budget"
@@ -267,9 +274,10 @@ export default function BillingPage() {
                 size="sm"
                 onClick={() =>
                   toast({
-                    title: "Payment details are never collected here",
-                    description:
-                      "Card capture and gateway integration are explicitly out of scope.",
+                    title: "Payment method",
+                    description: isRealAccount
+                      ? "Changing your card isn't built yet — cancel and re-subscribe with a different card for now."
+                      : "Payment details are never collected in this prototype.",
                     tone: "info",
                   })
                 }
@@ -285,32 +293,59 @@ export default function BillingPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-fg">
-                  Invoiced monthly · Net 30
+                  Billed automatically via Stripe
                 </p>
                 <p className="mt-0.5 text-xs text-fg-muted">
-                  Billing contact: finance@heliomotors.example · VAT DE811907980
+                  Charged on the card used at checkout — no manual invoicing.
                 </p>
               </div>
-              <Badge tone="published" size="sm">
-                Approved for credit
-              </Badge>
             </div>
           </CardBody>
         </Card>
 
         <Card>
-          <CardHeader title="Invoices" />
+          <CardHeader title="Invoices" description="Real receipts from Stripe for this plan's past payments." />
           <CardBody className="p-0">
-            <DataTable
-              columns={columns}
-              rows={INVOICES}
-              rowKey={(row) => row.id}
-              className="rounded-none border-0"
-              caption="Advertising invoices"
-            />
+            {businessPurchases.length === 0 ? (
+              <div className="p-6">
+                <EmptyState
+                  compact
+                  icon={<IconFileInvoice />}
+                  title="No invoices yet"
+                  description="Receipts appear here after your first billing cycle."
+                />
+              </div>
+            ) : (
+              <DataTable
+                columns={columns}
+                rows={businessPurchases}
+                rowKey={(row) => row.id}
+                className="rounded-none border-0"
+                caption="Business plan invoices"
+              />
+            )}
           </CardBody>
         </Card>
       </PageBody>
+
+      <ConfirmModal
+        open={cancelling}
+        onClose={() => setCancelling(false)}
+        onConfirm={async () => {
+          if (!businessSubscription) return;
+          await cancelSubscription.mutateAsync(businessSubscription.id);
+          toast({
+            title: "Subscription cancelled",
+            description: `Access continues until ${formatDate(businessSubscription.renewsAt)}.`,
+            tone: "warning",
+          });
+          setCancelling(false);
+        }}
+        title="Cancel Nexus Business?"
+        description="You keep Business Studio access until the end of the current billing period. Nothing is refunded automatically."
+        confirmLabel="Cancel subscription"
+        loading={cancelSubscription.isPending}
+      />
 
       <Modal
         open={supportOpen}

@@ -550,6 +550,18 @@ export interface Subscription {
   cancelAtPeriodEnd?: boolean;
 }
 
+/** One real paid Stripe invoice for one of the account's own platform subscriptions —
+ * real only, see getPlanPurchases()'s own header. */
+export interface PlanPurchase {
+  id: string;
+  plan: "premium" | "family" | "business";
+  planLabel: string;
+  price: Money;
+  invoiceNumber: string;
+  purchasedAt: string;
+  receiptUrl: string | null;
+}
+
 /* ------------------------------- Upload -------------------------------- */
 
 export type UploadPhase =
