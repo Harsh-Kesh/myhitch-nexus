@@ -1,6 +1,6 @@
 "use client";
 
-import { IconBuildingBank, IconCheck, IconFileText, IconSearch, IconUpload } from "@tabler/icons-react";
+import { IconCheck, IconFileText, IconSearch, IconUpload } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Badge } from "@/components/ui/badge";

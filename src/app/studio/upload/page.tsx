@@ -121,7 +121,6 @@ export default function UploadPage() {
   const {
     activeUpload,
     startUpload: startBgUpload,
-    updateDraftData,
     setStep: setBgStep,
     setFurthestStep: setBgFurthestStep,
     clearUpload,

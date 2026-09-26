@@ -4,14 +4,6 @@
 import "server-only";
 import { query, queryOne, withTransaction } from "./db";
 
-async function isChannelMember(accountId: string, organizationId: string): Promise<boolean> {
-  const row = await queryOne<{ id: string }>(
-    `select id from memberships where account_id = $1 and organization_id = $2`,
-    [accountId, organizationId],
-  );
-  return Boolean(row);
-}
-
 export interface ProductLinkRow {
   id: string;
   organizationId: string;

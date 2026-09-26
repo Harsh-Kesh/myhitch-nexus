@@ -21,7 +21,6 @@ import {
   IconStarFilled,
   IconThumbUp,
   IconThumbUpFilled,
-  IconTrash,
 } from "@tabler/icons-react";
 import {
   downloadVideo,
@@ -709,7 +708,6 @@ export function VideoDetailClient() {
                               className="flex w-full items-center gap-3 rounded border border-border bg-surface-2 p-2.5 text-left transition-colors hover:border-border-strong"
                             >
                               {link.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={link.imageUrl}
                                   alt=""

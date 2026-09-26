@@ -924,7 +924,7 @@ export default function EnterpriseHubPage() {
             <div>
               <h3 className="text-base font-semibold text-fg">Audit Trail</h3>
               <p className="text-xs text-fg-muted">
-                Real actions taken by anyone on your team — the platform's own audit log, scoped to your
+                Real actions taken by anyone on your team — the platform&apos;s own audit log, scoped to your
                 organization&apos;s members.
               </p>
             </div>
