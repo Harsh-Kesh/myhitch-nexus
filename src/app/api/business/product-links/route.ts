@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
   let body: {
     productName?: string;
     martProductId?: string;
+    imageUrl?: string;
     priceCents?: number;
     currency?: string;
     commissionRate?: number;
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
   const result = await createProductLink(resolved.orgId, {
     productName: body.productName,
     martProductId: body.martProductId,
+    imageUrl: body.imageUrl,
     priceCents: body.priceCents,
     currency: body.currency,
     commissionRate: body.commissionRate,

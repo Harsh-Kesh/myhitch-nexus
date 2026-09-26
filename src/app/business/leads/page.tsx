@@ -121,7 +121,11 @@ export default function LeadsPage() {
         open={Boolean(detail)}
         onClose={() => setDetail(null)}
         title={detail?.name}
-        description={detail ? `${detail.company} · ${detail.email}` : undefined}
+        description={
+          detail
+            ? [detail.company, detail.email, detail.phone].filter(Boolean).join(" · ")
+            : undefined
+        }
         size="md"
         footer={
           <>

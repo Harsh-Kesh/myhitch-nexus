@@ -708,14 +708,23 @@ export function VideoDetailClient() {
                               }}
                               className="flex w-full items-center gap-3 rounded border border-border bg-surface-2 p-2.5 text-left transition-colors hover:border-border-strong"
                             >
-                              <span
-                                aria-hidden
-                                className="size-10 shrink-0 rounded"
-                                style={{
-                                  backgroundImage:
-                                    "linear-gradient(140deg, rgb(var(--nx-accent)), rgb(var(--nx-accent-press)))",
-                                }}
-                              />
+                              {link.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={link.imageUrl}
+                                  alt=""
+                                  className="size-10 shrink-0 rounded object-cover"
+                                />
+                              ) : (
+                                <span
+                                  aria-hidden
+                                  className="size-10 shrink-0 rounded"
+                                  style={{
+                                    backgroundImage:
+                                      "linear-gradient(140deg, rgb(var(--nx-accent)), rgb(var(--nx-accent-press)))",
+                                  }}
+                                />
+                              )}
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm text-fg">{link.productName}</span>
                                 <span className="block text-xs text-fg-subtle nx-tnum">
@@ -1569,6 +1578,7 @@ function QuoteModal({
   const { toast } = useToast();
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
+  const [phone, setPhone] = React.useState("");
   const [company, setCompany] = React.useState("");
   const [message, setMessage] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
@@ -1578,10 +1588,17 @@ function QuoteModal({
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      await submitVideoLead(videoId, { name, email, company: company || undefined, message });
+      await submitVideoLead(videoId, {
+        name,
+        email,
+        phone: phone || undefined,
+        company: company || undefined,
+        message,
+      });
       toast({ title: "Enquiry sent", description: `${businessName} will be in touch.` });
       setName("");
       setEmail("");
+      setPhone("");
       setCompany("");
       setMessage("");
       onClose();
@@ -1604,6 +1621,9 @@ function QuoteModal({
         </Field>
         <Field label="Email" htmlFor="quote-email" required>
           <Input id="quote-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label="Phone" htmlFor="quote-phone">
+          <Input id="quote-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
         <Field label="Company" htmlFor="quote-company">
           <Input id="quote-company" value={company} onChange={(e) => setCompany(e.target.value)} />

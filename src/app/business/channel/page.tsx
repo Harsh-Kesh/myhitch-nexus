@@ -44,7 +44,6 @@ export default function BusinessChannelPage() {
   const { data: user } = useCurrentUser();
   const channelId =
     user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
-  const isRealChannel = looksLikeRealId(channelId);
 
   const { data: channel } = useChannel(channelId);
   // includeUnpublished:true now hits a real, membership-gated endpoint for a real
@@ -75,21 +74,6 @@ export default function BusinessChannelPage() {
       />
 
       <PageBody className="space-y-6">
-        {isRealChannel ? (
-          <Card className="border-warning/30 bg-warning/5">
-            <CardBody>
-              <p className="text-sm font-medium text-fg">Leads and product links aren&rsquo;t real yet</p>
-              <p className="mt-1 text-sm text-fg-muted">
-                Your name, branding, published videos and ad campaigns below are all real —
-                campaigns launched here really run through real ad serving now (2026-09-25).
-                Leads and product links are still simulated (P3 in the build plan) —
-                they&rsquo;ll show as empty here until that work lands, not because nothing is
-                happening on your account.
-              </p>
-            </CardBody>
-          </Card>
-        ) : null}
-
         {/* Identity */}
         <Card className="overflow-hidden">
           <Poster

@@ -17,6 +17,7 @@ export interface ProductLinkRow {
   organizationId: string;
   productName: string;
   martProductId: string;
+  imageUrl: string | null;
   priceCents: number;
   currency: string;
   commissionRate: number;
@@ -32,6 +33,7 @@ interface ProductLinkDbRow {
   organization_id: string;
   product_name: string;
   mart_product_id: string;
+  image_url: string | null;
   price_cents: number;
   currency: string;
   commission_rate: string;
@@ -48,6 +50,7 @@ function mapLink(row: ProductLinkDbRow): ProductLinkRow {
     organizationId: row.organization_id,
     productName: row.product_name,
     martProductId: row.mart_product_id,
+    imageUrl: row.image_url,
     priceCents: row.price_cents,
     currency: row.currency,
     commissionRate: Number(row.commission_rate),
@@ -85,6 +88,7 @@ export async function createProductLink(
   input: {
     productName: string;
     martProductId?: string;
+    imageUrl?: string | null;
     priceCents: number;
     currency?: string;
     commissionRate?: number;
@@ -104,13 +108,14 @@ export async function createProductLink(
 
   const linkId = await withTransaction(async (tx) => {
     const rows = await tx.query<{ id: string }>(
-      `insert into product_links (organization_id, product_name, mart_product_id, price_cents, currency, commission_rate, target_url)
-       values ($1, $2, $3, $4, $5, $6, $7)
+      `insert into product_links (organization_id, product_name, mart_product_id, image_url, price_cents, currency, commission_rate, target_url)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        returning id`,
       [
         organizationId,
         input.productName.trim().slice(0, 200),
         martProductId,
+        input.imageUrl?.trim() || null,
         Math.round(input.priceCents),
         input.currency ?? "AUD",
         input.commissionRate ?? 0,
@@ -147,16 +152,17 @@ export async function deleteProductLink(organizationId: string, linkId: string):
  * never happens today — cheap correctness, not a hypothetical fix). */
 export async function getVideoProductLinks(
   videoId: string,
-): Promise<Array<{ id: string; productName: string; priceCents: number; currency: string; targetUrl: string | null; timestampSeconds: number }>> {
+): Promise<Array<{ id: string; productName: string; imageUrl: string | null; priceCents: number; currency: string; targetUrl: string | null; timestampSeconds: number }>> {
   const rows = await query<{
     id: string;
     product_name: string;
+    image_url: string | null;
     price_cents: number;
     currency: string;
     target_url: string | null;
     timestamp_seconds: number;
   }>(
-    `select p.id, p.product_name, p.price_cents, p.currency, p.target_url, vpl.timestamp_seconds
+    `select p.id, p.product_name, p.image_url, p.price_cents, p.currency, p.target_url, vpl.timestamp_seconds
      from video_product_links vpl
      join product_links p on p.id = vpl.product_link_id
      join videos v on v.id = vpl.video_id
@@ -167,6 +173,7 @@ export async function getVideoProductLinks(
   return rows.map((row) => ({
     id: row.id,
     productName: row.product_name,
+    imageUrl: row.image_url,
     priceCents: row.price_cents,
     currency: row.currency,
     targetUrl: row.target_url,

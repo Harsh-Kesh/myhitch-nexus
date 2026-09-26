@@ -694,11 +694,13 @@ export interface Lead {
   channelId: string;
   name: string;
   email: string;
+  phone?: string | null;
   company: string;
   sourceVideoId: string;
   message: string;
   status: "new" | "contacted" | "qualified" | "closed";
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ProductLink {
@@ -706,6 +708,8 @@ export interface ProductLink {
   channelId: string;
   productName: string;
   martProductId: string;
+  imageUrl?: string | null;
+  targetUrl?: string | null;
   price: Money;
   attachedVideoIds: string[];
   clicks: number;

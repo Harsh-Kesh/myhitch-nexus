@@ -21,10 +21,12 @@ export interface LeadRow {
   sourceVideoId: string | null;
   name: string;
   email: string;
+  phone: string | null;
   company: string | null;
   message: string;
   status: LeadStatus;
   createdAt: string;
+  updatedAt: string;
 }
 
 interface LeadDbRow {
@@ -33,10 +35,12 @@ interface LeadDbRow {
   source_video_id: string | null;
   name: string;
   email: string;
+  phone: string | null;
   company: string | null;
   message: string;
   status: LeadStatus;
   created_at: string;
+  updated_at: string;
 }
 
 function mapLead(row: LeadDbRow): LeadRow {
@@ -46,10 +50,12 @@ function mapLead(row: LeadDbRow): LeadRow {
     sourceVideoId: row.source_video_id,
     name: row.name,
     email: row.email,
+    phone: row.phone,
     company: row.company,
     message: row.message,
     status: row.status,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -77,7 +83,7 @@ export async function updateLeadStatus(
   status: LeadStatus,
 ): Promise<UpdateLeadStatusResult> {
   const row = await queryOne<LeadDbRow>(
-    `update business_leads set status = $3 where id = $1 and organization_id = $2 returning *`,
+    `update business_leads set status = $3, updated_at = now() where id = $1 and organization_id = $2 returning *`,
     [leadId, organizationId, status],
   );
   if (!row) return { outcome: "not_found" };
@@ -91,6 +97,7 @@ export async function createLeadFromVideo(input: {
   videoId: string;
   name: string;
   email: string;
+  phone?: string | null;
   company?: string | null;
   message: string;
 }): Promise<{ outcome: "success" } | { outcome: "video_not_found" } | { outcome: "invalid"; reason: string }> {
@@ -104,13 +111,14 @@ export async function createLeadFromVideo(input: {
   if (!video) return { outcome: "video_not_found" };
 
   await query(
-    `insert into business_leads (organization_id, source_video_id, name, email, company, message)
-     values ($1, $2, $3, $4, $5, $6)`,
+    `insert into business_leads (organization_id, source_video_id, name, email, phone, company, message)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
     [
       video.channel_id,
       input.videoId,
       input.name.trim().slice(0, 200),
       input.email.trim().slice(0, 320),
+      input.phone?.trim().slice(0, 40) || null,
       input.company?.trim().slice(0, 200) || null,
       input.message.trim().slice(0, 5000),
     ],
@@ -132,10 +140,11 @@ function csvEscape(value: string): string {
  * that might be stale or incomplete. */
 export async function exportLeadsCsv(organizationId: string): Promise<string> {
   const leads = await listLeads(organizationId);
-  const header = ["Name", "Email", "Company", "Status", "Message", "Received"];
+  const header = ["Name", "Email", "Phone", "Company", "Status", "Message", "Received"];
   const rows = leads.map((lead) => [
     lead.name,
     lead.email,
+    lead.phone ?? "",
     lead.company ?? "",
     lead.status,
     lead.message.replace(/\r?\n/g, " "),

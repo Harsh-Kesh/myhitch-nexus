@@ -41,6 +41,8 @@ export default function ProductLinksPage() {
   const [productName, setProductName] = React.useState("");
   const [price, setPrice] = React.useState("");
   const [commission, setCommission] = React.useState("6");
+  const [targetUrl, setTargetUrl] = React.useState("");
+  const [imageUrl, setImageUrl] = React.useState("");
   const [attached, setAttached] = React.useState<string[]>([]);
 
   const totals = links.reduce(
@@ -62,12 +64,21 @@ export default function ProductLinksPage() {
       sortValue: (row) => row.productName,
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <span
-            aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded bg-accent-soft text-accent"
-          >
-            <IconShoppingBag className="size-4" />
-          </span>
+          {row.imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={row.imageUrl}
+              alt=""
+              className="size-9 shrink-0 rounded object-cover"
+            />
+          ) : (
+            <span
+              aria-hidden
+              className="flex size-9 shrink-0 items-center justify-center rounded bg-accent-soft text-accent"
+            >
+              <IconShoppingBag className="size-4" />
+            </span>
+          )}
           <span className="min-w-0">
             <span className="block truncate font-medium text-fg">
               {row.productName}
@@ -239,16 +250,20 @@ export default function ProductLinksPage() {
                   channelId,
                   productName: productName.trim(),
                   martProductId: `mart_${productName.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 24)}`,
+                  imageUrl: imageUrl.trim() || null,
                   price: {
                     amount: Math.round(Number(price || 0) * 100),
                     currency: "AUD",
                   },
+                  targetUrl: targetUrl.trim() || null,
                   attachedVideoIds: attached,
                   commissionRate: Number(commission) || 0,
                 });
                 setOpen(false);
                 setProductName("");
                 setPrice("");
+                setTargetUrl("");
+                setImageUrl("");
                 setAttached([]);
                 toast({ title: "Product link created" });
               }}
@@ -289,6 +304,28 @@ export default function ProductLinksPage() {
               />
             </Field>
           </div>
+          <Field
+            label="Target URL"
+            htmlFor="pl-target-url"
+            hint="Where a viewer lands when they tap the product card."
+          >
+            <Input
+              id="pl-target-url"
+              type="url"
+              value={targetUrl}
+              onChange={(event) => setTargetUrl(event.target.value)}
+              placeholder="https://mart.example.com/products/helio-wallbox-11kw"
+            />
+          </Field>
+          <Field label="Image URL" htmlFor="pl-image-url" hint="Shown on the product card. Optional.">
+            <Input
+              id="pl-image-url"
+              type="url"
+              value={imageUrl}
+              onChange={(event) => setImageUrl(event.target.value)}
+              placeholder="https://images.example.com/wallbox.jpg"
+            />
+          </Field>
           <Field label="Attach to videos">
             <MultiSelect
               options={videos.map((video) => ({

@@ -2739,10 +2739,12 @@ interface RealLead {
   sourceVideoId: string | null;
   name: string;
   email: string;
+  phone: string | null;
   company: string | null;
   message: string;
   status: Lead["status"];
   createdAt: string;
+  updatedAt: string;
 }
 
 function mapRealLead(row: RealLead): Lead {
@@ -2751,11 +2753,13 @@ function mapRealLead(row: RealLead): Lead {
     channelId: row.organizationId,
     name: row.name,
     email: row.email,
+    phone: row.phone,
     company: row.company ?? "",
     sourceVideoId: row.sourceVideoId ?? "",
     message: row.message,
     status: row.status,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -2802,7 +2806,7 @@ export function downloadLeadsCsv(): void {
 
 export async function submitVideoLead(
   videoId: string,
-  input: { name: string; email: string; company?: string; message: string },
+  input: { name: string; email: string; phone?: string; company?: string; message: string },
 ): Promise<void> {
   const res = await fetch(`/api/videos/${videoId}/leads/`, {
     method: "POST",
@@ -2820,6 +2824,7 @@ interface RealProductLink {
   organizationId: string;
   productName: string;
   martProductId: string;
+  imageUrl: string | null;
   priceCents: number;
   currency: Money["currency"];
   commissionRate: number;
@@ -2836,6 +2841,8 @@ function mapRealProductLink(row: RealProductLink): ProductLink {
     channelId: row.organizationId,
     productName: row.productName,
     martProductId: row.martProductId,
+    imageUrl: row.imageUrl,
+    targetUrl: row.targetUrl,
     price: { amount: row.priceCents, currency: row.currency },
     attachedVideoIds: row.attachedVideoIds,
     clicks: row.clicksCount,
@@ -2866,9 +2873,11 @@ export async function createProductLink(
       body: JSON.stringify({
         productName: payload.productName,
         martProductId: payload.martProductId,
+        imageUrl: payload.imageUrl,
         priceCents: payload.price.amount,
         currency: payload.price.currency,
         commissionRate: payload.commissionRate,
+        targetUrl: payload.targetUrl,
         attachedVideoIds: payload.attachedVideoIds,
       }),
     });
@@ -2901,6 +2910,7 @@ export async function deleteProductLink(id: string): Promise<void> {
 export interface VideoProductLinkCard {
   id: string;
   productName: string;
+  imageUrl: string | null;
   priceCents: number;
   currency: string;
   targetUrl: string | null;
