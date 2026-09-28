@@ -26,6 +26,14 @@ export interface RealLiveEvent {
   endedAt: string | null;
   chatEnabled: boolean;
   createdAt: string;
+  // Only populated by listAllLiveEvents() below — a cross-channel listing has no other
+  // way to name the host channel (the caller doesn't already know it, unlike
+  // listChannelLiveEvents()'s caller), same denormalized-on-read shape
+  // VideoSummary.channelName already uses for the same reason (catalogue.ts).
+  channelName?: string;
+  channelAvatarUrl?: string | null;
+  channelAvatarGradient?: [string, string];
+  channelVerified?: boolean;
 }
 
 interface LiveEventRow {
@@ -40,6 +48,10 @@ interface LiveEventRow {
   ended_at: string | null;
   chat_enabled: boolean;
   created_at: string;
+  channel_name?: string;
+  channel_avatar_url?: string | null;
+  channel_avatar_gradient?: [string, string];
+  channel_verified?: boolean;
 }
 
 function mapRow(row: LiveEventRow): RealLiveEvent {
@@ -55,6 +67,10 @@ function mapRow(row: LiveEventRow): RealLiveEvent {
     endedAt: row.ended_at,
     chatEnabled: row.chat_enabled,
     createdAt: row.created_at,
+    channelName: row.channel_name,
+    channelAvatarUrl: row.channel_avatar_url,
+    channelAvatarGradient: row.channel_avatar_gradient,
+    channelVerified: row.channel_verified,
   };
 }
 
@@ -70,6 +86,25 @@ export async function listChannelLiveEvents(channelId: string): Promise<RealLive
   const rows = await query<LiveEventRow>(
     `select * from live_events where channel_id = $1 order by created_at desc`,
     [channelId],
+  );
+  return rows.map(mapRow);
+}
+
+/** Cross-channel listing (homepage's live rail, the public /live page, admin's live-
+ * operations queue) — was 100% the in-memory mock store (store.liveEvents,
+ * mock-api/index.ts's getLiveEvents()) since none of those callers have a channelId to
+ * scope by, unlike everything else in this file. */
+export async function listAllLiveEvents(status?: LiveEventStatus): Promise<RealLiveEvent[]> {
+  const rows = await query<LiveEventRow>(
+    `select le.*, o.name as channel_name, o.avatar_url as channel_avatar_url,
+       o.avatar_gradient as channel_avatar_gradient, o.verified as channel_verified
+     from live_events le
+     join organizations o on o.id = le.channel_id
+     where $1::text is null or le.status = $1
+     order by
+       case le.status when 'live' then 0 when 'scheduled' then 1 when 'ended' then 2 else 3 end,
+       le.scheduled_start desc nulls last, le.created_at desc`,
+    [status ?? null],
   );
   return rows.map(mapRow);
 }

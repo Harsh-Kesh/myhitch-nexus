@@ -13,15 +13,10 @@ import { Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
-import { downloadLeadsCsv, looksLikeRealId } from "@/lib/mock-api";
-import { useCurrentUser, useLeads, useUpdateLeadStatus, useVideo } from "@/lib/mock-api/hooks";
+import { downloadLeadsCsv } from "@/lib/mock-api";
+import { useLeads, useOwnedChannelId, useUpdateLeadStatus, useVideo } from "@/lib/mock-api/hooks";
 import type { Lead } from "@/lib/mock-api/types";
 import { relativeTime } from "@/lib/utils";
-
-// Not a plain `?? "ch_helio"` fallback used blindly — see business-shell.tsx's header
-// comment on why a real signed-in account's own channelId is never actually null by the
-// time it reaches here; this only ever falls back for the shared demo persona.
-const MOCK_CHANNEL_ID = "ch_helio";
 
 const STATUS_TONE: Record<Lead["status"], "accent" | "info" | "published" | "archived"> = {
   new: "accent",
@@ -31,9 +26,8 @@ const STATUS_TONE: Record<Lead["status"], "accent" | "info" | "published" | "arc
 };
 
 export default function LeadsPage() {
-  const { data: user } = useCurrentUser();
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: leads = [] } = useLeads(channelId);
   const updateStatus = useUpdateLeadStatus(channelId);
   const { toast } = useToast();
@@ -56,21 +50,7 @@ export default function LeadsPage() {
         title="Leads"
         description="Enquiries captured from your videos and channel page."
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              if (!looksLikeRealId(channelId)) {
-                toast({
-                  title: "Export queued",
-                  description: "Mock CSV export — no CRM is connected.",
-                  tone: "info",
-                });
-                return;
-              }
-              downloadLeadsCsv();
-            }}
-          >
+          <Button variant="secondary" size="sm" onClick={downloadLeadsCsv}>
             <IconDownload />
             Export
           </Button>

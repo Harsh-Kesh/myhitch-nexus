@@ -32,7 +32,7 @@ import {
   useCampaignAudienceEstimate,
   useChannel,
   useCreateCampaign,
-  useCurrentUser,
+  useOwnedChannelId,
   useSubmitCampaign,
 } from "@/lib/mock-api/hooks";
 import type { AgeRating, Campaign, CampaignCreative } from "@/lib/mock-api/types";
@@ -99,9 +99,6 @@ function clearDraft(): void {
   }
 }
 
-const MOCK_ADVERTISER_CHANNEL = "ch_helio";
-const MOCK_ADVERTISER_NAME = "Helio Motors";
-
 const STEPS = [
   { id: "basics", title: "Basics", description: "Name, objective, dates" },
   { id: "budget", title: "Budget", description: "Spend and pacing" },
@@ -131,10 +128,10 @@ export default function NewCampaignPage() {
   const { toast } = useToast();
   const createCampaign = useCreateCampaign();
   const submitCampaign = useSubmitCampaign();
-  const { data: user } = useCurrentUser();
-  const advertiserId = user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_ADVERTISER_CHANNEL;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const advertiserId = ownedChannelId ?? "";
   const { data: advertiserChannel } = useChannel(advertiserId);
-  const advertiserName = looksLikeRealId(advertiserId) ? (advertiserChannel?.name ?? "Your account") : MOCK_ADVERTISER_NAME;
+  const advertiserName = advertiserChannel?.name ?? "Your account";
 
   const [step, setStep] = React.useState(() => loadDraft()?.step ?? 0);
   const [furthest, setFurthest] = React.useState(() => loadDraft()?.furthest ?? 0);

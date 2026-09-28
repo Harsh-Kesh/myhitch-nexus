@@ -1,7 +1,7 @@
 // GET/PATCH /api/business/leads — real leads captured from the signed-in account's own
 // organization's videos.
 import { NextResponse, type NextRequest } from "next/server";
-import { getRequestAccount } from "@/lib/server/rbac";
+import { getRequestAccount, hasAnyRole } from "@/lib/server/rbac";
 import { resolveOrgIdForAccount, NoOrganizationError } from "@/lib/server/enterprise";
 import { listLeads, updateLeadStatus, type LeadStatus } from "@/lib/server/businessLeads";
 
@@ -11,6 +11,9 @@ async function requireOrg(request: NextRequest): Promise<{ orgId: string } | { e
   const account = await getRequestAccount(request);
   if (!account) {
     return { error: NextResponse.json({ error: "Sign in required." }, { status: 401 }) };
+  }
+  if (!hasAnyRole(account, ["business", "advertiser", "producer"])) {
+    return { error: NextResponse.json({ error: "Business plan required." }, { status: 403 }) };
   }
   try {
     return { orgId: await resolveOrgIdForAccount(account.id) };

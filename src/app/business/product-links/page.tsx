@@ -12,25 +12,19 @@ import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
-import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useChannelVideos,
   useCreateProductLink,
-  useCurrentUser,
   useDeleteProductLink,
+  useOwnedChannelId,
   useProductLinks,
 } from "@/lib/mock-api/hooks";
 import type { ProductLink } from "@/lib/mock-api/types";
 import { compactNumber, formatCurrency, formatPercent } from "@/lib/utils";
 
-// See leads/page.tsx's identical comment — only ever a fallback for the shared demo
-// persona, never a real signed-in account.
-const MOCK_CHANNEL_ID = "ch_helio";
-
 export default function ProductLinksPage() {
-  const { data: user } = useCurrentUser();
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: links = [] } = useProductLinks(channelId);
   const { data: videos = [] } = useChannelVideos(channelId);
   const createLink = useCreateProductLink(channelId);
@@ -221,9 +215,9 @@ export default function ProductLinksPage() {
         <Card>
           <CardBody>
             <p className="text-xs leading-relaxed text-fg-subtle">
-              {looksLikeRealId(channelId)
-                ? "Product links, clicks and \"Shop this video\" cards are real — but there's no real Mart product catalogue or checkout to link to yet, so mart_product_id is a stand-in identifier, not a real product lookup."
-                : "Commerce is mocked. Product references point at a fictional Mart catalogue and no external request is made when a viewer taps a “Shop this video” card."}
+              Product links, clicks and &quot;Shop this video&quot; cards are real — but
+              there&apos;s no real Mart product catalogue or checkout to link to yet, so
+              mart_product_id is a stand-in identifier, not a real product lookup.
             </p>
           </CardBody>
         </Card>

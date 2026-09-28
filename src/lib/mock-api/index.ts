@@ -1302,6 +1302,10 @@ interface RealLiveEventShape {
   endedAt: string | null;
   chatEnabled: boolean;
   createdAt: string;
+  channelName?: string;
+  channelAvatarUrl?: string | null;
+  channelAvatarGradient?: [string, string];
+  channelVerified?: boolean;
 }
 
 function mapRealLiveEvent(real: RealLiveEventShape): LiveEvent {
@@ -1325,28 +1329,32 @@ function mapRealLiveEvent(real: RealLiveEventShape): LiveEvent {
     replayVideoId: null,
     replayPublished: false,
     categoryIds: [],
+    channelName: real.channelName,
+    channelAvatarUrl: real.channelAvatarUrl ?? undefined,
+    channelAvatarGradient: real.channelAvatarGradient,
+    channelVerified: real.channelVerified,
   };
 }
 
+const MOCK_STATUS_TO_REAL: Partial<Record<LiveEvent["status"], string>> = {
+  upcoming: "scheduled",
+  live: "live",
+  ended: "ended",
+  cancelled: "cancelled",
+};
+
+// Real Postgres via GET /api/live/events (no channelId) — a cross-channel listing (the
+// homepage's live rail, the public /live page, admin's live-operations queue), so there's
+// no single id to gate real-vs-mock on the way every other function in this file does.
 export async function getLiveEvents(status?: LiveEvent["status"]): Promise<LiveEvent[]> {
-  await latency("fast");
-  const events = status
-    ? store.liveEvents.filter((event) => event.status === status)
-    : store.liveEvents;
-  const order: Record<LiveEvent["status"], number> = {
-    live: 0,
-    upcoming: 1,
-    ended: 2,
-    replay: 3,
-    cancelled: 4,
-  };
-  return clone(
-    [...events].sort(
-      (a, b) =>
-        order[a.status] - order[b.status] ||
-        a.scheduledStart.localeCompare(b.scheduledStart),
-    ),
-  );
+  const params = new URLSearchParams();
+  const realStatus = status ? MOCK_STATUS_TO_REAL[status] : undefined;
+  if (realStatus) params.set("status", realStatus);
+  const qs = params.toString();
+  const res = await fetch(`/api/live/events/${qs ? `?${qs}` : ""}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { events: RealLiveEventShape[] };
+  return data.events.map(mapRealLiveEvent);
 }
 
 export async function getLiveEvent(id: string): Promise<LiveEvent | null> {
@@ -2176,6 +2184,29 @@ export async function validateBulkImport(rowCount = 12): Promise<BulkImportRow[]
   });
 }
 
+/** Real CSV manifest parse — POST /api/studio/bulk-import/parse. No DB write; the
+ * returned rows back the review table until commitBulkImport() below. */
+export async function parseBulkImportManifest(file: File): Promise<BulkImportRow[]> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/studio/bulk-import/parse/", { method: "POST", body: form });
+  const data = (await res.json()) as { rows?: BulkImportRow[]; error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Couldn't parse the manifest.");
+  return data.rows ?? [];
+}
+
+/** Stages the reviewed rows as real draft videos — POST /api/studio/bulk-import/commit. */
+export async function commitBulkImport(channelId: string, rows: BulkImportRow[]): Promise<{ staged: number }> {
+  const res = await fetch("/api/studio/bulk-import/commit/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channelId, rows }),
+  });
+  const data = (await res.json()) as { staged?: number; error?: string };
+  if (!res.ok) throw new Error(data.error ?? "Couldn't import the manifest.");
+  return { staged: data.staged ?? 0 };
+}
+
 /* ============================= Collections =============================== */
 
 export async function getPlaylists(channelId: string): Promise<Playlist[]> {
@@ -2788,35 +2819,25 @@ function mapRealLead(row: RealLead): Lead {
  * page always showed the shared demo persona's seeded leads regardless of `channelId`,
  * since this had no real branch at all. */
 export async function getLeads(channelId: string): Promise<Lead[]> {
-  if (looksLikeRealId(channelId)) {
-    const res = await fetch("/api/business/leads/");
-    if (!res.ok) return [];
-    const { leads } = (await res.json()) as { leads: RealLead[] };
-    return leads.map(mapRealLead);
-  }
-  await latency("fast");
-  return clone(store.leads.filter((lead) => lead.channelId === channelId));
+  if (!channelId) return [];
+  const res = await fetch("/api/business/leads/");
+  if (!res.ok) return [];
+  const { leads } = (await res.json()) as { leads: RealLead[] };
+  return leads.map(mapRealLead);
 }
 
 export async function updateLeadStatus(
   id: string,
   status: Lead["status"],
 ): Promise<Lead | null> {
-  if (looksLikeRealId(id)) {
-    const res = await fetch("/api/business/leads/", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status }),
-    });
-    if (!res.ok) return null;
-    const { lead } = (await res.json()) as { lead: RealLead };
-    return mapRealLead(lead);
-  }
-  await latency("fast");
-  const lead = store.leads.find((item) => item.id === id);
-  if (!lead) return null;
-  lead.status = status;
-  return clone(lead);
+  const res = await fetch("/api/business/leads/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, status }),
+  });
+  if (!res.ok) return null;
+  const { lead } = (await res.json()) as { lead: RealLead };
+  return mapRealLead(lead);
 }
 
 /** Triggers a real browser download of the org's leads CSV — a real server-built file,
@@ -2872,60 +2893,45 @@ function mapRealProductLink(row: RealProductLink): ProductLink {
   };
 }
 
-/** Was 100% mock — same gap as getLeads() above. */
 export async function getProductLinks(channelId: string): Promise<ProductLink[]> {
-  if (looksLikeRealId(channelId)) {
-    const res = await fetch("/api/business/product-links/");
-    if (!res.ok) return [];
-    const { links } = (await res.json()) as { links: RealProductLink[] };
-    return links.map(mapRealProductLink);
-  }
-  await latency("fast");
-  return clone(store.productLinks.filter((link) => link.channelId === channelId));
+  if (!channelId) return [];
+  const res = await fetch("/api/business/product-links/");
+  if (!res.ok) return [];
+  const { links } = (await res.json()) as { links: RealProductLink[] };
+  return links.map(mapRealProductLink);
 }
 
 export async function createProductLink(
   payload: Omit<ProductLink, "id" | "clicks" | "conversions">,
 ): Promise<ProductLink> {
-  if (looksLikeRealId(payload.channelId)) {
-    const res = await fetch("/api/business/product-links/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productName: payload.productName,
-        martProductId: payload.martProductId,
-        imageUrl: payload.imageUrl,
-        priceCents: payload.price.amount,
-        currency: payload.price.currency,
-        commissionRate: payload.commissionRate,
-        targetUrl: payload.targetUrl,
-        attachedVideoIds: payload.attachedVideoIds,
-      }),
-    });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error ?? "Couldn't create the product link.");
-    }
-    const { link } = (await res.json()) as { link: RealProductLink };
-    return mapRealProductLink(link);
+  const res = await fetch("/api/business/product-links/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      productName: payload.productName,
+      martProductId: payload.martProductId,
+      imageUrl: payload.imageUrl,
+      priceCents: payload.price.amount,
+      currency: payload.price.currency,
+      commissionRate: payload.commissionRate,
+      targetUrl: payload.targetUrl,
+      attachedVideoIds: payload.attachedVideoIds,
+    }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? "Couldn't create the product link.");
   }
-  await latency();
-  const link: ProductLink = { ...payload, id: nextId("plk"), clicks: 0, conversions: 0 };
-  store.productLinks = [link, ...store.productLinks];
-  return clone(link);
+  const { link } = (await res.json()) as { link: RealProductLink };
+  return mapRealProductLink(link);
 }
 
 export async function deleteProductLink(id: string): Promise<void> {
-  if (looksLikeRealId(id)) {
-    const res = await fetch(`/api/business/product-links/?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(data.error ?? "Couldn't delete the product link.");
-    }
-    return;
+  const res = await fetch(`/api/business/product-links/?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error ?? "Couldn't delete the product link.");
   }
-  await latency();
-  store.productLinks = store.productLinks.filter((link) => link.id !== id);
 }
 
 export interface VideoProductLinkCard {

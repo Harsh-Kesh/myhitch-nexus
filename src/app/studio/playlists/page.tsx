@@ -18,7 +18,7 @@ import {
   useChannelVideos,
   useCreatePlaylist,
   useCreateSeries,
-  useCurrentUser,
+  useOwnedChannelId,
   usePlaylists,
   useSeries,
   useSeriesDetail,
@@ -52,8 +52,8 @@ function RealSeriesEpisodes({ seriesId }: { seriesId: string }) {
 }
 
 export default function StudioPlaylistsPage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const isRealChannel = looksLikeRealId(channelId);
 
   const { data: playlists = [] } = usePlaylists(channelId);

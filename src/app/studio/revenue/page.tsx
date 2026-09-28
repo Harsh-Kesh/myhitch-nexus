@@ -20,7 +20,7 @@ import { useToast } from "@/components/ui/toast";
 import { CHART_COLORS, chartTooltip } from "@/components/charts/chart-theme";
 import { csvSection, downloadCsv } from "@/lib/csv";
 import { looksLikeRealId } from "@/lib/mock-api";
-import { useCurrentUser, useRevenueSummary } from "@/lib/mock-api/hooks";
+import { useOwnedChannelId, useRevenueSummary } from "@/lib/mock-api/hooks";
 import type { RevenueSummary } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -79,8 +79,8 @@ function useCreatorTips(channelId: string) {
 }
 
 export default function StudioRevenuePage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const isRealChannel = looksLikeRealId(channelId);
   const { data, isLoading } = useRevenueSummary(channelId);
   const { data: payout, isLoading: isPayoutLoading } = usePayoutStatus(channelId, isRealChannel);

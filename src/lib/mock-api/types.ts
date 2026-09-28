@@ -382,6 +382,13 @@ export interface LiveEvent {
   replayVideoId: string | null;
   replayPublished: boolean;
   categoryIds: string[];
+  // Only set by the real cross-channel listing (getLiveEvents()) — see
+  // liveEvents.ts's listAllLiveEvents() for why. Mirrors VideoSummary.channelName's
+  // same denormalized-on-read shape.
+  channelName?: string;
+  channelAvatarUrl?: string;
+  channelAvatarGradient?: [string, string];
+  channelVerified?: boolean;
 }
 
 export interface ChatMessage {

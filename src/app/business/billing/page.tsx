@@ -17,6 +17,7 @@ import {
   useCampaigns,
   useCancelSubscription,
   useCurrentUser,
+  useOwnedChannelId,
   usePlanPurchases,
   useResumeSubscription,
   useSubscriptions,
@@ -24,16 +25,10 @@ import {
 import type { PlanPurchase } from "@/lib/mock-api/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
-// The real /api/campaigns route resolves the org from the signed-in account's own
-// session regardless of what's passed here, so this only ever mattered for the React
-// Query cache key — still worth getting right rather than caching every real business's
-// campaigns under the shared demo account's key.
-const MOCK_CHANNEL_ID = "ch_helio";
-
 export default function BillingPage() {
   const { data: user } = useCurrentUser();
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_CHANNEL_ID;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: campaigns = [] } = useCampaigns(channelId);
   const { toast } = useToast();
 

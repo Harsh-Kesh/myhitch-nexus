@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   IconBuildingStore,
   IconChartHistogram,
@@ -11,23 +13,15 @@ import {
   IconVideo,
 } from "@tabler/icons-react";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { looksLikeRealId } from "@/lib/mock-api";
-import { useCampaigns, useChannel, useCurrentUser, useLeads } from "@/lib/mock-api/hooks";
-
-// Fallback for the shared demo account. Not a plain `?? "ch_helio"`: the demo account's
-// own `channelId` is never actually null by the time it reaches here — the backend
-// leaves it at the mock-seeded default "ch_mara" (Mara Solace, a creator) when the real
-// account has no channel of its own — so a bare `??` would show her creator profile
-// under Business Studio instead of the business-appropriate mock demo. Only a genuine
-// real id should override this fallback.
-const MOCK_BUSINESS_CHANNEL = "ch_helio";
+import { useCampaigns, useChannel, useCurrentUser, useLeads, useOwnedChannelId } from "@/lib/mock-api/hooks";
 
 export function BusinessShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { data: user } = useCurrentUser();
-  const channelId = user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
-  const { data: channel } = useChannel(channelId);
-  const { data: leads = [] } = useLeads(channelId);
-  const { data: campaigns = [] } = useCampaigns(channelId);
+  const { channelId, isLoading: isUserLoading } = useOwnedChannelId();
+  const { data: channel } = useChannel(channelId ?? "");
+  const { data: leads = [] } = useLeads(channelId ?? "");
+  const { data: campaigns = [] } = useCampaigns(channelId ?? "");
 
   const newLeads = leads.filter((lead) => lead.status === "new").length;
   const pendingCampaigns = campaigns.filter((c) => c.status === "pending").length;
@@ -38,6 +32,17 @@ export function BusinessShell({ children }: { children: React.ReactNode }) {
   // Previously shown to every Business Studio account regardless of plan — the linked
   // page's own API routes now enforce this too, so this is UX, not the real gate.
   const isEnterprise = Boolean(user?.roles.includes("producer"));
+
+  // No channel is a dead end here, not a normal empty state — this layout only ever
+  // renders for an account whose role+plan already passed business/layout.tsx's own
+  // gate, so a missing channel means provisioning didn't finish, not "come back once
+  // you upgrade." Bounce to /plans rather than stranding them on a page with no nav
+  // that works.
+  React.useEffect(() => {
+    if (!isUserLoading && !channelId) router.replace("/plans");
+  }, [isUserLoading, channelId, router]);
+
+  if (isUserLoading || !channelId) return null;
 
   return (
     <WorkspaceShell

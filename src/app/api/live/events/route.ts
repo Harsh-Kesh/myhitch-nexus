@@ -1,15 +1,28 @@
 // GET/POST /api/live/events — real event creation/listing, the server-side counterpart of
 // Studio's "Go Live Now" (previously 100% client-side/mock — see liveEvents.ts's header).
 import { NextResponse, type NextRequest } from "next/server";
-import { createLiveEvent, listChannelLiveEvents, type LiveEventAccessType } from "@/lib/server/liveEvents";
+import {
+  createLiveEvent,
+  listAllLiveEvents,
+  listChannelLiveEvents,
+  type LiveEventAccessType,
+  type LiveEventStatus,
+} from "@/lib/server/liveEvents";
 import { getRequestAccount } from "@/lib/server/rbac";
+
+const REAL_STATUSES: LiveEventStatus[] = ["scheduled", "live", "ended", "cancelled"];
 
 export async function GET(request: NextRequest) {
   const channelId = request.nextUrl.searchParams.get("channelId");
-  if (!channelId) {
-    return NextResponse.json({ error: "channelId is required" }, { status: 400 });
+  if (channelId) {
+    const events = await listChannelLiveEvents(channelId);
+    return NextResponse.json({ events });
   }
-  const events = await listChannelLiveEvents(channelId);
+  const statusParam = request.nextUrl.searchParams.get("status");
+  const status = REAL_STATUSES.includes(statusParam as LiveEventStatus)
+    ? (statusParam as LiveEventStatus)
+    : undefined;
+  const events = await listAllLiveEvents(status);
   return NextResponse.json({ events });
 }
 

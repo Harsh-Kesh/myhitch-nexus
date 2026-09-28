@@ -30,7 +30,7 @@ import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useCampaigns,
   useCreatorAnalytics,
-  useCurrentUser,
+  useOwnedChannelId,
   useProductLinks,
 } from "@/lib/mock-api/hooks";
 import type { AnalyticsRange } from "@/lib/mock-api/types";
@@ -42,18 +42,10 @@ import {
   formatWatchHours,
 } from "@/lib/utils";
 
-// Same fallback business/channel/page.tsx uses for a mock/demo account with no real
-// channel of its own.
-const MOCK_BUSINESS_CHANNEL = "ch_helio";
-
 export default function BusinessAnalyticsPage() {
   const [range, setRange] = React.useState<AnalyticsRange>("28d");
-  const { data: user } = useCurrentUser();
-  // Real bug fixed 2026-09-19: this page always analyzed the mock "ch_helio" channel
-  // regardless of who was signed in — a real business account saw someone else's data,
-  // not even a mock view of its own. Same real/mock resolution as business/channel/page.tsx.
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const isRealChannel = looksLikeRealId(channelId);
   const { data, isLoading } = useCreatorAnalytics(channelId, range);
   const { data: campaigns = [] } = useCampaigns(channelId);

@@ -11,26 +11,20 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState, TableSkeleton } from "@/components/ui/empty-state";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
-import { looksLikeRealId } from "@/lib/mock-api";
 import {
   useCategories,
   useChannel,
   useChannelVideos,
   useCreateStudioUpload,
-  useCurrentUser,
+  useOwnedChannelId,
   usePublishDraft,
 } from "@/lib/mock-api/hooks";
 import type { Video } from "@/lib/mock-api/types";
 import { compactNumber, formatDate, formatDuration, formatPercent } from "@/lib/utils";
 
-// Not a plain `?? "ch_helio"` — see business-shell.tsx's header comment: the demo
-// account's own channelId is never actually null by the time it reaches here.
-const MOCK_BUSINESS_CHANNEL = "ch_helio";
-
 export default function BusinessVideosPage() {
-  const { data: user } = useCurrentUser();
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   // includeUnpublished:true now hits a real, membership-gated endpoint for a real
   // channel (see src/app/api/channels/[id]/videos/route.ts).
   const { data: videos = [], isLoading } = useChannelVideos(channelId, true);

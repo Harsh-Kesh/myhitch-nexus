@@ -17,15 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, Stat } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Poster } from "@/components/video/poster";
-import { looksLikeRealId } from "@/lib/mock-api";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import {
   useCampaigns,
   useChannel,
   useChannelVideos,
   useCreatorAnalytics,
-  useCurrentUser,
   useLeads,
+  useOwnedChannelId,
   useProductLinks,
 } from "@/lib/mock-api/hooks";
 import {
@@ -36,16 +35,11 @@ import {
   relativeTime,
 } from "@/lib/utils";
 
-// Not a plain `?? "ch_helio"` — see business-shell.tsx's header comment on why the
-// demo account's own channelId is never actually null by the time it reaches here.
-const MOCK_BUSINESS_CHANNEL = "ch_helio";
-
 export default function BusinessChannelPage() {
-  const { data: user } = useCurrentUser();
-  const channelId =
-    user?.channelId && looksLikeRealId(user.channelId) ? user.channelId : MOCK_BUSINESS_CHANNEL;
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
 
-  const { data: channel } = useChannel(channelId);
+  const { data: channel, isLoading: isChannelLoading } = useChannel(channelId);
   // includeUnpublished:true now hits a real, membership-gated endpoint for a real
   // channel (see src/app/api/channels/[id]/videos/route.ts) — shows drafts/pending/
   // scheduled videos here too, not just published ones.
@@ -55,7 +49,18 @@ export default function BusinessChannelPage() {
   const { data: leads = [] } = useLeads(channelId);
   const { data: productLinks = [] } = useProductLinks(channelId);
 
-  if (!channel) return null;
+  if (isChannelLoading) return null;
+  if (!channel) {
+    return (
+      <PageBody>
+        <EmptyState
+          icon={<IconVideo />}
+          title="Channel not found"
+          description="We couldn't load your channel details. Try refreshing, or contact support if this keeps happening."
+        />
+      </PageBody>
+    );
+  }
 
   const newLeads = leads.filter((lead) => lead.status === "new");
   const activeCampaigns = campaigns.filter((c) => c.status === "active");

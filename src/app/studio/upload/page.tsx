@@ -38,8 +38,11 @@ import { CONTENT_TYPE_LABELS } from "@/lib/mock-api/data/categories";
 import {
   useBulkImport,
   useCategories,
+  useCommitBulkImport,
   useCreateStudioUpload,
   useCurrentUser,
+  useOwnedChannelId,
+  useParseBulkImport,
   usePlaylists,
   usePublishDraft,
   useSeries,
@@ -105,9 +108,11 @@ export default function UploadPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
-  // Real channels get a real upload/publish path (this section); the mock ch_mara-style
-  // fallback keeps the fully-simulated wizard exactly as it always was — see
+  const isEnterprise = Boolean(user?.roles.includes("producer"));
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
+  // Real channels get a real upload/publish path (this section); no channel yet (still
+  // loading) keeps the fully-simulated wizard exactly as it always was — see
   // docs/DEVELOPMENT-PLAN.md's P2 entry for why this is a first *slice* of P2, not all
   // of it (transcoding/suggested-frame thumbnails/captions all still need Mux).
   const isRealChannel = api.looksLikeRealId(channelId);
@@ -473,21 +478,23 @@ export default function UploadPage() {
               <IconCloudUpload />
               Single upload
             </Button>
-            <Button
-              variant={mode === "bulk" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setMode("bulk")}
-            >
-              <IconTable />
-              Bulk import
-            </Button>
+            {isEnterprise ? (
+              <Button
+                variant={mode === "bulk" ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => setMode("bulk")}
+              >
+                <IconTable />
+                Bulk import
+              </Button>
+            ) : null}
           </div>
         }
       />
 
       <PageBody>
         {mode === "bulk" ? (
-          <BulkImportPanel />
+          <BulkImportPanel channelId={channelId} isRealChannel={isRealChannel} />
         ) : (
           <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
             <aside className="lg:sticky lg:top-6 lg:self-start">
@@ -1545,11 +1552,17 @@ function UploadProgress({
 
 /* ------------------------------ Bulk import ------------------------------- */
 
-function BulkImportPanel() {
+function BulkImportPanel({ channelId, isRealChannel }: { channelId: string; isRealChannel: boolean }) {
   const [started, setStarted] = React.useState(false);
-  const { data: rows = [], isLoading } = useBulkImport(started);
+  const [realRows, setRealRows] = React.useState<BulkImportRow[] | null>(null);
+  const { data: mockRows = [], isLoading: isMockLoading } = useBulkImport(started && !isRealChannel);
+  const parseManifest = useParseBulkImport();
+  const commitImport = useCommitBulkImport();
+  const rows = isRealChannel ? realRows ?? [] : mockRows;
+  const isLoading = isRealChannel ? false : isMockLoading;
   const { toast } = useToast();
   const [selected, setSelected] = React.useState<string[]>([]);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const columns: Array<Column<BulkImportRow>> = [
     {
@@ -1629,7 +1642,7 @@ function BulkImportPanel() {
       <Card>
         <CardHeader
           title="Bulk upload & metadata import"
-          description="For distributors and enterprise accounts. Upload a CSV or XML manifest alongside your masters and validate every row before publishing."
+          description="For distributors and enterprise accounts. Upload a CSV manifest and validate every row before staging them as drafts."
         />
         <CardBody>
           <div className="rounded-lg border-2 border-dashed border-border bg-surface-2 px-6 py-12 text-center">
@@ -1638,12 +1651,48 @@ function BulkImportPanel() {
               Import a metadata manifest
             </p>
             <p className="mt-1 text-sm text-fg-muted">
-              CSV, TSV or Media Manifest XML. Rows are validated against your
-              rights schedule before anything publishes.
+              {isRealChannel
+                ? "CSV with a header row: fileName, title, contentType, language, releaseDate, ageRating, accessModel."
+                : "CSV, TSV or Media Manifest XML. Rows are validated against your rights schedule before anything publishes."}
             </p>
-            <Button variant="primary" className="mt-5" onClick={() => setStarted(true)}>
-              Load a sample manifest
-            </Button>
+            {isRealChannel ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    try {
+                      const parsed = await parseManifest.mutateAsync(file);
+                      setRealRows(parsed);
+                      setStarted(true);
+                    } catch (err) {
+                      toast({
+                        title: "Couldn't parse the manifest",
+                        description: err instanceof Error ? err.message : "Something went wrong.",
+                        tone: "error",
+                      });
+                    }
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  className="mt-5"
+                  loading={parseManifest.isPending}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Upload a CSV manifest
+                </Button>
+              </>
+            ) : (
+              <Button variant="primary" className="mt-5" onClick={() => setStarted(true)}>
+                Load a sample manifest
+              </Button>
+            )}
           </div>
         </CardBody>
       </Card>
@@ -1665,20 +1714,50 @@ function BulkImportPanel() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setStarted(false)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStarted(false);
+              setRealRows(null);
+              setSelected([]);
+            }}
+          >
             Load a different manifest
           </Button>
           <Button
             variant="primary"
             size="sm"
             disabled={ready.length === 0}
-            onClick={() =>
-              toast({
-                title: `${selected.length || ready.length} titles queued`,
-                description:
-                  "Mock import — rows would be created as drafts for review.",
-              })
-            }
+            loading={commitImport.isPending}
+            onClick={async () => {
+              const toImport = selected.length
+                ? rows.filter((row) => selected.includes(row.id))
+                : ready;
+              if (!isRealChannel) {
+                toast({
+                  title: `${toImport.length} titles queued`,
+                  description: "Mock import — rows would be created as drafts for review.",
+                });
+                return;
+              }
+              try {
+                const { staged } = await commitImport.mutateAsync({ channelId, rows: toImport });
+                toast({
+                  title: `${staged} draft${staged === 1 ? "" : "s"} created`,
+                  description: "Find them in Content, ready to finish and publish.",
+                });
+                setStarted(false);
+                setRealRows(null);
+                setSelected([]);
+              } catch (err) {
+                toast({
+                  title: "Couldn't import the manifest",
+                  description: err instanceof Error ? err.message : "Something went wrong.",
+                  tone: "error",
+                });
+              }
+            }}
           >
             Import {selected.length || ready.length} rows
           </Button>

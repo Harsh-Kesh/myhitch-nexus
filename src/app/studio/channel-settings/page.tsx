@@ -1,12 +1,13 @@
 "use client";
 
-import { IconCheck, IconExternalLink, IconPencil, IconUserPlus } from "@tabler/icons-react";
+import { IconCheck, IconExternalLink, IconPencil, IconUserPlus, IconVideoOff } from "@tabler/icons-react";
 import * as React from "react";
 import { PageBody, PageHeader } from "@/components/layout/workspace-shell";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -14,7 +15,7 @@ import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { looksLikeRealId } from "@/lib/mock-api";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
-import { useChannel, useCurrentUser, useUpdateChannel } from "@/lib/mock-api/hooks";
+import { useChannel, useOwnedChannelId, useUpdateChannel } from "@/lib/mock-api/hooks";
 import type { TeamOverview } from "@/lib/server/teamInvitations";
 import { compactNumber, formatDate } from "@/lib/utils";
 
@@ -23,10 +24,10 @@ const LANGUAGES = [
 ].map((value) => ({ value, label: value }));
 
 export default function ChannelSettingsPage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const isRealChannel = looksLikeRealId(channelId);
-  const { data: channel } = useChannel(channelId);
+  const { data: channel, isLoading: isChannelLoading } = useChannel(channelId);
   const updateChannel = useUpdateChannel(channelId);
   const { toast } = useToast();
 
@@ -97,7 +98,18 @@ export default function ChannelSettingsPage() {
 
   React.useEffect(resetFromChannel, [resetFromChannel]);
 
-  if (!channel) return null;
+  if (isChannelLoading) return null;
+  if (!channel) {
+    return (
+      <PageBody>
+        <EmptyState
+          icon={<IconVideoOff />}
+          title="Channel not found"
+          description="We couldn't load your channel details. Try refreshing, or contact support if this keeps happening."
+        />
+      </PageBody>
+    );
+  }
 
   const saveProfile = () => {
     updateChannel.mutate(

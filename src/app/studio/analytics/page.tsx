@@ -43,7 +43,7 @@ import {
 import { csvSection, downloadCsv } from "@/lib/csv";
 import { RANGE_LABELS } from "@/lib/mock-api/data/analytics";
 import { looksLikeRealId } from "@/lib/mock-api";
-import { useCreatorAnalytics, useCurrentUser } from "@/lib/mock-api/hooks";
+import { useCreatorAnalytics, useOwnedChannelId } from "@/lib/mock-api/hooks";
 import type { AnalyticsRange, BreakdownSlice } from "@/lib/mock-api/types";
 import {
   compactNumber,
@@ -55,8 +55,8 @@ import {
 } from "@/lib/utils";
 
 export default function StudioAnalyticsPage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const isRealChannel = looksLikeRealId(channelId);
   const { toast } = useToast();
 

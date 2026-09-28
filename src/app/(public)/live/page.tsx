@@ -103,7 +103,11 @@ export default function LivePage() {
 }
 
 function FeaturedLiveCard({ event }: { event: LiveEvent }) {
-  const channel = channelById(event.channelId);
+  const mockChannel = channelById(event.channelId);
+  const channelName = event.channelName ?? mockChannel?.name;
+  const channelAvatarGradient = event.channelAvatarGradient ?? mockChannel?.avatarGradient;
+  const channelAvatarUrl = event.channelAvatarUrl ?? mockChannel?.avatarUrl;
+  const channelVerified = event.channelVerified ?? mockChannel?.verified;
   return (
     <Link href={`/live/${event.id}`} className="group">
       <Card interactive className="overflow-hidden">
@@ -135,17 +139,17 @@ function FeaturedLiveCard({ event }: { event: LiveEvent }) {
           </div>
         </Poster>
         <CardBody className="flex items-center gap-3 py-3">
-          {channel ? (
+          {channelName ? (
             <>
               <Avatar
-                name={channel.name}
-                gradient={channel.avatarGradient}
-                src={channel.avatarUrl}
+                name={channelName}
+                gradient={channelAvatarGradient}
+                src={channelAvatarUrl}
                 size="sm"
-                verified={channel.verified}
+                verified={channelVerified}
               />
               <span className="min-w-0 flex-1 truncate text-sm text-fg">
-                {channel.name}
+                {channelName}
               </span>
             </>
           ) : null}
@@ -159,7 +163,7 @@ function FeaturedLiveCard({ event }: { event: LiveEvent }) {
 }
 
 function LiveCard({ event }: { event: LiveEvent }) {
-  const channel = channelById(event.channelId);
+  const channelName = event.channelName ?? channelById(event.channelId)?.name;
   return (
     <Link href={`/live/${event.id}`} className="group">
       <Card interactive className="h-full overflow-hidden">
@@ -206,7 +210,7 @@ function LiveCard({ event }: { event: LiveEvent }) {
         </Poster>
         <CardBody className="p-3.5">
           <p className="nx-clamp-2 text-sm font-medium text-fg">{event.title}</p>
-          <p className="mt-1 truncate text-xs text-fg-muted">{channel?.name}</p>
+          <p className="mt-1 truncate text-xs text-fg-muted">{channelName}</p>
           <p className="mt-1.5 text-2xs text-fg-subtle nx-tnum">
             {event.status === "live"
               ? `${compactNumber(event.viewerCount)} watching`

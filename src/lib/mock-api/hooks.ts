@@ -9,6 +9,7 @@ import {
 import * as api from "./index";
 import type {
   AnalyticsRange,
+  BulkImportRow,
   Campaign,
   Category,
   Channel,
@@ -688,6 +689,23 @@ export const useThumbnailSuggestions = (sessionId: string) =>
 export const useBulkImport = (enabled: boolean) =>
   useQuery({ queryKey: qk.bulkImport, queryFn: () => api.validateBulkImport(), enabled });
 
+/** Real CSV manifest parse — see bulkImport.ts. Returns the review rows; nothing is
+ * written to the database until useCommitBulkImport(). */
+export function useParseBulkImport() {
+  return useMutation({
+    mutationFn: (file: File) => api.parseBulkImportManifest(file),
+  });
+}
+
+export function useCommitBulkImport() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ channelId, rows }: { channelId: string; rows: BulkImportRow[] }) =>
+      api.commitBulkImport(channelId, rows),
+    onSuccess: () => client.invalidateQueries({ queryKey: ["channel-videos"] }),
+  });
+}
+
 export function useCreateStudioUpload() {
   return useMutation({
     mutationFn: ({
@@ -1107,6 +1125,16 @@ export function useUpdateConfigTable() {
 
 export const useCurrentUser = () =>
   useQuery({ queryKey: qk.user, queryFn: api.getCurrentUser });
+
+/** A signed-in account's own real channel — never the shared mock demo persona
+ * (ch_helio/ch_mara). An account with no channel of its own gets null, not someone
+ * else's data — see business-shell.tsx/studio-shell.tsx for the empty-state gate this
+ * backs. */
+export function useOwnedChannelId(): { channelId: string | null; isLoading: boolean } {
+  const { data: user, isLoading } = useCurrentUser();
+  const channelId = user?.channelId && api.looksLikeRealId(user.channelId) ? user.channelId : null;
+  return { channelId, isLoading };
+}
 
 /** The one thing every profile-scoped query (continue watching, watch progress, "my
  * playlists") needs baked into its own query key — otherwise React Query treats

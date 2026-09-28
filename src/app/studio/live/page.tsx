@@ -25,8 +25,8 @@ import { categories } from "@/lib/mock-api/data/categories";
 import {
   useChannelLiveEvents,
   useCreateLiveEvent,
-  useCurrentUser,
   useEndLiveEvent,
+  useOwnedChannelId,
   usePublishReplay,
   useRegenerateStreamKey,
   useStartLiveEvent,
@@ -58,8 +58,8 @@ const TIMEZONES = [
 ];
 
 export default function StudioLivePage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: events = [] } = useChannelLiveEvents(channelId);
   const createEvent = useCreateLiveEvent();
   const startEvent = useStartLiveEvent();

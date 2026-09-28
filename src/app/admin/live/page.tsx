@@ -180,6 +180,7 @@ export default function AdminLivePage() {
           <div className="grid gap-4 lg:grid-cols-2">
             {shown.map((event) => {
               const channel = channelById(event.channelId);
+              const channelName = event.channelName ?? channel?.name;
               return (
                 <Card key={event.id}>
                   <CardBody className="flex flex-wrap gap-4">
@@ -212,12 +213,12 @@ export default function AdminLivePage() {
                         ) : null}
                       </div>
 
-                      {channel ? (
+                      {channelName ? (
                         <Link
-                          href={`/channel/${channel.id}`}
+                          href={`/channel/${event.channelId}`}
                           className="mt-0.5 block truncate text-xs text-fg-muted transition-colors hover:text-accent"
                         >
-                          {channel.name}
+                          {channelName}
                         </Link>
                       ) : null}
 

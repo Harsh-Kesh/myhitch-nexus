@@ -339,7 +339,7 @@ function LiveRail({
         className="nx-rail justify-start gap-3 px-4 pb-1 sm:gap-4 sm:px-6 lg:px-8"
       >
         {shown.map((event) => {
-          const channel = channelById(event.channelId);
+          const channelName = event.channelName ?? channelById(event.channelId)?.name;
           return (
             <Link
               key={event.id}
@@ -386,7 +386,7 @@ function LiveRail({
                   </p>
                 </div>
               </Poster>
-              <p className="mt-2 truncate text-xs text-fg-muted">{channel?.name}</p>
+              <p className="mt-2 truncate text-xs text-fg-muted">{channelName}</p>
             </Link>
           );
         })}

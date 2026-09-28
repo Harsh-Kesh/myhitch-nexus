@@ -25,7 +25,7 @@ import { useToast } from "@/components/ui/toast";
 import {
   useCategories,
   useChannelVideos,
-  useCurrentUser,
+  useOwnedChannelId,
   useUpdateVideoDetails,
   useUpdateVideoStatus,
 } from "@/lib/mock-api/hooks";
@@ -53,8 +53,8 @@ const ACCESS_MODELS: Array<{ value: AccessModel; label: string }> = [
 ];
 
 export default function StudioContentPage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: videos = [], isLoading } = useChannelVideos(channelId, true);
   const updateStatus = useUpdateVideoStatus();
   const { toast } = useToast();

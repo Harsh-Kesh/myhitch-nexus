@@ -15,8 +15,9 @@ import {
   IconUsers,
   IconVideo,
 } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
-import { useCurrentUser, useModerationComments } from "@/lib/mock-api/hooks";
+import { useCurrentUser, useModerationComments, useOwnedChannelId } from "@/lib/mock-api/hooks";
 
 // /studio admits every channel-owning role now (see studio/layout.tsx), not just
 // creator — a business/producer/education/organisation account landing here to publish
@@ -39,31 +40,34 @@ const STUDIO_ACCENTS: Array<{ role: string; accent: string }> = [
 ];
 
 export function StudioShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const { data: user } = useCurrentUser();
-  const [activeChannelId, setActiveChannelId] = React.useState<string>(user?.channelId ?? "ch_mara");
+  const { channelId, isLoading: isUserLoading } = useOwnedChannelId();
+  const [activeChannelId, setActiveChannelId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (user?.channelId) setActiveChannelId(user.channelId);
-  }, [user?.channelId]);
+    if (channelId) setActiveChannelId(channelId);
+  }, [channelId]);
 
-  // Dynamically resolves real channels for the active user — no static mock placeholders
-  const userChannelName = user?.name ? `${user.name}'s Channel` : "My Channel";
-  const userPrimaryChannelId = user?.channelId ?? "ch_mara";
-
-  const channels = React.useMemo(() => {
-    const list = [
-      { id: userPrimaryChannelId, name: userChannelName, role: "Owner" },
-    ];
-    return list;
-  }, [userPrimaryChannelId, userChannelName]);
-
-  const activeChannel = channels.find((c) => c.id === activeChannelId) ?? channels[0];
-  const { data: comments = [] } = useModerationComments(activeChannel.id);
+  const { data: comments = [] } = useModerationComments(activeChannelId ?? channelId ?? "");
   const heldCount = comments.filter((comment) => comment.status === "held").length;
   const accentLabel =
     STUDIO_ACCENTS.find((entry) => user?.roles.includes(entry.role as (typeof user.roles)[number]))?.accent ??
     "Creator";
   const title = accentLabel === "Creator" ? "Creator Studio" : "Content Studio";
+
+  // Same reasoning as business-shell.tsx: every channel-owning role already passed
+  // studio/layout.tsx's role gate to get here, so no channel means provisioning didn't
+  // finish, not "you're not eligible yet." Bounce to /plans instead of stranding them.
+  React.useEffect(() => {
+    if (!isUserLoading && !channelId) router.replace("/plans");
+  }, [isUserLoading, channelId, router]);
+
+  if (isUserLoading || !channelId) return null;
+
+  const userChannelName = user?.name ? `${user.name}'s Channel` : "My Channel";
+  const channels = [{ id: activeChannelId ?? channelId, name: userChannelName, role: "Owner" }];
+  const activeChannel = channels[0];
 
   return (
     <WorkspaceShell

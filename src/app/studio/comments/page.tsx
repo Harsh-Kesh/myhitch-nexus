@@ -20,17 +20,17 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { videoById } from "@/lib/mock-api/data/videos";
 import {
-  useCurrentUser,
   useModerateComment,
   useModerationComments,
+  useOwnedChannelId,
 } from "@/lib/mock-api/hooks";
 import { relativeTime } from "@/lib/utils";
 
 const DEFAULT_BLOCKED = ["scam", "free money", "click here", "crypto giveaway"];
 
 export default function StudioCommentsPage() {
-  const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
   const { data: comments = [] } = useModerationComments(channelId);
   const moderate = useModerateComment(channelId);
   const { toast } = useToast();

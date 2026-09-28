@@ -31,6 +31,7 @@ import {
   useCreatorAnalytics,
   useCurrentUser,
   useModerationComments,
+  useOwnedChannelId,
 } from "@/lib/mock-api/hooks";
 import {
   compactNumber,
@@ -43,7 +44,8 @@ import {
 
 export default function StudioDashboardPage() {
   const { data: user } = useCurrentUser();
-  const channelId = user?.channelId ?? "ch_mara";
+  const { channelId: ownedChannelId } = useOwnedChannelId();
+  const channelId = ownedChannelId ?? "";
 
   const { data: analytics, isLoading } = useCreatorAnalytics(channelId, "28d");
   const { data: videos = [] } = useChannelVideos(channelId, true);
