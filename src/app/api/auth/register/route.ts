@@ -4,11 +4,10 @@
 // (docs/DEVELOPMENT-PLAN.md §9, blocker #2).
 //
 // Deliberately narrow: this is the "simple auth page for now" scope, not the full
-// registration wizard the UI shows (org verification documents, MFA enrollment, mobile
-// OTP) — those need P2's document storage, real Auth0 MFA, and an SMS provider
-// respectively, none of which exist yet. Every account created here lands as
-// unverified for roles that need it; the studio/business surfaces they unlock stay
-// gated on that until the real verification workflow is built.
+// registration wizard the UI shows (MFA enrollment, mobile OTP) — those need real Auth0
+// MFA and an SMS provider, neither of which exist yet. Business/Enterprise verification
+// (ABN/ACN) is collected right here and the org is marked verified immediately — see
+// provisionChannelForRole() — there's no separate later review step anymore.
 import { NextResponse, type NextRequest } from "next/server";
 import { provisionChannelForRole } from "@/lib/server/channelProvisioning";
 import { query } from "@/lib/server/db";
@@ -46,6 +45,9 @@ interface RegisterBody {
   role?: string;
   country?: string;
   acceptedTerms?: boolean;
+  orgName?: string;
+  abn?: string;
+  acn?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -74,8 +76,15 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  if (!SELF_REGISTRABLE_ROLES.has(toDbRole(role))) {
+  const dbRole = toDbRole(role);
+  if (!SELF_REGISTRABLE_ROLES.has(dbRole)) {
     return NextResponse.json({ error: "That role can't be self-registered." }, { status: 400 });
+  }
+  // Verification now happens at registration, not a separate later step — a Business/
+  // Enterprise signup needs a real ABN before the org is created verified.
+  const abn = body.abn?.trim();
+  if ((dbRole === "business" || dbRole === "producer") && !abn) {
+    return NextResponse.json({ error: "An ABN is required for Business and Enterprise accounts." }, { status: 400 });
   }
 
   if (await emailIsRegistered(email)) {
@@ -86,7 +95,6 @@ export async function POST(request: NextRequest) {
   await recordLegalAcceptance(account.id, request.headers.get("x-forwarded-for"), "terms_and_privacy");
   await recordLegalAcceptance(account.id, request.headers.get("x-forwarded-for"), "community_guidelines");
 
-  const dbRole = toDbRole(role);
   await query(
     `insert into account_roles (account_id, role, verified)
      values ($1, $2, $3)
@@ -94,7 +102,14 @@ export async function POST(request: NextRequest) {
     [account.id, dbRole, !ROLES_REQUIRING_VERIFICATION.has(dbRole)],
   );
 
-  await provisionChannelForRole(account.id, dbRole, { name, country, email });
+  await provisionChannelForRole(account.id, dbRole, {
+    name,
+    country,
+    email,
+    orgName: body.orgName?.trim(),
+    abn,
+    acn: body.acn?.trim(),
+  });
 
   // Enterprise has no self-serve checkout — registering with this role is the sales
   // lead, not a purchase. Auto-creating the real sales_inquiries row here (instead of

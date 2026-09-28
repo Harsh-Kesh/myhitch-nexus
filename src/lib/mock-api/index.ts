@@ -4121,6 +4121,9 @@ export async function register(payload: {
   role: User["activeRole"];
   country: string;
   acceptedTerms: boolean;
+  orgName?: string;
+  abn?: string;
+  acn?: string;
 }): Promise<{ userId: string; verificationRequired: true }> {
   const res = await fetch("/api/auth/register", {
     method: "POST",

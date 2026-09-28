@@ -183,6 +183,7 @@ export default function RegisterPage() {
   // Organisation
   const [orgName, setOrgName] = React.useState("");
   const [orgNumber, setOrgNumber] = React.useState("");
+  const [acn, setAcn] = React.useState("");
   const [orgRep, setOrgRep] = React.useState("");
   const [orgRepEmail, setOrgRepEmail] = React.useState("");
   const [orgAbout, setOrgAbout] = React.useState("");
@@ -199,6 +200,10 @@ export default function RegisterPage() {
   const roleConfig = ROLES.find((item) => item.value === role)!;
   const needsOrg = Boolean(roleConfig.requiresOrg);
   const needsMfa = Boolean(roleConfig.requiresMfa);
+  // Business/Enterprise verify instantly with an ABN at signup — no separate later
+  // review step (see api/auth/register/route.ts). Education/Government-nonprofit keep
+  // the existing org-details step as-is, unaffected.
+  const needsAbn = role === "business" || role === "enterprise";
 
   const steps = React.useMemo(
     () => [
@@ -209,12 +214,18 @@ export default function RegisterPage() {
         ? [{ id: "mfa", title: "Security", description: "Multi-factor authentication" }]
         : []),
       ...(needsOrg
-        ? [{ id: "org", title: "Organisation", description: "Business details and documents" }]
+        ? [
+            {
+              id: "org",
+              title: "Organisation",
+              description: needsAbn ? "Business details" : "Business details and documents",
+            },
+          ]
         : []),
       { id: "preferences", title: "Preferences", description: "Notifications and privacy" },
       { id: "done", title: "Finish", description: "Review and create" },
     ],
-    [needsMfa, needsOrg],
+    [needsMfa, needsOrg, needsAbn],
   );
 
   const currentStep = steps[Math.min(step, steps.length - 1)];
@@ -235,6 +246,9 @@ export default function RegisterPage() {
       case "mfa":
         return mfaEnabled;
       case "org":
+        if (needsAbn) {
+          return orgName.trim().length > 1 && orgNumber.trim().length > 3;
+        }
         return (
           orgName.trim().length > 1 &&
           orgNumber.trim().length > 3 &&
@@ -256,12 +270,22 @@ export default function RegisterPage() {
   const submit = async () => {
     setSubmitting(true);
     try {
-      await registerUser({ name, email, password, role, country, acceptedTerms });
+      await registerUser({
+        name,
+        email,
+        password,
+        role,
+        country,
+        acceptedTerms,
+        ...(needsOrg ? { orgName, abn: needsAbn ? orgNumber : undefined, acn: needsAbn ? acn : undefined } : {}),
+      });
       toast({
         title: "Account created",
-        description: needsOrg
-          ? "Your organisation is pending verification. You can browse while it is reviewed."
-          : "Welcome to Nexus.",
+        description: needsAbn
+          ? "Your business is verified — you're all set."
+          : needsOrg
+            ? "Your organisation is pending verification. You can browse while it is reviewed."
+            : "Welcome to Nexus.",
       });
       router.push(
         role === "creator"
@@ -626,11 +650,12 @@ export default function RegisterPage() {
         {currentStep.id === "org" ? (
           <div className="space-y-4">
             <p className="text-sm text-fg-muted">
-              Organisation details are reviewed by the Nexus team before your
-              channel can publish or spend. You can browse while this is pending.
+              {needsAbn
+                ? "Verified instantly — no waiting on a review team. Your channel is ready to publish and spend as soon as you finish signing up."
+                : "Organisation details are reviewed by the Nexus team before your channel can publish or spend. You can browse while this is pending."}
             </p>
 
-            <Field label="Registered organisation name" htmlFor="org-name" required>
+            <Field label="Company name" htmlFor="org-name" required>
               <Input
                 id="org-name"
                 value={orgName}
@@ -641,68 +666,78 @@ export default function RegisterPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field
-                label="Registration number"
+                label={needsAbn ? "ABN" : "Registration number"}
                 htmlFor="org-number"
                 required
-                hint="Company, charity or institution number."
+                hint={needsAbn ? "Australian Business Number." : "Company, charity or institution number."}
               >
                 <Input
                   id="org-number"
                   value={orgNumber}
                   onChange={(event) => setOrgNumber(event.target.value)}
-                  placeholder="GB-CO-07741220"
+                  placeholder={needsAbn ? "51 824 753 556" : "GB-CO-07741220"}
                 />
               </Field>
-              <Field label="Country of registration" htmlFor="org-country">
-                <Select
-                  id="org-country"
-                  value={country}
-                  onChange={(event) => setCountry(event.target.value)}
+              {needsAbn ? (
+                <Field label="ACN" htmlFor="org-acn" hint="If your business has one.">
+                  <Input id="org-acn" value={acn} onChange={(event) => setAcn(event.target.value)} placeholder="000 000 000" />
+                </Field>
+              ) : (
+                <Field label="Country of registration" htmlFor="org-country">
+                  <Select
+                    id="org-country"
+                    value={country}
+                    onChange={(event) => setCountry(event.target.value)}
+                  >
+                    {COUNTRIES.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+            </div>
+
+            {!needsAbn ? (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Authorised representative" htmlFor="org-rep" required>
+                    <Input
+                      id="org-rep"
+                      value={orgRep}
+                      onChange={(event) => setOrgRep(event.target.value)}
+                      placeholder="Nadia Okonjo"
+                    />
+                  </Field>
+                  <Field label="Representative email" htmlFor="org-rep-email" required>
+                    <Input
+                      id="org-rep-email"
+                      type="email"
+                      value={orgRepEmail}
+                      onChange={(event) => setOrgRepEmail(event.target.value)}
+                      placeholder="name@organisation.example"
+                    />
+                  </Field>
+                </div>
+
+                <Field
+                  label="What does the organisation publish?"
+                  htmlFor="org-about"
+                  hint="Helps the review team route your application."
                 >
-                  {COUNTRIES.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
+                  <Textarea
+                    id="org-about"
+                    value={orgAbout}
+                    onChange={(event) => setOrgAbout(event.target.value)}
+                    rows={3}
+                    placeholder="Independent feature films and shorts, available to Nexus subscribers."
+                  />
+                </Field>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Authorised representative" htmlFor="org-rep" required>
-                <Input
-                  id="org-rep"
-                  value={orgRep}
-                  onChange={(event) => setOrgRep(event.target.value)}
-                  placeholder="Nadia Okonjo"
-                />
-              </Field>
-              <Field label="Representative email" htmlFor="org-rep-email" required>
-                <Input
-                  id="org-rep-email"
-                  type="email"
-                  value={orgRepEmail}
-                  onChange={(event) => setOrgRepEmail(event.target.value)}
-                  placeholder="name@organisation.example"
-                />
-              </Field>
-            </div>
-
-            <Field
-              label="What does the organisation publish?"
-              htmlFor="org-about"
-              hint="Helps the review team route your application."
-            >
-              <Textarea
-                id="org-about"
-                value={orgAbout}
-                onChange={(event) => setOrgAbout(event.target.value)}
-                rows={3}
-                placeholder="Independent feature films and shorts, available to Nexus subscribers."
-              />
-            </Field>
-
-            <DocumentUploader documents={documents} onChange={setDocuments} />
+                <DocumentUploader documents={documents} onChange={setDocuments} />
+              </>
+            ) : null}
           </div>
         ) : null}
 
@@ -817,13 +852,22 @@ export default function RegisterPage() {
                   {needsOrg ? (
                     <>
                       <Row label="Organisation" value={orgName || "—"} />
-                      <Row
-                        label="Documents"
-                        value={`${documents.filter((d) => d.progress === 100).length} uploaded`}
-                      />
+                      <Row label={needsAbn ? "ABN" : "Registration number"} value={orgNumber || "—"} />
+                      {!needsAbn ? (
+                        <Row
+                          label="Documents"
+                          value={`${documents.filter((d) => d.progress === 100).length} uploaded`}
+                        />
+                      ) : null}
                       <Row
                         label="Verification status"
-                        value={<Badge tone="pending" size="sm">Pending review</Badge>}
+                        value={
+                          needsAbn ? (
+                            <Badge tone="published" size="sm">Verified</Badge>
+                          ) : (
+                            <Badge tone="pending" size="sm">Pending review</Badge>
+                          )
+                        }
                       />
                     </>
                   ) : null}

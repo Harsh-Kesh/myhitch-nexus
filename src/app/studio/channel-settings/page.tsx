@@ -15,6 +15,7 @@ import { Poster } from "@/components/video/poster";
 import { looksLikeRealId } from "@/lib/mock-api";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import { useChannel, useCurrentUser, useUpdateChannel } from "@/lib/mock-api/hooks";
+import type { TeamOverview } from "@/lib/server/teamInvitations";
 import { compactNumber, formatDate } from "@/lib/utils";
 
 const LANGUAGES = [
@@ -59,15 +60,29 @@ export default function ChannelSettingsPage() {
   const [adsEnabled, setAdsEnabled] = React.useState(true);
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
 
-  // Collaborator & Team seat management state
+  // Collaborator & Team seat management state — real, same /api/business/team
+  // membership/invite endpoints business/team/page.tsx uses (generic to any org, not
+  // actually business-specific despite the URL).
   const [inviteModalOpen, setInviteModalOpen] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState("");
-  const [inviteRole, setInviteRole] = React.useState("Co-Host");
-  const [teamMembers, setTeamMembers] = React.useState<
-    Array<{ id: string; name: string; email: string; role: string; status: string; inviteLink?: string }>
-  >([
-    { id: "tm_1", name: "Mara Silva", email: "mara@nexus.com", role: "Channel Manager", status: "Active" },
-  ]);
+  const [inviteRole, setInviteRole] = React.useState<"editor" | "analyst">("editor");
+  const [inviting, setInviting] = React.useState(false);
+  const [team, setTeam] = React.useState<TeamOverview | null>(null);
+  const [teamActionId, setTeamActionId] = React.useState<string | null>(null);
+
+  const fetchTeam = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/business/team");
+      if (!res.ok) return;
+      setTeam(await res.json());
+    } catch {
+      // best-effort — the card just shows empty until the next successful load
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchTeam();
+  }, [fetchTeam]);
 
   const resetFromChannel = React.useCallback(() => {
     if (!channel) return;
@@ -307,14 +322,14 @@ export default function ChannelSettingsPage() {
             }
           />
           <CardBody className="space-y-4">
-            {teamMembers.length === 0 ? (
+            {!team || (team.members.length === 0 && team.pendingInvitations.length === 0) ? (
               <p className="text-xs text-fg-muted">No co-creators or team members invited yet.</p>
             ) : (
               <div className="divide-y divide-border rounded-lg border border-border">
-                {teamMembers.map((member) => (
+                {team.members.map((member) => (
                   <div key={member.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                     <div className="flex items-center gap-3">
-                      <Avatar name={member.name} size="md" />
+                      <Avatar name={member.name} size="md" src={member.avatarUrl ?? undefined} />
                       <div>
                         <p className="text-sm font-medium text-fg">{member.name}</p>
                         <p className="text-2xs text-fg-muted">{member.email}</p>
@@ -322,28 +337,67 @@ export default function ChannelSettingsPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge tone="neutral" size="sm">{member.role}</Badge>
-                      <Badge tone={member.status === "Active" ? "published" : "pending"} size="sm">{member.status}</Badge>
-                      {member.inviteLink ? (
+                      <Badge tone="published" size="sm">Active</Badge>
+                      {member.role !== "owner" ? (
                         <Button
-                          variant="secondary"
+                          variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(member.inviteLink!).catch(() => {});
-                            toast({ title: "Invite link copied", description: member.inviteLink });
+                          loading={teamActionId === member.id}
+                          onClick={async () => {
+                            if (!confirm(`Remove ${member.name} from this channel?`)) return;
+                            setTeamActionId(member.id);
+                            const res = await fetch(`/api/business/team/member/${member.id}`, { method: "DELETE" });
+                            setTeamActionId(null);
+                            if (!res.ok) {
+                              toast({ tone: "error", title: "Couldn't remove member" });
+                              return;
+                            }
+                            toast({ title: "Collaborator removed" });
+                            fetchTeam();
                           }}
                         >
-                          Copy Link
+                          Remove
                         </Button>
                       ) : null}
+                    </div>
+                  </div>
+                ))}
+                {team.pendingInvitations.map((invite) => (
+                  <div key={invite.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={invite.email} size="md" />
+                      <p className="text-2xs text-fg-muted">{invite.email}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge tone="neutral" size="sm">{invite.role}</Badge>
+                      <Badge tone="pending" size="sm">Pending</Badge>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(`${window.location.origin}/business/join?token=${invite.token}`).catch(() => {});
+                          toast({ title: "Invite link copied" });
+                        }}
+                      >
+                        Copy Link
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          setTeamMembers((prev) => prev.filter((m) => m.id !== member.id));
-                          toast({ title: "Collaborator removed" });
+                        loading={teamActionId === invite.id}
+                        onClick={async () => {
+                          setTeamActionId(invite.id);
+                          const res = await fetch(`/api/business/team/invite/${invite.id}`, { method: "DELETE" });
+                          setTeamActionId(null);
+                          if (!res.ok) {
+                            toast({ tone: "error", title: "Couldn't revoke invite" });
+                            return;
+                          }
+                          toast({ title: "Invite revoked" });
+                          fetchTeam();
                         }}
                       >
-                        Remove
+                        Revoke
                       </Button>
                     </div>
                   </div>
@@ -362,16 +416,42 @@ export default function ChannelSettingsPage() {
             />
             <CardBody>
               <div className="flex flex-wrap items-center gap-4 rounded-lg border border-border p-4">
-                <span className="flex size-10 items-center justify-center rounded-full bg-success/15 text-success">
+                <span
+                  className={
+                    channel.verificationStatus === "verified"
+                      ? "flex size-10 items-center justify-center rounded-full bg-success/15 text-success"
+                      : channel.verificationStatus === "rejected"
+                        ? "flex size-10 items-center justify-center rounded-full bg-danger/15 text-danger"
+                        : "flex size-10 items-center justify-center rounded-full bg-warning/15 text-warning"
+                  }
+                >
                   <IconCheck className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-fg">Verified Business Entity</p>
+                  <p className="text-sm font-medium text-fg">
+                    {channel.verificationStatus === "verified"
+                      ? "Verified Business Entity"
+                      : channel.verificationStatus === "rejected"
+                        ? "Verification rejected"
+                        : "Not yet verified"}
+                  </p>
                   <p className="mt-0.5 text-xs text-fg-muted">
-                    Verified via ABN registration on account creation · On Nexus since {formatDate(channel.joinedAt, "long")}
+                    {channel.verificationStatus === "verified"
+                      ? `Verified via ABN registration on account creation · On Nexus since ${formatDate(channel.joinedAt, "long")}`
+                      : "Business/Enterprise accounts verify automatically during registration."}
                   </p>
                 </div>
-                <Badge tone="published">Verified</Badge>
+                <Badge
+                  tone={
+                    channel.verificationStatus === "verified"
+                      ? "published"
+                      : channel.verificationStatus === "rejected"
+                        ? "rejected"
+                        : "pending"
+                  }
+                >
+                  {channel.verificationStatus}
+                </Badge>
               </div>
             </CardBody>
           </Card>
@@ -405,7 +485,7 @@ export default function ChannelSettingsPage() {
         open={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
         title="Invite Channel Collaborator"
-        description="Invite any Nexus user (or non-member) as a co-creator, editor, producer, or manager."
+        description="Sends a real invite link — they join as this role once they accept."
         footer={
           <>
             <Button variant="ghost" onClick={() => setInviteModalOpen(false)}>
@@ -413,83 +493,57 @@ export default function ChannelSettingsPage() {
             </Button>
             <Button
               variant="primary"
+              loading={inviting}
               disabled={!inviteEmail.trim()}
-              onClick={() => {
-                const isExistingUser = inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@");
-                const token = `inv_collab_${Date.now()}`;
-                const inviteLink = `${window.location.origin}/business/join?token=${token}&role=${encodeURIComponent(inviteRole)}&channel=${channelId}`;
-
-                const newMember = {
-                  id: `collab_${Date.now()}`,
-                  name: inviteEmail.split("@")[0] || "Co-Creator",
-                  email: inviteEmail.trim(),
-                  role: inviteRole,
-                  status: isExistingUser ? "Active" : "Invite Link Sent",
-                  inviteLink,
-                };
-                setTeamMembers((prev) => [...prev, newMember]);
-                setInviteEmail("");
-                setInviteModalOpen(false);
-
-                if (isExistingUser) {
-                  toast({
-                    title: "Active Account Verified & Invited",
-                    description: `${newMember.name} received an in-app invitation to join as ${inviteRole}.`,
+              onClick={async () => {
+                setInviting(true);
+                try {
+                  const res = await fetch("/api/business/team", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
                   });
-                } else {
-                  navigator.clipboard?.writeText(inviteLink).catch(() => {});
+                  const result = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(result.error ?? "Failed to send invitation");
+                  toast({ title: "Invitation sent", description: `Invited ${inviteEmail} as ${inviteRole}.` });
+                  setInviteEmail("");
+                  setInviteModalOpen(false);
+                  fetchTeam();
+                } catch (err) {
                   toast({
-                    title: "Registration Invite Link Copied",
-                    description: `Invite link copied to clipboard! Share it with ${newMember.email} to auto-join upon sign up.`,
+                    tone: "error",
+                    title: "Invitation failed",
+                    description: err instanceof Error ? err.message : undefined,
                   });
+                } finally {
+                  setInviting(false);
                 }
               }}
             >
-              {inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@")
-                ? "Invite Active Account"
-                : "Generate & Send Invite Link"}
+              Send invite
             </Button>
           </>
         }
       >
         <div className="space-y-4">
-          <Field label="Collaborator Email or Handle" htmlFor="collab-email" required hint="Any role tier (Viewer, Creator, Business) can be added.">
+          <Field label="Collaborator email" htmlFor="collab-email" required>
             <Input
               id="collab-email"
+              type="email"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              placeholder="editor@nexus.com or external_creator@gmail.com"
+              placeholder="editor@example.com"
             />
           </Field>
 
-          {inviteEmail.trim() ? (
-            <div className="rounded-lg border border-border bg-surface-2 p-3 text-xs">
-              {inviteEmail.includes("nexus.com") || inviteEmail.startsWith("@") ? (
-                <div className="flex items-center gap-2 text-success font-medium">
-                  <IconCheck className="size-4" />
-                  Active Nexus Account Verified — Instant In-App Invite Ready
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="font-medium text-warning">Non-Member Account Detected</p>
-                  <p className="text-fg-muted">
-                    An automated Nexus registration invite link will be generated. Once they sign up via the link, they will auto-join as a {inviteRole}.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          <Field label="Collaboration Role" htmlFor="collab-role">
+          <Field label="Role" htmlFor="collab-role">
             <Select
               id="collab-role"
               value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value)}
+              onChange={(e) => setInviteRole(e.target.value as "editor" | "analyst")}
             >
-              <option value="Co-Host">Co-Host (Full stream & upload access)</option>
-              <option value="Video Editor">Video Editor (Upload & metadata access)</option>
-              <option value="Producer">Producer (Content & scheduling access)</option>
-              <option value="Channel Manager">Channel Manager (Full studio access)</option>
+              <option value="editor">Editor (upload & metadata access)</option>
+              <option value="analyst">Analyst (analytics access only)</option>
             </Select>
           </Field>
         </div>

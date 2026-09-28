@@ -81,8 +81,8 @@ export default function BusinessChannelPage() {
             alt={channel.name}
             gradient={channel.bannerGradient}
             seed={`${channel.id}-banner`}
-            ratio="banner"
-            className="h-28 sm:h-36"
+            ratio="none"
+            className="h-28 w-full sm:h-36"
           />
           <CardBody className="flex flex-wrap items-center gap-4">
             <Avatar

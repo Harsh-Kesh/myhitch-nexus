@@ -39,10 +39,15 @@ const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
 export async function provisionChannelForRole(
   accountId: string,
   dbRole: string,
-  input: { name: string; country: string | null; email: string },
+  input: { name: string; country: string | null; email: string; orgName?: string; abn?: string; acn?: string },
 ): Promise<string | null> {
   const orgType = ROLE_TO_ORG_TYPE[dbRole];
   if (!orgType) return null;
+
+  // A business/enterprise registrant's own name and their company's name are two
+  // different things (the registration wizard's "Organisation" step collects orgName
+  // separately) — falls back to the personal name for roles that never collect one.
+  const orgName = input.orgName?.trim() || input.name;
 
   // Nexus Enterprise has no self-serve checkout — registering with this role creates the
   // account and organization for real, but full Enterprise Hub access stays behind a real
@@ -52,19 +57,25 @@ export async function provisionChannelForRole(
   // applicable," not "pending."
   const enterpriseStatus = orgType === "producer" ? "pending" : null;
 
+  // Business/Enterprise verification now happens at registration, not a separate later
+  // step (the old /business/verification review flow is gone) — collecting ABN/ACN here
+  // and marking the org verified immediately.
+  const isBusinessOrEnterprise = orgType === "business" || orgType === "producer";
+
   const rows = await query<{ id: string }>(
     `insert into organizations
-       (name, type, country, business_email, banner_gradient, avatar_gradient, joined_at, enterprise_status)
-     values ($1, $2, $3, $4, $5, $6, now(), $7)
+       (name, type, country, business_email, banner_gradient, avatar_gradient, joined_at, enterprise_status, verification_status)
+     values ($1, $2, $3, $4, $5, $6, now(), $7, $8)
      returning id`,
     [
-      input.name,
+      orgName,
       orgType,
       input.country,
       input.email,
       pickGradient(`${accountId}:banner`),
       pickGradient(accountId),
       enterpriseStatus,
+      isBusinessOrEnterprise ? "verified" : "unverified",
     ],
   );
   const organizationId = rows[0].id;
@@ -73,6 +84,14 @@ export async function provisionChannelForRole(
     `insert into memberships (account_id, organization_id, org_role) values ($1, $2, 'owner')`,
     [accountId, organizationId],
   );
+
+  if (isBusinessOrEnterprise) {
+    await query(
+      `insert into organization_verification (organization_id, legal_entity_name, abn, acn, country_of_registration, submitted_at)
+       values ($1, $2, $3, $4, $5, now())`,
+      [organizationId, orgName, input.abn?.trim() || null, input.acn?.trim() || null, input.country ?? "AU"],
+    );
+  }
 
   return organizationId;
 }

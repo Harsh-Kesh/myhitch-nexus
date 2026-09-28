@@ -39,7 +39,7 @@ interface PayoutStatus {
  * counterpart exists to preserve a signature for (the mock's own "Payout settings" card
  * is a fully static, pre-verified fake bank account with no real backing concept at
  * all), so this talks to the real API directly rather than through the mock-api layer,
- * same as business/verification/page.tsx did for its own new-real-feature page. */
+ * same "talk to the real API directly for a new real feature" pattern used elsewhere. */
 function usePayoutStatus(channelId: string, enabled: boolean) {
   return useQuery({
     queryKey: ["payout-status", channelId],
