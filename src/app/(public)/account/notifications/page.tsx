@@ -157,7 +157,7 @@ export default function NotificationsPage() {
                       Object.keys(NOTIFICATION_EVENT_LABELS) as NotificationEvent[]
                     ).map((event) => {
                       const config = NOTIFICATION_EVENT_LABELS[event];
-                      const prefs = user.notificationPreferences[event];
+                      const prefs = user.notificationPreferences[event] || { inApp: true, email: true, push: false };
                       return (
                         <tr key={event}>
                           <td className="px-4 py-3">

@@ -14,6 +14,7 @@ import {
   useCreateMyPlaylist,
   useCurrentUser,
   useDeletePlaylist,
+  useSubscriptions,
   useMyPlaylists,
 } from "@/lib/mock-api/hooks";
 import { formatDate } from "@/lib/utils";
@@ -26,6 +27,7 @@ const VISIBILITY_META = {
 
 export default function PlaylistsPage() {
   const { data: user } = useCurrentUser();
+  const { data: subscriptions = [] } = useSubscriptions();
   const { data: playlists = [], isLoading } = useMyPlaylists();
   const createPlaylist = useCreateMyPlaylist();
   const deletePlaylist = useDeletePlaylist();
@@ -37,7 +39,8 @@ export default function PlaylistsPage() {
   // playlist private from — with zero or one profile, "just for me" and "everyone on
   // this account" mean the exact same thing, so the toggle would just be confusing.
   const [scope, setScope] = React.useState<"account" | "profile">("account");
-  const canScopeToProfile = (user?.profiles.length ?? 0) > 1;
+  const hasFamilyPlan = subscriptions.some((s) => s.status === "active" && s.plan === "family");
+  const canScopeToProfile = hasFamilyPlan && (user?.profiles.length ?? 0) > 1;
   const activeProfileName = user?.profiles.find((p) => p.id === user.activeProfileId)?.name;
   const profileNameById = new Map((user?.profiles ?? []).map((p) => [p.id, p.name]));
 

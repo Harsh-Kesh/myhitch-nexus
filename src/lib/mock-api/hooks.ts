@@ -825,10 +825,10 @@ export const useSeriesDetail = (seriesId: string) =>
 
 /* ----------------------------- Analytics -------------------------------- */
 
-export const useCreatorAnalytics = (channelId: string, range: AnalyticsRange = "28d") =>
+export const useCreatorAnalytics = (channelId: string, range: AnalyticsRange = "28d", videoId: string | null = null) =>
   useQuery({
-    queryKey: qk.analytics(channelId, range),
-    queryFn: () => api.getCreatorAnalytics(channelId, range),
+    queryKey: [...qk.analytics(channelId, range), videoId],
+    queryFn: () => api.getCreatorAnalytics(channelId, range, videoId),
     enabled: Boolean(channelId),
   });
 

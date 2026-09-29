@@ -27,9 +27,10 @@ export async function GET(request: NextRequest) {
 
   const rangeParam = request.nextUrl.searchParams.get("range") ?? "28d";
   const range = VALID_RANGES.includes(rangeParam as AnalyticsRange) ? (rangeParam as AnalyticsRange) : "28d";
+  const videoId = request.nextUrl.searchParams.get("videoId");
 
   try {
-    const analytics = await getRealCreatorAnalytics(channelId, range);
+    const analytics = await getRealCreatorAnalytics(channelId, range, videoId);
     return NextResponse.json(analytics);
   } catch (err) {
     console.error("GET /api/studio/analytics failed", err);

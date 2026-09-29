@@ -8,11 +8,24 @@ export async function emitNotification(
   href: string
 ): Promise<void> {
   try {
-    await query(
-      `INSERT INTO notifications (account_id, event, title, body, href)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [accountId, event, title, body, href]
+    const res = await query(
+      `SELECT notification_preferences FROM accounts WHERE id = $1`,
+      [accountId]
     );
+
+    if (res.rows.length === 0) return;
+
+    const prefs = res.rows[0].notification_preferences || {};
+    const eventPrefs = prefs[event] || { inApp: true, email: true, push: false };
+
+    // Only insert if inApp is enabled for this event
+    if (eventPrefs.inApp) {
+      await query(
+        `INSERT INTO notifications (account_id, event, title, body, href)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [accountId, event, title, body, href]
+      );
+    }
   } catch (err) {
     console.error("Failed to emit notification:", err);
   }

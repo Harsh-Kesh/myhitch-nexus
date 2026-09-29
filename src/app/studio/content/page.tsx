@@ -4,6 +4,7 @@ import {
   IconChartBar,
   IconDots,
   IconEdit,
+  IconArchive,
   IconEye,
   IconTrash,
   IconUpload,
@@ -195,7 +196,7 @@ export default function StudioContentPage() {
           <MenuItem href={`/video/${row.id}`} icon={<IconEye />}>
             View on Nexus
           </MenuItem>
-          <MenuItem href="/studio/analytics" icon={<IconChartBar />}>
+          <MenuItem href={`/studio/analytics?videoId=${row.id}`} icon={<IconChartBar />}>
             Analytics
           </MenuItem>
           <MenuItem icon={<IconEdit />} onClick={() => setEditingVideo(row)}>
@@ -203,9 +204,17 @@ export default function StudioContentPage() {
           </MenuItem>
           <MenuSeparator />
           <MenuLabel>Change status</MenuLabel>
-          {(["draft", "private", "unlisted", "published", "archived"] as ContentStatus[])
-            .filter((status) => status !== row.status)
-            .map((status) => (
+          {(() => {
+              let valid: ContentStatus[] = [];
+              switch (row.status) {
+                case "draft": valid = ["private", "unlisted", "published", "scheduled"]; break;
+                case "published": valid = ["private", "unlisted"]; break;
+                case "private": valid = ["unlisted", "published", "scheduled", "draft"]; break;
+                case "unlisted": valid = ["private", "published", "scheduled", "draft"]; break;
+                case "scheduled": valid = ["private", "unlisted", "published", "draft"]; break;
+                case "archived": valid = ["private", "unlisted"]; break;
+              }
+              return valid.map((status) => (
               <MenuItem
                 key={status}
                 onClick={() => {
@@ -215,11 +224,25 @@ export default function StudioContentPage() {
               >
                 {status}
               </MenuItem>
-            ))}
-          <MenuSeparator />
-          <MenuItem
-            danger
-            icon={<IconTrash />}
+            })()}
+          {row.status !== "archived" && row.status !== "restricted" && row.status !== "rejected" ? (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  icon={<IconArchive />}
+                  onClick={() => {
+                    updateStatus.mutate({ videoId: row.id, status: "archived" });
+                    toast({ title: "Archived" });
+                  }}
+                >
+                  Archive
+                </MenuItem>
+              </>
+            ) : null}
+            <MenuSeparator />
+            <MenuItem
+              danger
+              icon={<IconTrash />}
             onClick={() =>
               toast({
                 title: "Delete requires confirmation",

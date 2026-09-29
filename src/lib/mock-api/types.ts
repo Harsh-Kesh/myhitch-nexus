@@ -472,7 +472,13 @@ export type NotificationEvent =
   | "purchase-receipt"
   | "rental-expiring"
   | "payout"
-  | "policy";
+  | "policy"
+  | "profile-created"
+  | "profile-updated"
+  | "profile-removed"
+  | "settings-updated"
+  | "account-registered"
+  | "subscription-updated";
 
 export interface NotificationChannels {
   email: boolean;

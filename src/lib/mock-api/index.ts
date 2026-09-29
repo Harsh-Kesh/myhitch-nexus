@@ -2331,6 +2331,7 @@ export async function getSeriesDetail(seriesId: string): Promise<RealSeriesDetai
 export async function getCreatorAnalytics(
   channelId: string,
   range: AnalyticsRange = "28d",
+  videoId: string | null = null
 ): Promise<CreatorAnalytics> {
   if (looksLikeRealId(channelId)) {
     const res = await fetch(

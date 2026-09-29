@@ -45,6 +45,30 @@ export const NOTIFICATION_EVENT_LABELS: Record<
     title: "Policy & safety",
     description: "Moderation decisions and policy updates affecting you.",
   },
+  "profile-created": {
+    title: "Profile Created",
+    description: "Alerts when a new family profile is created.",
+  },
+  "profile-updated": {
+    title: "Profile Updated",
+    description: "Alerts when a family profile is updated.",
+  },
+  "profile-removed": {
+    title: "Profile Removed",
+    description: "Alerts when a family profile is removed.",
+  },
+  "settings-updated": {
+    title: "Settings Updated",
+    description: "Alerts when your account settings are changed.",
+  },
+  "account-registered": {
+    title: "Account Registered",
+    description: "Welcome alerts for new accounts.",
+  },
+  "subscription-updated": {
+    title: "Subscription Updates",
+    description: "Alerts when your subscription plan changes.",
+  },
 };
 
 const on: NotificationChannels = { email: true, push: true, inApp: true };
@@ -129,6 +153,12 @@ export const currentUser: User = {
     "rental-expiring": on,
     payout: emailOnly,
     policy: emailOnly,
+    "profile-created": inAppOnly,
+    "profile-updated": inAppOnly,
+    "profile-removed": inAppOnly,
+    "settings-updated": inAppOnly,
+    "account-registered": emailOnly,
+    "subscription-updated": emailOnly,
   },
   parentalControls: {
     enabled: true,
