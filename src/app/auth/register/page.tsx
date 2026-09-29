@@ -78,22 +78,7 @@ const ROLES: Array<{
     icon: <IconMovie />,
     requiresOrg: true,
     requiresMfa: true,
-  },
-  {
-    value: "education",
-    title: "Education provider",
-    description: "Publish accredited courses, tutorials, and issue completion records.",
-    icon: <IconCertificate />,
-    requiresOrg: true,
-  },
-  {
-    value: "organisation",
-    title: "Government / non-profit",
-    description: "Publish official public information, council meetings, and impact reporting.",
-    icon: <IconBuildingBank />,
-    requiresOrg: true,
-    requiresMfa: true,
-  },
+  },,
 ];
 
 const COUNTRIES = [
@@ -680,25 +665,19 @@ export default function RegisterPage() {
                 />
               </Field>
 
-            {role !== "education" && (
+            {needsOrg && (
               <Field label="Industry vertical" htmlFor="industry" hint="Optional. Helps us categorize your channel content.">
                 <Select
                   id="industry"
                   value={industry}
                   onChange={(event) => setIndustry(event.target.value)}
                 >
-                  {role === "organisation" ? (
-                    <>
-                      <option value="">Non-profit (Default)</option>
-                      <option value="government">Government</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="">General</option>
-                      <option value="film-studio">Film studio</option>
-                      <option value="news">News organisation</option>
-                    </>
-                  )}
+                  <option value="">General (Business / Enterprise)</option>
+                  <option value="film-studio">Film studio</option>
+                  <option value="news">News organisation</option>
+                  <option value="education">Education provider</option>
+                  <option value="government">Government</option>
+                  <option value="nonprofit">Non-profit</option>
                 </Select>
               </Field>
             )}

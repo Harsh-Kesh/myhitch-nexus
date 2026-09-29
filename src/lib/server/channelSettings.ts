@@ -22,7 +22,6 @@ export interface ChannelSettingsPatch {
   contactEmail?: string;
   languages?: string[];
   country?: string;
-  kind?: string;
   verificationStatus?: "unverified" | "pending" | "verified" | "rejected";
   verified?: boolean;
 }
@@ -76,7 +75,6 @@ export async function updateOrganization(
   if (patch.contactEmail !== undefined) set("business_email", patch.contactEmail.trim());
   if (patch.languages !== undefined) set("languages", patch.languages);
   if (patch.country !== undefined) set("country", patch.country);
-  if (patch.kind !== undefined) set("type", patch.kind);
   if (patch.verificationStatus !== undefined) {
     set("verification_status", patch.verificationStatus);
     if (patch.verificationStatus === "verified") {

@@ -44,12 +44,8 @@ export async function provisionChannelForRole(
 
   let finalOrgType = orgType;
   if (dbRole === 'business' || dbRole === 'producer' || dbRole === 'advertiser') {
-    if (input.industry === 'film-studio' || input.industry === 'news') {
+    if (["film-studio", "news", "education", "government", "nonprofit"].includes(input.industry || "")) {
       finalOrgType = input.industry;
-    }
-  } else if (dbRole === 'organisation') {
-    if (input.industry === 'government') {
-      finalOrgType = 'government';
     }
   }
 

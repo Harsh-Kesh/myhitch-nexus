@@ -14,7 +14,6 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { looksLikeRealId } from "@/lib/mock-api";
-import type { ChannelKind } from "@/lib/mock-api/types";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import { useChannel, useOwnedChannelId, useUpdateChannel } from "@/lib/mock-api/hooks";
 import type { TeamOverview } from "@/lib/server/teamInvitations";
@@ -58,7 +57,6 @@ export default function ChannelSettingsPage() {
   const [contactEmail, setContactEmail] = React.useState("");
   const [languages, setLanguages] = React.useState<string[]>([]);
   const [country, setCountry] = React.useState("GB");
-  const [kind, setKind] = React.useState("");
 
   const [adsEnabled, setAdsEnabled] = React.useState(true);
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
@@ -96,7 +94,6 @@ export default function ChannelSettingsPage() {
     setContactEmail(channel.contactEmail);
     setLanguages(channel.languages);
     setCountry(channel.country);
-    setKind(channel.kind);
   }, [channel]);
 
   React.useEffect(resetFromChannel, [resetFromChannel]);
@@ -116,7 +113,7 @@ export default function ChannelSettingsPage() {
 
   const saveProfile = () => {
     updateChannel.mutate(
-      { name, handle, tagline, about, contactEmail, languages, country, kind: kind as ChannelKind },
+      { name, handle, tagline, about, contactEmail, languages, country },
       {
         onSuccess: () => toast({ title: "Channel settings saved" }),
         onError: (error) =>

@@ -21,8 +21,7 @@ const ROLES_REQUIRING_VERIFICATION = new Set([
   "enterprise",
   "advertiser",
   "producer",
-  "education",
-  "organisation",
+  
 ]);
 
 // The self-service roles the registration wizard offers
@@ -34,8 +33,7 @@ const SELF_REGISTRABLE_ROLES = new Set([
   "enterprise",
   "advertiser",
   "producer",
-  "education",
-  "organisation",
+  
 ]);
 
 interface RegisterBody {
