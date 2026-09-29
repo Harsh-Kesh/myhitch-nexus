@@ -13,9 +13,9 @@ export async function emitNotification(
       [accountId]
     );
 
-    if (res.rows.length === 0) return;
+    if (res.length === 0) return;
 
-    const prefs = res.rows[0].notification_preferences || {};
+    const prefs = res[0].notification_preferences || {};
     const eventPrefs = prefs[event] || { inApp: true, email: true, push: false };
 
     // Only insert if inApp is enabled for this event

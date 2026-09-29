@@ -294,6 +294,7 @@ export async function getRealCreatorAnalytics(
   }
 
   const topVideos: RealVideoRow[] = currentRows
+    .filter((row) => !videoId || row.video_id === videoId)
     .map((row) => ({
       videoId: row.video_id,
       title: row.title,
@@ -316,11 +317,12 @@ export async function getRealCreatorAnalytics(
   }
   const viewsByVideoId = new Map(currentRows.map((row) => [row.video_id, { title: row.title, views: Number(row.views) }]));
   const revenueByContent: RealRevenueByContent[] = Array.from(revenueByVideoId.entries())
-    .map(([videoId, { revenueMinor, model }]) => ({
-      videoId,
-      title: viewsByVideoId.get(videoId)?.title ?? "Untitled",
+    .filter(([id]) => !videoId || id === videoId)
+    .map(([id, { revenueMinor, model }]) => ({
+      videoId: id,
+      title: viewsByVideoId.get(id)?.title ?? "Untitled",
       revenueMinor,
-      views: viewsByVideoId.get(videoId)?.views ?? 0,
+      views: viewsByVideoId.get(id)?.views ?? 0,
       model,
     }))
     .sort((a, b) => b.revenueMinor - a.revenueMinor);

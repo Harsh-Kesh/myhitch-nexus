@@ -8,11 +8,9 @@ import {
   IconCheck,
   IconDeviceTv,
   IconFileUpload,
-  IconMovie,
-  IconUpload,
+    IconUpload,
   IconUser,
-  IconVideo,
-  IconX,
+    IconX,
 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,32 +49,18 @@ const ROLES: Array<{
 }> = [
   {
     value: "viewer",
-    title: "Viewer",
+    title: "End User",
     description: "Watch for free with ads, or subscribe to Premium / Family plans. Set up household profiles.",
     icon: <IconDeviceTv />,
   },
   {
-    value: "creator",
-    title: "Creator",
-    description: "Publish content, go live, and earn from ads, subscriptions, & tipping. Upgrade to Business anytime for team & shop tools.",
-    icon: <IconVideo />,
-  },
-  {
     value: "business",
-    title: "Business & Advertiser",
-    description: "Run branded channels, launch targeted ad campaigns, attach product links, capture leads, & manage team access.",
+    title: "Business & Creator",
+    description: "Publish content, run branded channels, monetize, launch ad campaigns, & manage team access.",
     icon: <IconBuildingStore />,
     requiresOrg: true,
     requiresMfa: true,
   },
-  {
-    value: "enterprise",
-    title: "Enterprise",
-    description: "Distribute media catalogs with bulk metadata import, review links, high-capacity file transfers, & API access.",
-    icon: <IconMovie />,
-    requiresOrg: true,
-    requiresMfa: true,
-  }
 ];
 
 const COUNTRIES = [
@@ -272,14 +256,8 @@ export default function RegisterPage() {
             : "Welcome to Nexus.",
       });
       router.push(
-        role === "creator"
-          ? "/studio/dashboard"
-          : role === "business" || role === "advertiser"
-            ? "/business/channel"
-            : role === "enterprise" || role === "producer" || role === "organisation"
-              ? "/business/enterprise"
-              : "/",
-      );
+          role === "business" ? "/studio/dashboard" : "/"
+        );
     } catch (err) {
       toast({
         title: "Couldn't create your account",

@@ -185,6 +185,15 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
     return { outcome: "invalid_file", reason: probe.reason };
   }
 
+  // Duration validation
+  const roleRows = await query<{ role: string }>(`select role from account_roles where account_id = $1`, [accountId]);
+  const isBusinessTrack = roleRows.some((r) => ["business", "creator", "enterprise"].includes(r.role));
+  const maxDuration = isBusinessTrack ? 1800 : 600;
+
+  if (probe.durationSeconds > maxDuration) {
+    return { outcome: "invalid", reason: `Video duration exceeds the maximum allowed limit of ${Math.round(maxDuration / 60)} minutes for your plan.` };
+  }
+
   // Best-effort, not a hard requirement — see malwareScan.ts's header for why an
   // "unavailable" scanner doesn't block publishing (fails open, not closed).
   const scan = await scanMasterAssetForMalware(input.masterAssetPath, input.kind);

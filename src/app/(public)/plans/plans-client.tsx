@@ -183,6 +183,7 @@ export function PlansClient() {
   const [interval, setIntervalValue] = React.useState<Interval>("month");
   const [salesOpen, setSalesOpen] = React.useState(false);
   const [pendingChange, setPendingChange] = React.useState<{ plan: PlanId; interval: Interval } | null>(null);
+  const [selectedTrack, setSelectedTrack] = React.useState<"end-user" | "business">("end-user");
 
   const isCreator = Boolean(currentUser?.roles.includes("creator") || currentUser?.activeRole === "creator");
   const isBusiness = Boolean(currentUser?.roles.includes("business") || currentUser?.activeRole === "business");
@@ -191,6 +192,18 @@ export function PlansClient() {
       currentUser?.roles.includes("producer") ||
       currentUser?.activeRole === "enterprise",
   );
+
+  const defaultTrack = isBusiness || isEnterprise || isCreator ? "business" : "end-user";
+  React.useEffect(() => {
+    if (currentUser) {
+      setSelectedTrack(defaultTrack);
+    }
+  }, [currentUser, defaultTrack]);
+
+  const filteredPlans = PLANS.filter(p => {
+    if (selectedTrack === "end-user") return ["free", "premium", "family"].includes(p.id);
+    return ["creator", "business", "enterprise"].includes(p.id);
+  });
 
   const hasActiveSub = (planId: string) =>
     subscriptions.some(
@@ -300,7 +313,29 @@ export function PlansClient() {
         <p className="mt-2 text-fg-muted">Choose the plan that&apos;s right for you.</p>
       </div>
 
-      <div className="mt-6 flex justify-center">
+      <div className="mt-6 flex flex-col items-center gap-4">
+        {!currentUser && (
+          <div className="inline-flex rounded-full border border-border bg-surface-2 p-1">
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("end-user")}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                selectedTrack === "end-user" ? "bg-accent text-accent-fg" : "text-fg-muted"
+              }`}
+            >
+              Personal
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedTrack("business")}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                selectedTrack === "business" ? "bg-accent text-accent-fg" : "text-fg-muted"
+              }`}
+            >
+              Business
+            </button>
+          </div>
+        )}
         <div className="inline-flex rounded-full border border-border bg-surface-2 p-1">
           <button
             type="button"
@@ -324,7 +359,7 @@ export function PlansClient() {
       </div>
 
       <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {PLANS.map((plan) => {
+        {filteredPlans.map((plan) => {
           const isPaidPlan = plan.id === "premium" || plan.id === "family" || plan.id === "business";
           const yearlyAvailable = typeof plan.price === "object" && "year" in plan.price;
           const effectiveInterval: Interval = isPaidPlan && !yearlyAvailable ? "month" : interval;

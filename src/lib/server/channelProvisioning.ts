@@ -14,6 +14,7 @@ import { lookupAbn } from "./abnLookup";
 // admin have no organization of their own. Keyed on the DB role spelling (post
 // toDbRole()) — see rbac.ts; every mock role now has an identical DB spelling.
 const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
+  viewer: "creator", // End Users get a creator channel for short clips
   creator: "creator",
   business: "business",
   advertiser: "business",
