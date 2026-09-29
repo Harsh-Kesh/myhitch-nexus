@@ -3782,17 +3782,19 @@ export async function getCurrentUser(): Promise<User | null> {
             ["#EC6AA8", "#9D2C6B"],
             ["#E5A83B", "#96661A"],
           ];
-          store.user.profiles = pData.profiles.map((p, idx) => ({
-            id: p.id,
-            name: p.name,
-            kind: p.isKids ? "child" : p.maturityRating === "TEEN" ? "teen" : "adult",
-            avatarGradient: profileGradients[idx % profileGradients.length] ?? ["#5B8DEF", "#243F80"],
-            avatarUrl: p.avatarUrl ?? undefined,
-            maxAgeRating: p.maturityRating === "ALL" ? "U" : p.maturityRating === "PG" ? "PG" : p.maturityRating === "TEEN" ? "12" : "18",
-            language: store.user.language,
-            hasPinSet: p.hasPinSet,
-            isKids: p.isKids,
-          }));
+          const selfProfile = store.user.profiles.find((p) => p.id === `real-self-${store.user.id}`);
+            const fetchedProfiles = pData.profiles.map((p, idx) => ({
+              id: p.id,
+              name: p.name,
+              kind: p.isKids ? "child" : p.maturityRating === "TEEN" ? "teen" : "adult",
+              avatarGradient: profileGradients[idx % profileGradients.length] ?? ["#5B8DEF", "#243F80"],
+              avatarUrl: p.avatarUrl ?? undefined,
+              maxAgeRating: p.maturityRating === "ALL" ? "U" : p.maturityRating === "PG" ? "PG" : p.maturityRating === "TEEN" ? "12" : "18",
+              language: store.user.language,
+              hasPinSet: p.hasPinSet,
+              isKids: p.isKids,
+            }));
+            store.user.profiles = selfProfile ? [selfProfile, ...fetchedProfiles] : fetchedProfiles;
           // Prefer a session-persisted choice (survives a full page reload, which this
           // in-memory store instance does not) over whatever's already in memory, then
           // validate it against the real, just-fetched profile list before trusting it —
