@@ -88,7 +88,10 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 // the query-by-query breakdown, including why "hero" is most-viewed rather than an
 // editorial pick (no curated-featured flag exists in the real schema).
 export async function getFeaturedContent(): Promise<FeaturedContent> {
-  const res = await fetch("/api/home/");
+  const profileParam = looksLikeRealId(store.user.activeProfileId ?? "")
+    ? `?profileId=${encodeURIComponent(store.user.activeProfileId!)}`
+    : "";
+  const res = await fetch(`/api/home/${profileParam}`);
   if (!res.ok) {
     throw new Error(`GET /api/home failed with ${res.status}`);
   }
