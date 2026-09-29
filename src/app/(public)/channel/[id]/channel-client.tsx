@@ -131,7 +131,6 @@ export function ChannelClient() {
             src={channel.avatarUrl}
             size="2xl"
             verified={channel.verified}
-            square
             className="-mt-10 ring-4 ring-bg sm:-mt-12"
           />
           <div className="min-w-0 flex-1 pb-1">

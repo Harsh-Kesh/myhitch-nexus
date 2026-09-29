@@ -205,7 +205,6 @@ export default function ChannelSettingsPage() {
                   gradient={channel.avatarGradient}
                   src={channel.avatarUrl}
                   size="xl"
-                  square
                   verified={channel.verified}
                 />
                 <div className="min-w-0 flex-1">
