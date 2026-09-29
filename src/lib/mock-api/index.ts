@@ -3744,15 +3744,17 @@ export async function getCurrentUser(): Promise<User | null> {
 
   if (looksLikeRealId(data.account.id)) {
     try {
-      const sRes = await fetch("/api/account/settings");
-        if (sRes.ok) {
-          const sData = await sRes.json();
-          if (sData.notificationPreferences) store.user.notificationPreferences = sData.notificationPreferences;
-          if (sData.privacy) store.user.privacy = sData.privacy;
-          if (sData.parentalControls) store.user.parentalControls = sData.parentalControls;
-        }
+      
         
-        const pRes = await fetch("/api/account/profiles");
+        const sRes = await fetch("/api/account/settings");
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        if (sData.notificationPreferences) store.user.notificationPreferences = sData.notificationPreferences;
+        if (sData.privacy) store.user.privacy = sData.privacy;
+        if (sData.parentalControls) store.user.parentalControls = sData.parentalControls;
+      }
+      
+      const pRes = await fetch("/api/account/profiles");
       if (pRes.ok) {
         const pData = (await pRes.json()) as {
           profiles: Array<{
@@ -3825,6 +3827,19 @@ export async function updateUser(patch: Partial<User>): Promise<User> {
   Object.assign(store.user, patch);
 
   if (looksLikeRealId(store.user.id)) {
+    const settingsPatch: any = {};
+    if ("notificationPreferences" in patch) settingsPatch.notificationPreferences = patch.notificationPreferences;
+    if ("privacy" in patch) settingsPatch.privacy = patch.privacy;
+    if ("parentalControls" in patch) settingsPatch.parentalControls = patch.parentalControls;
+
+    if (Object.keys(settingsPatch).length > 0) {
+      const sRes = await fetch("/api/account/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settingsPatch),
+      });
+      if (!sRes.ok) throw new Error("Failed to update settings");
+    }
     const realPatch: Partial<Record<(typeof REAL_ACCOUNT_FIELDS)[number], unknown>> = {};
     for (const key of REAL_ACCOUNT_FIELDS) {
       if (key in patch) realPatch[key] = patch[key];
@@ -4107,19 +4122,17 @@ export async function resumeSubscription(id: string): Promise<Subscription | nul
 }
 
 export async function getNotifications(): Promise<AppNotification[]> {
-  await latency("fast");
-  return clone(store.notifications);
+  const res = await fetch("/api/notifications");
+  if (!res.ok) throw new Error("Failed to load notifications");
+  return res.json();
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  const notification = store.notifications.find((item) => item.id === id);
-  if (notification) notification.read = true;
+  await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
 }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  store.notifications.forEach((notification) => {
-    notification.read = true;
-  });
+  await fetch("/api/notifications", { method: "POST" });
 }
 
 /* ------------------------------- Auth ---------------------------------- */
