@@ -4,9 +4,7 @@ import {
   IconArrowLeft,
   IconBrandApple,
   IconBrandGoogle,
-  IconBuildingBank,
   IconBuildingStore,
-  IconCertificate,
   IconCheck,
   IconDeviceTv,
   IconFileUpload,
@@ -78,7 +76,7 @@ const ROLES: Array<{
     icon: <IconMovie />,
     requiresOrg: true,
     requiresMfa: true,
-  },,
+  }
 ];
 
 const COUNTRIES = [
