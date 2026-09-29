@@ -224,7 +224,8 @@ export default function StudioContentPage() {
               >
                 {status}
               </MenuItem>
-            })()}
+            ))}
+          })()}
           {row.status !== "archived" && row.status !== "restricted" && row.status !== "rejected" ? (
               <>
                 <MenuSeparator />
