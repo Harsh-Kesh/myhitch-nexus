@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { query } from "@/lib/server/db";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { emitNotification } from "@/lib/server/notifications";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
@@ -77,6 +78,14 @@ export async function PATCH(request: NextRequest) {
     await query(
       `UPDATE accounts SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
       values
+    );
+
+    await emitNotification(
+      account.id,
+      "settings-updated",
+      "Account settings updated",
+      "Your privacy or notification preferences have been successfully updated.",
+      "/settings"
     );
   }
 

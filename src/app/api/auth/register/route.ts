@@ -15,6 +15,7 @@ import { createLocalAccount, emailIsRegistered } from "@/lib/server/localPasswor
 import { recordLegalAcceptance } from "@/lib/server/legalAcceptance";
 import { toDbRole } from "@/lib/server/rbac";
 import { createSession, setSessionCookie } from "@/lib/server/session";
+import { emitNotification } from "@/lib/server/notifications";
 
 const ROLES_REQUIRING_VERIFICATION = new Set([
   "business",
@@ -128,6 +129,14 @@ export async function POST(request: NextRequest) {
       ],
     );
   }
+
+  await emitNotification(
+    account.id,
+    "account-created",
+    "Welcome to MYHitch Nexus",
+    "Your account has been successfully created. Explore the catalogue or set up your channel.",
+    "/explore"
+  );
 
   const session = await createSession(account.id, {
     remember: true,

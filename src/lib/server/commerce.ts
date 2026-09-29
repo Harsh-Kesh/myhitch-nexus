@@ -16,6 +16,7 @@ import { checkRealContentAccess, listRealPlanPurchases } from "./subscriptions";
 import { checkRealChannelMembership } from "./channelMemberships";
 import { computeChannelNetRevenue, type RevenueEntryKind } from "./commissions";
 import { SITE_URL } from "@/lib/utils";
+import { emitNotification } from "./notifications";
 
 export { StripeNotConfiguredError, getStripe };
 
@@ -162,10 +163,18 @@ export async function fulfillCheckoutSession(session: Stripe.Checkout.Session): 
       invoiceNumber,
       session.id,
       typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null),
-      expiresAt,
-    ],
-  );
-}
+        expiresAt,
+      ],
+    );
+
+    await emitNotification(
+      accountId,
+      "purchase-receipt",
+      kind === "rent" ? "Video Rental Confirmed" : "Video Purchase Confirmed",
+      kind === "rent" ? "Your rental window begins when you start playback." : "Thank you for your purchase.",
+      "/video/" + videoId
+    );
+  }
 
 export type VerifyCheckoutSessionResult = { granted: boolean } | { outcome: "not_your_session" };
 

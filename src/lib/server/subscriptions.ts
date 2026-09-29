@@ -8,6 +8,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
+import { emitNotification } from "./notifications";
 import { SITE_URL } from "@/lib/utils";
 
 export type PlanId = "premium" | "family" | "business" | "enterprise";
@@ -338,10 +339,18 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
       currency,
       periodEnd,
       subscription.cancel_at_period_end,
-    ],
-  );
+      ],
+    );
 
-  // Enterprise-only: organizations.enterprise_status is the pre-payment workflow state
+    await emitNotification(
+      accountId,
+      'subscription-updated',
+      'Subscription Updated',
+      `Your subscription to the ${plan} plan has been successfully updated.`,
+      '/business/billing'
+    );
+
+    // Enterprise-only: organizations.enterprise_status is the pre-payment workflow state
   // (pending/awaiting_payment/rejected) an admin drives — real access is always gated on
   // this real Stripe status (checkRealPlanActive(), same as Business), never on the
   // stored flag alone. Setting it to 'active'/'awaiting_payment' here purely keeps the

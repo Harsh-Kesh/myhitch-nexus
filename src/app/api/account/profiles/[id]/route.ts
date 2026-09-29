@@ -5,6 +5,7 @@ import {
   deleteAccountProfile,
   updateAccountProfile,
 } from "@/lib/server/familyProfiles";
+import { emitNotification } from "@/lib/server/notifications";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -34,6 +35,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
   try {
     const updated = await updateAccountProfile(account.id, profileId, body);
+    
+    await emitNotification(
+      account.id,
+      "profile-updated",
+      "Profile Updated",
+      `The profile "${updated.name}" has been successfully updated.`,
+      "/settings/family"
+    );
+
     return NextResponse.json(updated);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to update profile";
@@ -51,6 +61,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
   try {
     const success = await deleteAccountProfile(account.id, profileId);
+    
+    await emitNotification(
+      account.id,
+      "profile-deleted",
+      "Profile Removed",
+      "A profile has been successfully deleted from your account.",
+      "/settings/family"
+    );
+
     return NextResponse.json({ success });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to delete profile";

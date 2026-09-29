@@ -5,6 +5,7 @@ import {
   createAccountProfile,
   listAccountProfiles,
 } from "@/lib/server/familyProfiles";
+import { emitNotification } from "@/lib/server/notifications";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
@@ -53,6 +54,14 @@ export async function POST(request: NextRequest) {
       maturityRating: body.maturityRating,
       pinCode: body.pinCode,
     });
+
+    await emitNotification(
+      account.id,
+      "profile-created",
+      "New Profile Added",
+      `The profile "${profile.name}" has been successfully added to your account.`,
+      "/settings/family"
+    );
 
     return NextResponse.json(profile, { status: 201 });
   } catch (err: unknown) {
