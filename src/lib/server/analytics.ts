@@ -502,7 +502,6 @@ export async function getPlatformAnalytics(range: AnalyticsRange): Promise<Platf
   const prior = sumTotals(priorRows);
 
   const topVideos = [...currentRows]
-    .filter((row) => !videoId || row.video_id === videoId)
     .map((row) => ({
       videoId: row.video_id,
       title: row.title,
