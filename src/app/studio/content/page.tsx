@@ -204,7 +204,7 @@ export default function StudioContentPage() {
           </MenuItem>
           <MenuSeparator />
           <MenuLabel>Change status</MenuLabel>
-          {(() => {
+                    {(() => {
               let valid: ContentStatus[] = [];
               switch (row.status) {
                 case "draft": valid = ["private", "unlisted", "published", "scheduled"]; break;
@@ -215,16 +215,16 @@ export default function StudioContentPage() {
                 case "archived": valid = ["private", "unlisted"]; break;
               }
               return valid.map((status) => (
-              <MenuItem
-                key={status}
-                onClick={() => {
-                  updateStatus.mutate({ videoId: row.id, status });
-                  toast({ title: `Moved to ${status}` });
-                }}
-              >
-                {status}
-              </MenuItem>
-            ))}
+                <MenuItem
+                  key={status}
+                  onClick={() => {
+                    updateStatus.mutate({ videoId: row.id, status });
+                    toast({ title: `Moved to ${status}` });
+                  }}
+                >
+                  {status}
+                </MenuItem>
+              ));
           })()}
           {row.status !== "archived" && row.status !== "restricted" && row.status !== "rejected" ? (
               <>
