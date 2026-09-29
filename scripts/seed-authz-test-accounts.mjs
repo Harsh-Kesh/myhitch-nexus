@@ -41,6 +41,9 @@ const ACCOUNTS = [
   { key: "creator1", email: "authz.creator1@nexus.test", name: "Authz Creator One", roles: ["creator"], org: "creator" },
   { key: "creator2", email: "authz.creator2@nexus.test", name: "Authz Creator Two", roles: ["creator"], org: "creator" },
   { key: "business", email: "authz.business@nexus.test", name: "Authz Business", roles: ["business"], org: "business" },
+  { key: "enterprise", email: "authz.enterprise@nexus.test", name: "Authz Enterprise", roles: ["producer"], org: "producer" },
+  { key: "education", email: "authz.education@nexus.test", name: "Authz Education", roles: ["producer"], org: "education" },
+  { key: "government", email: "authz.government@nexus.test", name: "Authz Government", roles: ["producer"], org: "government" },
   // Scoped admin tier
   { key: "superAdmin", email: "authz.admin@nexus.test", name: "Authz Admin", roles: ["super-admin"], org: null },
 ];
