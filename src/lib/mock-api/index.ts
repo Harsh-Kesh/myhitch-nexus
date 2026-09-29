@@ -3793,7 +3793,8 @@ export async function getCurrentUser(): Promise<User | null> {
               language: store.user.language,
               hasPinSet: p.hasPinSet,
               isKids: p.isKids,
-            }));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            } as any));
             store.user.profiles = selfProfile ? [selfProfile, ...fetchedProfiles] : fetchedProfiles;
           // Prefer a session-persisted choice (survives a full page reload, which this
           // in-memory store instance does not) over whatever's already in memory, then
