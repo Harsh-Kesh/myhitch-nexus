@@ -21,11 +21,8 @@ import { Tabs } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { channelById } from "@/lib/mock-api/data/channels";
-import {
-  useEndLiveEvent,
-  useLiveEvents,
-  useModerationQueue,
-} from "@/lib/mock-api/hooks";
+import { useLiveEvents, useModerationQueue } from "@/lib/mock-api/hooks";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { LiveEvent } from "@/lib/mock-api/types";
 import { compactNumber, formatDateTime, relativeTime } from "@/lib/utils";
 
@@ -57,7 +54,20 @@ const INTERVENTIONS: Array<{ value: Intervention; label: string; description: st
 export default function AdminLivePage() {
   const { data: events = [] } = useLiveEvents();
   const { data: incidents = [] } = useModerationQueue("live-incident");
-  const endEvent = useEndLiveEvent();
+  const qc = useQueryClient();
+  const interventionMut = useMutation({
+    mutationFn: async (vars: { id: string, action: string, reason: string }) => {
+      const res = await fetch(`/api/admin/live/${vars.id}/intervention`, {
+        method: "POST",
+        body: JSON.stringify({ action: vars.action, reason: vars.reason })
+      });
+      if (!res.ok) throw new Error("Failed to apply intervention");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["live-events"] });
+    }
+  });
   const { toast } = useToast();
 
   const [tab, setTab] = React.useState("live");
@@ -279,12 +289,10 @@ export default function AdminLivePage() {
             <Button
               variant="danger"
               disabled={reason.trim().length < 8}
-              loading={endEvent.isPending}
+              loading={interventionMut.isPending}
               onClick={async () => {
                 if (!target) return;
-                if (intervention === "terminate") {
-                  await endEvent.mutateAsync(target.id);
-                }
+                await interventionMut.mutateAsync({ id: target.id, action: intervention, reason: reason.trim() });
                 toast({
                   title:
                     intervention === "terminate"

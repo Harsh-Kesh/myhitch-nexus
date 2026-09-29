@@ -24,6 +24,14 @@ export async function GET(request: NextRequest) {
   if (account && (await checkRealContentAccess(account.id))) {
     return NextResponse.json({ ad: null });
   }
+
+  if (!account) {
+    const anonFreq = parseInt(request.cookies.get("_nx_anon_ad_freq")?.value || "0", 10);
+    if (anonFreq >= 3) {
+      return NextResponse.json({ ad: null });
+    }
+  }
+
   // Raw ISO code, matching how target_countries is stored (see storage.ts's COUNTRIES
   // list in the upload wizard) — deliberately not countryFromHeaders()'s display-name
   // output, which is for the analytics UI, not for matching against stored codes.

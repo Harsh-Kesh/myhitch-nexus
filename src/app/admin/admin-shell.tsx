@@ -18,7 +18,6 @@ import {
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { useAdminSummary, useCurrentUser } from "@/lib/mock-api/hooks";
 
-type AdminTier = "moderator" | "finance-admin" | "super-admin";
 
 interface AdminNavItem {
   href: string;
@@ -28,10 +27,7 @@ interface AdminNavItem {
   /** Which scoped tiers can use this page — a UX complement to the real server-side
    * checks (docs/openapi.yaml's matrix), never a substitute for them: hiding a link a
    * tier can't use avoids a dead-end 403, it doesn't do the actual enforcing. */
-  tiers: AdminTier[];
-}
-
-const ALL_ADMIN_TIERS: AdminTier[] = ["moderator", "finance-admin", "super-admin"];
+  }
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   // Every admin data function (getModerationQueue, getAdminUsers, ...) branches
@@ -45,10 +41,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const { data: currentUser, isLoading: isUserLoading } = useCurrentUser();
   const { data: summary } = useAdminSummary();
 
-  const myTiers = ALL_ADMIN_TIERS.filter((tier) => currentUser?.roles.includes(tier));
-  const canSee = (item: AdminNavItem) => item.tiers.some((tier) => myTiers.includes(tier));
-
-  const reviewCount =
+    const reviewCount =
     (summary?.pendingContent ?? 0) +
     (summary?.reportedContent ?? 0) +
     (summary?.copyrightClaims ?? 0) +
@@ -58,61 +51,55 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const groups: Array<{ title?: string; items: AdminNavItem[] }> = [
     {
       items: [
-        { href: "/admin", label: "Dashboard", icon: <IconLayoutDashboard />, tiers: ALL_ADMIN_TIERS },
-        { href: "/admin/analytics", label: "Analytics", icon: <IconChartBar />, tiers: ALL_ADMIN_TIERS },
+        { href: "/admin", label: "Dashboard", icon: <IconLayoutDashboard />},
+        { href: "/admin/analytics", label: "Analytics", icon: <IconChartBar />},
         {
           href: "/admin/reviews",
           label: "Review queue",
           icon: <IconListCheck />,
           badge: reviewCount,
-          tiers: ["moderator", "super-admin"],
         },
       ],
     },
     {
       title: "Manage",
       items: [
-        { href: "/admin/users", label: "Users", icon: <IconUsers />, tiers: ["super-admin"] },
+        { href: "/admin/users", label: "Users", icon: <IconUsers />},
         {
           href: "/admin/organisations",
           label: "Organisations",
           icon: <IconBuildingCommunity />,
-          tiers: ["moderator", "super-admin"],
         },
         {
           href: "/admin/enterprise",
           label: "Enterprise",
           icon: <IconBuildingSkyscraper />,
-          tiers: ["super-admin"],
         },
-        { href: "/admin/content", label: "Content", icon: <IconVideo />, tiers: ["moderator", "super-admin"] },
-        { href: "/admin/live", label: "Live", icon: <IconBroadcast />, tiers: ["moderator", "super-admin"] },
+        { href: "/admin/content", label: "Content", icon: <IconVideo />},
+        { href: "/admin/live", label: "Live", icon: <IconBroadcast />},
         {
           href: "/admin/ads",
           label: "Advertising",
           icon: <IconSpeakerphone />,
           badge: summary?.campaignsAwaitingApproval,
-          tiers: ["moderator", "finance-admin", "super-admin"],
         },
       ],
     },
     {
       title: "Oversight",
       items: [
-        { href: "/admin/finance", label: "Finance", icon: <IconCoin />, tiers: ["finance-admin", "super-admin"] },
+        { href: "/admin/finance", label: "Finance", icon: <IconCoin />},
         {
           href: "/admin/reports",
           label: "Cases",
           icon: <IconGavel />,
-          tiers: ["moderator", "finance-admin", "super-admin"],
         },
         {
           href: "/admin/audit-logs",
           label: "Audit log",
           icon: <IconFileText />,
-          tiers: ALL_ADMIN_TIERS,
         },
-        { href: "/admin/settings", label: "Settings", icon: <IconSettings />, tiers: ["super-admin"] },
+        { href: "/admin/settings", label: "Settings", icon: <IconSettings />},
       ],
     },
   ];
@@ -126,7 +113,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       }}
       accentLabel="Admin"
       groups={groups
-        .map((group) => ({ ...group, items: group.items.filter(canSee) }))
+        .map((group) => ({ ...group, items: group.items }))
         .filter((group) => group.items.length > 0)}
     >
       {isUserLoading ? null : children}

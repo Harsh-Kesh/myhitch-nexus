@@ -13,7 +13,7 @@ import * as React from "react";
 import { Poster } from "@/components/video/poster";
 import { Badge, LiveBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useSaveWatchProgress } from "@/lib/mock-api/hooks";
+import { useSaveWatchProgress, useCurrentUser } from "@/lib/mock-api/hooks";
 import type { Entitlement, Video } from "@/lib/mock-api/types";
 import { cn, formatCurrency, formatDuration } from "@/lib/utils";
 import { AdOverlay } from "./ad-overlay";
@@ -44,6 +44,7 @@ export function VideoPlayer({
   className,
 }: VideoPlayerProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const { data: user } = useCurrentUser();
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const saveProgress = useSaveWatchProgress();
 
@@ -434,9 +435,7 @@ export function VideoPlayer({
           aria-hidden
           className="pointer-events-none absolute inset-0 flex items-start justify-end p-4"
         >
-          <span className="rounded bg-black/25 px-2 py-1 font-mono text-2xs tracking-widest text-white/35">
-            NX·usr_viewer·{video.id.slice(-6).toUpperCase()}
-          </span>
+          <span className="rounded bg-black/25 px-2 py-1 font-mono text-2xs tracking-widest text-white/35">{user ? user.handle : `GUEST-${video.id.slice(-6).toUpperCase()}`}</span>
         </div>
       ) : null}
 

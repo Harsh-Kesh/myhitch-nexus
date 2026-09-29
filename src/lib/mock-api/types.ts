@@ -679,6 +679,7 @@ export interface Campaign {
   name: string;
   objective: "awareness" | "consideration" | "conversion" | "traffic";
   status: CampaignStatus;
+  decisionReason?: string | null;
   budget: Money;
   dailyCap: Money;
   spend: Money;

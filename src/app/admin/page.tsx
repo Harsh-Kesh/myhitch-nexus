@@ -42,7 +42,7 @@ import { cn, compactNumber, formatCurrency, formatDate, relativeTime } from "@/l
 const QUEUE_CARDS = [
   {
     key: "pendingContent" as const,
-    label: "Pending content",
+    label: "Pending comments",
     description: "Awaiting first review",
     href: "/admin/reviews?queue=pending-review",
     icon: <IconListCheck />,
@@ -71,14 +71,6 @@ const QUEUE_CARDS = [
     href: "/admin/reviews?queue=live-incident",
     icon: <IconBroadcast />,
     tone: "live",
-  },
-  {
-    key: "verificationQueue" as const,
-    label: "Verification",
-    description: "Organisation applications",
-    href: "/admin/reviews?queue=verification",
-    icon: <IconBuildingCommunity />,
-    tone: "info",
   },
   {
     key: "campaignsAwaitingApproval" as const,

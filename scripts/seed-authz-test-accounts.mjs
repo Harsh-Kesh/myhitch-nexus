@@ -41,10 +41,7 @@ const ACCOUNTS = [
   { key: "creator1", email: "authz.creator1@nexus.test", name: "Authz Creator One", roles: ["creator"], org: "creator" },
   { key: "creator2", email: "authz.creator2@nexus.test", name: "Authz Creator Two", roles: ["creator"], org: "creator" },
   { key: "business", email: "authz.business@nexus.test", name: "Authz Business", roles: ["business"], org: "business" },
-  // Scoped admin tiers (ROLE-8/9/10) — "admin" itself was retired from account_roles by
-  // the 20260923000001 migration in favour of these three.
-  { key: "moderator", email: "authz.moderator@nexus.test", name: "Authz Moderator", roles: ["moderator"], org: null },
-  { key: "financeAdmin", email: "authz.finance@nexus.test", name: "Authz Finance Admin", roles: ["finance-admin"], org: null },
+  // Scoped admin tier
   { key: "superAdmin", email: "authz.admin@nexus.test", name: "Authz Admin", roles: ["super-admin"], org: null },
 ];
 

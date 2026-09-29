@@ -174,7 +174,7 @@ export default function SubscriptionsPage() {
           title={
             <div className="flex flex-wrap items-center gap-2">
               <IconCrown className="size-5 text-accent" />
-              <span>Active Subscription Plan</span>
+              {activePlanInfo.name === "Nexus Creator Plan" ? "Active Account Role" : "Active Subscription Plan"}
               <Badge tone={activePlanInfo.notSubscribed ? "pending" : activePlanInfo.isFree ? "outline" : "published"} size="sm">
                 {activePlanInfo.notSubscribed ? `${activePlanInfo.name} (not subscribed)` : activePlanInfo.name}
               </Badge>
@@ -186,7 +186,7 @@ export default function SubscriptionsPage() {
               : !activePlanInfo.isFree && activePlanInfo.renewsAt
                 ? `Billed ${activePlanInfo.interval} at ${formatCurrency(activePlanInfo.amount, activePlanInfo.currency)} — renews ${formatDate(activePlanInfo.renewsAt, "long")}`
                 : activePlanInfo.name === "Nexus Creator Plan"
-                  ? "Nexus Creator Plan is active on your account with full Creator Studio, video uploading, and monetization access."
+                  ? "You have full Creator Studio, video uploading, and monetization access. Note: this is a creator role, not a paid viewer subscription."
                   : "You are currently watching on the free ad-supported tier. Upgrade to unlock ad-free streaming, 4K HDR, and Family multi-profile switching."
           }
           action={
@@ -194,7 +194,7 @@ export default function SubscriptionsPage() {
               {/* Was `!isFree || notSubscribed` — backwards: that's true for a genuinely
                   active paid subscription (isFree: false, notSubscribed: false), which is
                   exactly the one case where offering to "Subscribe" makes no sense. */}
-              {activePlanInfo.isActiveSubscription ? "Change Plan" : "Subscribe"}
+              {activePlanInfo.isActiveSubscription ? "Change Plan" : activePlanInfo.name === "Nexus Creator Plan" ? "Explore Viewer Plans" : "Subscribe"}
             </Button>
           }
         />

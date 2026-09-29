@@ -22,9 +22,6 @@ export const DEVICES = ["Mobile", "Tablet", "Desktop", "Connected TV", "Console"
 
 export const PLACEMENT_FORMATS = [
   { id: "pre-roll", label: "Pre-roll", description: "Before the video starts, skippable after 5s." },
-  { id: "mid-roll", label: "Mid-roll", description: "At creator-defined break points in long-form." },
-  { id: "post-roll", label: "Post-roll", description: "After playback completes." },
-  { id: "overlay", label: "Overlay", description: "Dismissible banner across the lower third." },
   { id: "sponsored-card", label: "Sponsored card", description: "In discovery rails, labelled as sponsored." },
 ];
 

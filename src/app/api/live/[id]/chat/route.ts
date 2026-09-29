@@ -71,6 +71,9 @@ export async function POST(
     if (!(await canAccessLiveEvent(event, account?.id ?? null))) {
       return NextResponse.json({ error: "You don't have access to this stream's chat." }, { status: 403 });
     }
+    if (!event.chatEnabled && !account?.roles.includes("super-admin")) {
+      return NextResponse.json({ error: "Chat is disabled for this stream." }, { status: 403 });
+    }
     if (account && (await isLiveEventModerator(account.id, streamId, account.roles))) {
       authorRole = "creator";
     }

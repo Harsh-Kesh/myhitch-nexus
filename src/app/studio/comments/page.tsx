@@ -21,6 +21,7 @@ import { useToast } from "@/components/ui/toast";
 import { videoById } from "@/lib/mock-api/data/videos";
 import {
   useModerateComment,
+  useCommentSettings,
   useModerationComments,
   useOwnedChannelId,
 } from "@/lib/mock-api/hooks";
@@ -35,11 +36,25 @@ export default function StudioCommentsPage() {
   const moderate = useModerateComment(channelId);
   const { toast } = useToast();
 
+  const { query: settingsQuery, mutation: settingsMutation } = useCommentSettings();
+
   const [tab, setTab] = React.useState("published");
-  const [blockedWords, setBlockedWords] = React.useState(DEFAULT_BLOCKED);
+  const [blockedWords, setBlockedWords] = React.useState<string[]>(DEFAULT_BLOCKED);
   const [wordDraft, setWordDraft] = React.useState("");
   const [holdLinks, setHoldLinks] = React.useState(true);
   const [holdNewAccounts, setHoldNewAccounts] = React.useState(false);
+
+  React.useEffect(() => {
+    if (settingsQuery.data) {
+      setBlockedWords(settingsQuery.data.blockedWords);
+      setHoldLinks(settingsQuery.data.holdLinks);
+      setHoldNewAccounts(settingsQuery.data.holdNewAccounts);
+    }
+  }, [settingsQuery.data]);
+
+  const updateSettings = (updates: { holdLinks?: boolean; holdNewAccounts?: boolean; blockedWords?: string[] }) => {
+    settingsMutation.mutate(updates);
+  };
 
   const counts = {
     published: comments.filter((c) => c.status === "published").length,
@@ -252,12 +267,12 @@ export default function StudioCommentsPage() {
               <CardBody className="space-y-4">
                 <Switch
                   checked={holdLinks}
-                  onCheckedChange={setHoldLinks}
+                  onCheckedChange={(val) => { setHoldLinks(val); updateSettings({ holdLinks: val }); }}
                   label="Hold comments containing links"
                 />
                 <Switch
                   checked={holdNewAccounts}
-                  onCheckedChange={setHoldNewAccounts}
+                  onCheckedChange={(val) => { setHoldNewAccounts(val); updateSettings({ holdNewAccounts: val }); }}
                   label="Hold comments from accounts under 7 days old"
                 />
               </CardBody>
@@ -275,9 +290,7 @@ export default function StudioCommentsPage() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && wordDraft.trim()) {
                       event.preventDefault();
-                      setBlockedWords((current) =>
-                        Array.from(new Set([...current, wordDraft.trim().toLowerCase()])),
-                      );
+                      const next = Array.from(new Set([...blockedWords, wordDraft.trim().toLowerCase()])); setBlockedWords(next); updateSettings({ blockedWords: next });
                       setWordDraft("");
                     }
                   }}
@@ -291,9 +304,7 @@ export default function StudioCommentsPage() {
                       <button
                         type="button"
                         aria-label={`Remove ${word}`}
-                        onClick={() =>
-                          setBlockedWords((current) => current.filter((w) => w !== word))
-                        }
+                        onClick={() => { const next = blockedWords.filter((w) => w !== word); setBlockedWords(next); updateSettings({ blockedWords: next }); }}
                         className="-mr-1 rounded-full px-0.5 hover:text-fg"
                       >
                         ×

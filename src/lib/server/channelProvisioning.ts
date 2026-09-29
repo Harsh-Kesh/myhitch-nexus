@@ -8,6 +8,8 @@ import "server-only";
 import { query } from "./db";
 import { pickGradient } from "@/lib/utils";
 
+import { lookupAbn } from "./abnLookup";
+
 // Only the DB roles that actually mean "you run a channel/org" provision one. viewer and
 // admin have no organization of their own. Keyed on the DB role spelling (post
 // toDbRole()) — see rbac.ts; every mock role now has an identical DB spelling.
@@ -18,10 +20,6 @@ const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
   // Both the "enterprise" self-registration role and the "producer" spelling now map to
   // the real DB role "producer" (see rbac.ts's MOCK_TO_DB_ROLE) — this key is keyed on
   // that post-toDbRole() spelling, so only "producer" is ever actually looked up here.
-  // Previously mapped to "film-studio" (a real but wrong organizations.type — a genuine
-  // content-vertical value, not an Enterprise-plan marker), so every real Enterprise
-  // signup landed as a mislabeled Film Studio org instead of the real "producer" type
-  // CHANNEL_KIND_LABELS already displays as "Enterprise".
   producer: "producer",
   education: "education",
   // account_roles has one combined "organisation" role where organizations.type still
@@ -57,10 +55,34 @@ export async function provisionChannelForRole(
   // applicable," not "pending."
   const enterpriseStatus = orgType === "producer" ? "pending" : null;
 
-  // Business/Enterprise verification now happens at registration, not a separate later
-  // step (the old /business/verification review flow is gone) — collecting ABN/ACN here
-  // and marking the org verified immediately.
   const isBusinessOrEnterprise = orgType === "business" || orgType === "producer";
+  const isEducationOrOrg = orgType === "education" || orgType === "nonprofit" || orgType === "government";
+
+  let verificationStatus = isBusinessOrEnterprise ? "verified" : "unverified";
+  let abnLookupStatus: string | null = null;
+  let abnLookupEntityName: string | null = null;
+
+  if (isEducationOrOrg) {
+    if (!input.abn || !input.abn.trim()) {
+      verificationStatus = "rejected";
+      abnLookupStatus = "ABN is required for verification.";
+    } else {
+      try {
+        const result = await lookupAbn(input.abn);
+        if (result.found && result.abnStatus === "Active") {
+          verificationStatus = "verified";
+          abnLookupStatus = "verified_via_abn";
+          abnLookupEntityName = result.entityName;
+        } else {
+          verificationStatus = "rejected";
+          abnLookupStatus = result.message || "ABN is not active or not found.";
+        }
+      } catch (err) {
+        verificationStatus = "rejected";
+        abnLookupStatus = err instanceof Error ? err.message : "ABN lookup service failed.";
+      }
+    }
+  }
 
   const rows = await query<{ id: string }>(
     `insert into organizations
@@ -75,7 +97,7 @@ export async function provisionChannelForRole(
       pickGradient(`${accountId}:banner`),
       pickGradient(accountId),
       enterpriseStatus,
-      isBusinessOrEnterprise ? "verified" : "unverified",
+      verificationStatus,
     ],
   );
   const organizationId = rows[0].id;
@@ -85,11 +107,20 @@ export async function provisionChannelForRole(
     [accountId, organizationId],
   );
 
-  if (isBusinessOrEnterprise) {
+  if (isBusinessOrEnterprise || isEducationOrOrg) {
     await query(
-      `insert into organization_verification (organization_id, legal_entity_name, abn, acn, country_of_registration, submitted_at)
-       values ($1, $2, $3, $4, $5, now())`,
-      [organizationId, orgName, input.abn?.trim() || null, input.acn?.trim() || null, input.country ?? "AU"],
+      `insert into organization_verification (organization_id, legal_entity_name, abn, acn, country_of_registration, submitted_at, abn_lookup_status, abn_lookup_entity_name, abn_lookup_checked_at)
+       values ($1, $2, $3, $4, $5, now(), $6, $7, $8)`,
+      [
+        organizationId,
+        orgName,
+        input.abn?.trim() || null,
+        input.acn?.trim() || null,
+        input.country ?? "AU",
+        abnLookupStatus,
+        abnLookupEntityName,
+        isEducationOrOrg ? new Date().toISOString() : null,
+      ],
     );
   }
 

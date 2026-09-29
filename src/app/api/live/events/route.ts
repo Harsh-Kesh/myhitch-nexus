@@ -49,15 +49,21 @@ export async function POST(request: NextRequest) {
   const result = await createLiveEvent(account.id, account.channelId, {
     title: body.title,
     description: body.description,
-    accessType: body.accessType,
+    accessType: body.accessType || "public" as LiveEventAccessType,
     scheduledStart: body.scheduledStart,
   });
 
   if (result.outcome === "not_channel_member") {
     return NextResponse.json({ error: "You don't have access to this channel." }, { status: 403 });
   }
+  if (result.outcome === "not_found") {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
   if (result.outcome === "invalid") {
     return NextResponse.json({ error: result.reason }, { status: 400 });
   }
-  return NextResponse.json({ event: result.event }, { status: 201 });
+  if (result.outcome === "success") {
+    return NextResponse.json({ event: result.event }, { status: 201 });
+  }
+  return NextResponse.json({ error: "Unknown outcome" }, { status: 500 });
 }

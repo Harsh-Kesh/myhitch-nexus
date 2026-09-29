@@ -34,8 +34,6 @@ const MOCK_TO_DB_ROLE: Record<string, string> = {
   producer: "producer",
   education: "education",
   organisation: "organisation",
-  moderator: "moderator",
-  "finance-admin": "finance-admin",
   "super-admin": "super-admin",
 };
 
@@ -82,8 +80,6 @@ export function hasAnyRole(account: SessionAccount, roles: string[]): boolean {
  * pre-migration edge case that shouldn't exist for any real account any more. */
 export function describeAdminTier(roles: string[]): string {
   if (roles.includes("super-admin")) return "super-admin";
-  if (roles.includes("finance-admin")) return "finance-admin";
-  if (roles.includes("moderator")) return "moderator";
   return "admin";
 }
 

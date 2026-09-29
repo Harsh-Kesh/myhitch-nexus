@@ -85,6 +85,7 @@ interface CampaignDbRow {
   excluded_content_labels: string[];
   min_age_rating: string;
   block_user_generated: boolean;
+  decision_reason: string | null;
   created_at: string;
   submitted_at: string | null;
 }
@@ -95,7 +96,7 @@ const CAMPAIGN_SELECT = `
   c.start_date, c.end_date, c.target_countries, c.target_languages, c.target_age_bands,
   c.target_interests, c.target_category_ids, c.target_devices, c.placements,
   c.frequency_cap_impressions, c.frequency_cap_hours, c.excluded_content_labels,
-  c.min_age_rating, c.block_user_generated, c.created_at, c.submitted_at
+  c.min_age_rating, c.block_user_generated, c.created_at, c.submitted_at, c.decision_reason
 `;
 
 async function loadCreatives(campaignId: string): Promise<CampaignCreativeRow[]> {

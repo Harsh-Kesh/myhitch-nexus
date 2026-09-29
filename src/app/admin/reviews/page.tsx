@@ -32,7 +32,7 @@ import { cn, relativeTime } from "@/lib/utils";
 
 const QUEUES: Array<{ value: string; label: string }> = [
   { value: "all", label: "All" },
-  { value: "pending-review", label: "Pending review" },
+  { value: "pending-review", label: "Pending comments" },
   { value: "reported", label: "Reported" },
   { value: "copyright", label: "Copyright" },
   { value: "live-incident", label: "Live incidents" },

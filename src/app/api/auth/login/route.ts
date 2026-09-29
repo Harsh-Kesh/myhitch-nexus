@@ -40,12 +40,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "That email or password is not correct." }, { status: 401 });
   }
 
-  const accountStatus = await queryOne<{ status: string }>(`select status from accounts where id = $1`, [
-    result.accountId,
-  ]);
+  const accountStatus = await queryOne<{ status: string; verification_status?: string; abn_lookup_status?: string }>(
+    `select a.status, o.verification_status, v.abn_lookup_status
+     from accounts a
+     left join memberships m on m.account_id = a.id and m.org_role = 'owner'
+     left join organizations o on o.id = m.organization_id
+     left join organization_verification v on v.organization_id = o.id
+     where a.id = $1`,
+    [result.accountId]
+  );
+
   if (accountStatus?.status === "suspended" || accountStatus?.status === "closed") {
     return NextResponse.json(
       { error: "This account has been suspended. Contact support if you think this is a mistake." },
+      { status: 403 },
+    );
+  }
+
+  if (accountStatus?.verification_status === "rejected") {
+    return NextResponse.json(
+      { error: `Registration rejected: ${accountStatus.abn_lookup_status || "Verification failed."}` },
       { status: 403 },
     );
   }

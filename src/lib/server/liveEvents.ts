@@ -10,6 +10,7 @@ import "server-only";
 import { query, queryOne } from "./db";
 import { isChannelMember } from "./channelSettings";
 import { checkRealContentAccess } from "./subscriptions";
+import { isBlockedByProfileAgeRating } from "./commerce";
 
 export type LiveEventStatus = "scheduled" | "live" | "ended" | "cancelled";
 export type LiveEventAccessType = "public" | "private" | "ticketed" | "subscriber-only" | "invitation-only";
@@ -25,11 +26,8 @@ export interface RealLiveEvent {
   actualStart: string | null;
   endedAt: string | null;
   chatEnabled: boolean;
+  minAgeRating: string | null;
   createdAt: string;
-  // Only populated by listAllLiveEvents() below — a cross-channel listing has no other
-  // way to name the host channel (the caller doesn't already know it, unlike
-  // listChannelLiveEvents()'s caller), same denormalized-on-read shape
-  // VideoSummary.channelName already uses for the same reason (catalogue.ts).
   channelName?: string;
   channelAvatarUrl?: string | null;
   channelAvatarGradient?: [string, string];
@@ -47,6 +45,7 @@ interface LiveEventRow {
   actual_start: string | null;
   ended_at: string | null;
   chat_enabled: boolean;
+  min_age_rating: string | null;
   created_at: string;
   channel_name?: string;
   channel_avatar_url?: string | null;
@@ -66,6 +65,7 @@ function mapRow(row: LiveEventRow): RealLiveEvent {
     actualStart: row.actual_start,
     endedAt: row.ended_at,
     chatEnabled: row.chat_enabled,
+    minAgeRating: row.min_age_rating,
     createdAt: row.created_at,
     channelName: row.channel_name,
     channelAvatarUrl: row.channel_avatar_url,
@@ -100,45 +100,32 @@ export async function listAllLiveEvents(status?: LiveEventStatus): Promise<RealL
        o.avatar_gradient as channel_avatar_gradient, o.verified as channel_verified
      from live_events le
      join organizations o on o.id = le.channel_id
-     where $1::text is null or le.status = $1
-     order by
-       case le.status when 'live' then 0 when 'scheduled' then 1 when 'ended' then 2 else 3 end,
-       le.scheduled_start desc nulls last, le.created_at desc`,
-    [status ?? null],
+     ${status ? "where le.status = $1" : ""}
+     order by le.created_at desc`,
+    status ? [status] : [],
   );
   return rows.map(mapRow);
 }
 
-export type CreateLiveEventResult =
+export type LiveEventLifecycleResult =
   | { outcome: "success"; event: RealLiveEvent }
-  | { outcome: "not_channel_member" }
-  | { outcome: "invalid"; reason: string };
+  | { outcome: "invalid"; reason: string }
+  | { outcome: "not_found" }
+  | { outcome: "not_channel_member" };
 
 export async function createLiveEvent(
   accountId: string,
   channelId: string,
-  input: { title: string; description?: string | null; accessType?: LiveEventAccessType; scheduledStart?: string | null },
-): Promise<CreateLiveEventResult> {
-  if (!(await isChannelMember(accountId, channelId))) {
-    return { outcome: "not_channel_member" };
-  }
-  if (!input.title.trim() || input.title.trim().length < 3) {
-    return { outcome: "invalid", reason: "A title of at least 3 characters is required." };
-  }
+  input: { title: string; description?: string; accessType: LiveEventAccessType; scheduledStart?: string },
+): Promise<LiveEventLifecycleResult> {
+  if (!(await isChannelMember(accountId, channelId))) return { outcome: "not_channel_member" };
   const row = await queryOne<LiveEventRow>(
     `insert into live_events (channel_id, title, description, access_type, scheduled_start)
-     values ($1, $2, $3, $4, $5)
-     returning *`,
-    [channelId, input.title.trim().slice(0, 200), input.description?.trim() || null, input.accessType ?? "public", input.scheduledStart ?? null],
+     values ($1, $2, $3, $4, $5) returning *`,
+    [channelId, input.title, input.description || null, input.accessType, input.scheduledStart || null],
   );
   return { outcome: "success", event: mapRow(row!) };
 }
-
-export type LiveEventLifecycleResult =
-  | { outcome: "success"; event: RealLiveEvent }
-  | { outcome: "not_found" }
-  | { outcome: "not_channel_member" }
-  | { outcome: "invalid"; reason: string };
 
 export async function startLiveEvent(accountId: string, eventId: string): Promise<LiveEventLifecycleResult> {
   const event = await getLiveEventById(eventId);
@@ -180,15 +167,25 @@ export async function isLiveEventModerator(accountId: string, eventId: string, a
 }
 
 /** Real access-mode enforcement for reading/posting in a live event's chat or polls (SRS
- * FR-6.4.6's same "no access without a real check" spirit, applied to live rather than
- * VOD). 'ticketed' and 'invitation-only' have no real purchase/invite mechanism anywhere
- * in this codebase yet (rent/buy/PPV-style checkout is retired platform-wide under the
- * six-tier pricing model, and there's no live-specific ticketing table) — honestly denied
+ * FR-6.5.3). Checks ticket/subscription gating (if applicable) and channel membership.
+ * Note: doesn't block viewers from a public/subscriber stream if they aren't signed in,
+ * it just returns false so the route can decide if sign-in is required. Exposed here
  * to everyone but the event's own channel members rather than faked as granted, the same
  * "not built yet, not silently bypassed" stance the codebase already takes on retired VOD
  * pricing and on unbuilt payout tax handling. */
-export async function canAccessLiveEvent(event: RealLiveEvent, accountId: string | null): Promise<boolean> {
+export async function canAccessLiveEvent(
+  event: RealLiveEvent,
+  accountId: string | null,
+  profileId: string | null | undefined = undefined
+): Promise<boolean> {
   if (accountId && (await isChannelMember(accountId, event.channelId))) return true;
+
+  if (event.minAgeRating && accountId && profileId) {
+    if (await isBlockedByProfileAgeRating(accountId, event.id, profileId)) {
+      return false;
+    }
+  }
+
   switch (event.accessType) {
     case "public":
       return true;

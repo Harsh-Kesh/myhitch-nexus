@@ -563,7 +563,7 @@ export async function getFeaturedRails(accountId: string | null): Promise<Featur
     {
       id: "rail_films",
       title: "Films & cinema",
-      subtitle: "Rent, buy or watch with Premium",
+      subtitle: "Watch with Premium",
       href: "/films",
       kind: "poster",
       videos: films,

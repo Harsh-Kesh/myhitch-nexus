@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ ok: true });
   }
 
-  if (!hasAnyRole(account, ["moderator", "super-admin"])) {
+  if (!hasAnyRole(account, ["super-admin"])) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
   if (body.status !== "verified" && body.status !== "rejected") {

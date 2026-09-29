@@ -320,6 +320,15 @@ function CampaignDetail({
             />
           </div>
 
+          {campaign.status === "rejected" && campaign.decisionReason ? (
+            <div className="rounded-lg border border-danger/30 bg-danger/5 p-4 flex gap-3 text-sm text-danger">
+              <div>
+                <strong className="font-semibold block">Campaign Rejected</strong>
+                <span>{campaign.decisionReason}</span>
+              </div>
+            </div>
+          ) : null}
+
           {series.length > 0 ? (
             <Card>
               <CardHeader title="Delivery" description="Impressions and clicks by day" />

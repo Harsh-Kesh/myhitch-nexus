@@ -194,7 +194,9 @@ export function PlansClient() {
 
   const hasActiveSub = (planId: string) =>
     subscriptions.some(
-      (s) => s.status === "active" && (s.id.includes(planId) || s.name.toLowerCase().includes(planId)),
+      (s) =>
+        s.status === "active" &&
+        (s.plan ? s.plan === planId : s.id.includes(planId) || s.name.toLowerCase().includes(planId)),
     );
 
   const hasPaidViewerSub = hasActiveSub("family") || hasActiveSub("premium");
@@ -388,10 +390,17 @@ export function PlansClient() {
             }
           } else if (plan.id === "premium") {
             const isSubbed = hasActiveSub("premium");
+            const hasFamily = hasActiveSub("family");
             if (isSubbed) activeBadge = "Active Plan";
+            else if (hasFamily) activeBadge = "Included";
+            
             ctaContent = isSubbed ? (
               <Button variant="outline" block disabled className="opacity-70">
                 Current Plan
+              </Button>
+            ) : hasFamily ? (
+              <Button variant="outline" block disabled className="opacity-70">
+                Included with Family
               </Button>
             ) : (
               <Button

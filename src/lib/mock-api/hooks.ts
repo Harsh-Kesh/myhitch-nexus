@@ -1420,3 +1420,24 @@ export function useSubmitOrganizationVerification(organizationId: string) {
     onSuccess: () => client.invalidateQueries({ queryKey: qk.organizationVerification(organizationId) }),
   });
 }
+
+
+export function useCommentSettings() {
+  const queryClient = useQueryClient();
+  const query = useQuery({
+    queryKey: ['comment-settings'],
+    queryFn: async () => {
+      const res = await fetch('/api/studio/comments/settings');
+      if (!res.ok) throw new Error('Failed to load settings');
+      return res.json() as Promise<{ holdLinks: boolean, holdNewAccounts: boolean, blockedWords: string[] }>;
+    }
+  });
+  const mutation = useMutation({
+    mutationFn: async (data: { holdLinks?: boolean, holdNewAccounts?: boolean, blockedWords?: string[] }) => {
+      const res = await fetch('/api/studio/comments/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      if (!res.ok) throw new Error('Failed to save settings');
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['comment-settings'] })
+  });
+  return { query, mutation };
+}

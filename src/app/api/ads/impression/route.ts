@@ -41,8 +41,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "Campaign or video not found." }, { status: 404 });
       case "budget_exhausted":
         return NextResponse.json({ error: "This campaign has no budget remaining." }, { status: 409 });
-      case "success":
-        return NextResponse.json({ impressionId: result.impressionId }, { status: 201 });
+      case "success": {
+        const response = NextResponse.json({ impressionId: result.impressionId }, { status: 201 });
+        if (!account) {
+          const current = parseInt(request.cookies.get("_nx_anon_ad_freq")?.value || "0", 10);
+          response.cookies.set("_nx_anon_ad_freq", String(current + 1), { httpOnly: true, sameSite: "lax" });
+        }
+        return response;
+      }
     }
   } catch (err) {
     console.error("POST /api/ads/impression failed", err);
