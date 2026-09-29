@@ -3,12 +3,14 @@
 // two personalized ones ("Continue watching", "From channels you follow").
 import { NextResponse, type NextRequest } from "next/server";
 import { getFeaturedRails } from "@/lib/server/catalogue";
+import { verifyOwnProfileId } from "@/lib/server/familyProfiles";
 import { getRequestAccount } from "@/lib/server/rbac";
 
 export async function GET(request: NextRequest) {
   try {
     const account = await getRequestAccount(request);
-    const featured = await getFeaturedRails(account?.id ?? null);
+    const profileId = account ? await verifyOwnProfileId(account.id, request.nextUrl.searchParams.get("profileId")) : null;
+    const featured = await getFeaturedRails(account?.id ?? null, profileId);
     return NextResponse.json(featured);
   } catch (err) {
     console.error("GET /api/home failed", err);

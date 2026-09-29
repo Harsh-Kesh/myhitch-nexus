@@ -349,36 +349,7 @@ export function SiteHeader() {
                     <p className="truncate text-sm font-medium text-fg">{user.name}</p>
                     <p className="truncate text-xs text-fg-subtle">{user.email}</p>
                   </div>
-                  {hasFamilyPlan && user.profiles.length > 1 ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuLabel>Viewing as</MenuLabel>
-                      {user.profiles.map((profile) => (
-                        <MenuItem
-                          key={profile.id}
-                          active={profile.id === user.activeProfileId}
-                          onClick={() => handleSelectProfile(profile)}
-                          icon={
-                            <Avatar
-                              name={profile.name}
-                              gradient={profile.avatarGradient}
-                              src={profile.avatarUrl}
-                              size="xs"
-                            />
-                          }
-                          trailing={
-                            profile.kind !== "adult" ? (
-                              <Badge tone="outline" size="sm">
-                                {profile.maxAgeRating}
-                              </Badge>
-                            ) : undefined
-                          }
-                        >
-                          {profile.name}
-                        </MenuItem>
-                      ))}
-                    </>
-                  ) : null}
+                  
                   {hasFamilyPlan ? (
                     <>
                       <MenuSeparator />

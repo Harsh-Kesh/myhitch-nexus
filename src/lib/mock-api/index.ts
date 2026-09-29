@@ -88,7 +88,10 @@ const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 // the query-by-query breakdown, including why "hero" is most-viewed rather than an
 // editorial pick (no curated-featured flag exists in the real schema).
 export async function getFeaturedContent(): Promise<FeaturedContent> {
-  const res = await fetch("/api/home/");
+  const profileParam = looksLikeRealId(store.user.activeProfileId ?? "")
+    ? `?profileId=${encodeURIComponent(store.user.activeProfileId!)}`
+    : "";
+  const res = await fetch(`/api/home/${profileParam}`);
   if (!res.ok) {
     throw new Error(`GET /api/home failed with ${res.status}`);
   }
@@ -3741,7 +3744,15 @@ export async function getCurrentUser(): Promise<User | null> {
 
   if (looksLikeRealId(data.account.id)) {
     try {
-      const pRes = await fetch("/api/account/profiles");
+      const sRes = await fetch("/api/account/settings");
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          if (sData.notificationPreferences) store.user.notificationPreferences = sData.notificationPreferences;
+          if (sData.privacy) store.user.privacy = sData.privacy;
+          if (sData.parentalControls) store.user.parentalControls = sData.parentalControls;
+        }
+        
+        const pRes = await fetch("/api/account/profiles");
       if (pRes.ok) {
         const pData = (await pRes.json()) as {
           profiles: Array<{
@@ -3814,6 +3825,20 @@ export async function updateUser(patch: Partial<User>): Promise<User> {
   Object.assign(store.user, patch);
 
   if (looksLikeRealId(store.user.id)) {
+    const settingsPatch: any = {};
+    if ("notificationPreferences" in patch) settingsPatch.notificationPreferences = patch.notificationPreferences;
+    if ("privacy" in patch) settingsPatch.privacy = patch.privacy;
+    if ("parentalControls" in patch) settingsPatch.parentalControls = patch.parentalControls;
+
+    if (Object.keys(settingsPatch).length > 0) {
+      const sRes = await fetch("/api/account/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settingsPatch),
+      });
+      if (!sRes.ok) throw new Error("Failed to update settings");
+    }
+
     const realPatch: Partial<Record<(typeof REAL_ACCOUNT_FIELDS)[number], unknown>> = {};
     for (const key of REAL_ACCOUNT_FIELDS) {
       if (key in patch) realPatch[key] = patch[key];
@@ -4096,390 +4121,18 @@ export async function resumeSubscription(id: string): Promise<Subscription | nul
 }
 
 export async function getNotifications(): Promise<AppNotification[]> {
-  await latency("fast");
-  return clone(store.notifications);
-}
+    const res = await fetch("/api/notifications");
+    if (!res.ok) throw new Error("Failed to load notifications");
+    return res.json();
+  }
 
 export async function markNotificationRead(id: string): Promise<void> {
-  const notification = store.notifications.find((item) => item.id === id);
-  if (notification) notification.read = true;
-}
+    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+  }
 
 export async function markAllNotificationsRead(): Promise<void> {
-  store.notifications.forEach((notification) => {
-    notification.read = true;
-  });
-}
-
-/* ------------------------------- Auth ---------------------------------- */
-
-// Live 2026-09-15 — real account creation + session issuance via POST /api/auth/register
-// (src/lib/server/localPassword.ts + session.ts), a temporary local-password front door
-// standing in for Auth0 while shared-tenant access is blocked (docs/DEVELOPMENT-PLAN.md
-// §9, blocker #2). Deliberately narrow: this covers identity/session/roles only, not the
-// rest of the registration wizard's steps (org verification documents, MFA enrollment,
-// mobile OTP) — those still need P2's document storage, real Auth0 MFA and an SMS
-// provider respectively, so they stay exactly the cosmetic mock UI they already were.
-export async function register(payload: {
-  name: string;
-  email: string;
-  password: string;
-  role: User["activeRole"];
-  country: string;
-  acceptedTerms: boolean;
-  orgName?: string;
-  abn?: string;
-  acn?: string;
-}): Promise<{ userId: string; verificationRequired: true }> {
-  const res = await fetch("/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "Could not create your account.");
+    await fetch("/api/notifications", { method: "POST" });
   }
-  const data = (await res.json()) as { userId: string; verificationRequired: true };
-
-  store.user = {
-    ...store.user,
-    id: data.userId,
-    name: payload.name,
-    email: payload.email,
-    country: payload.country,
-    activeRole: payload.role,
-    roles: Array.from(new Set([...store.user.roles, payload.role])),
-    emailVerified: false,
-    mobileVerified: false,
-  };
-  store.loggedIn = true;
-  persistLogin(true);
-  return data;
-}
-
-/** Mock OTP. The code is always 000000 and is shown in the UI on purpose. Still mock —
- * see register()'s comment above on why: no SMS/email provider exists yet to send a real
- * one, and this was never blocking anything real either way. */
-export const MOCK_OTP = "000000";
-
-export async function verifyOtp(code: string): Promise<{ ok: boolean; message?: string }> {
-  await latency();
-  if (code.replace(/\s/g, "") !== MOCK_OTP) {
-    return { ok: false, message: "That code is not correct. Use 000000 for this demo." };
-  }
-  store.user.emailVerified = true;
-  store.user.mobileVerified = true;
-  return { ok: true };
-}
-
-// Live 2026-09-15 — real credential check + session issuance via POST /api/auth/login.
-// Same temporary-local-password caveat as register() above.
-export async function login(payload: {
-  email: string;
-  password: string;
-  remember?: boolean;
-}): Promise<User> {
-  const res = await fetch("/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "Could not sign you in.");
-  }
-  const data = (await res.json()) as { account: RealAccount };
-
-  applyRealAccount(data.account);
-  store.loggedIn = true;
-  persistLogin(true);
-  return clone(store.user);
-}
-
-export async function logout(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {
-    // Best-effort: even if the network call fails, the client still forgets the
-    // session below — worst case a still-valid server-side session outlives this tab,
-    // which expires on its own (session.ts's expiry) rather than leaking access.
-  });
-  store.loggedIn = false;
-  persistLogin(false);
-  persistActiveProfile(null);
-}
-
-/* ------------------------------ Magazine -------------------------------- */
-// Always real — no mock predecessor. Authoring-only: Nexus composes an article and
-// submits it to MYHitch Lens (a separate platform); there is no Nexus-hosted public
-// magazine or admin review — see docs/DEVELOPMENT-PLAN.md's 2026-09-16 correction entry
-// and src/lib/server/lensIntegration.ts.
-async function magazineFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${path} failed with ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-export async function getMyMagazineArticles(): Promise<MagazineArticle[]> {
-  const data = await magazineFetch<{ items: MagazineArticle[] }>("/api/magazine/articles/");
-  return data.items;
-}
-
-export async function createMagazineArticle(payload: {
-  aboutTitle: string;
-  videoId?: string | null;
-  title: string;
-  dek?: string;
-}): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>("/api/magazine/articles/", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getMagazineArticle(id: string): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/`);
-}
-
-export async function updateMagazineArticle(
-  id: string,
-  patch: { title?: string; dek?: string | null; bodyHtml?: string; aboutTitle?: string },
-): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
-}
-
-export async function submitMagazineArticle(id: string): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/submit/`, { method: "POST" });
-}
-
-export async function withdrawMagazineArticle(id: string): Promise<MagazineArticle> {
-  return magazineFetch<MagazineArticle>(`/api/magazine/articles/${id}/withdraw/`, { method: "POST" });
-}
-
-/* --------------------------- Sponsorship ("Exchange Hub") ---------------- */
-// Always real, same as Magazine above — no mock predecessor exists for this feature.
-// Authoring-only: Exchange Hub itself lives on MYHitch Connect (a separate platform);
-// there is no Nexus-hosted public listing page, admin review, or sponsor inquiry inbox —
-// see docs/DEVELOPMENT-PLAN.md's 2026-09-16 correction entry.
-async function sponsorshipFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${path} failed with ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-export async function getMySponsorshipListings(): Promise<SponsorshipListing[]> {
-  const data = await sponsorshipFetch<{ items: SponsorshipListing[] }>("/api/sponsorship/listings/");
-  return data.items;
-}
-
-export async function createSponsorshipListing(payload: {
-  videoId?: string | null;
-  projectName: string;
-}): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>("/api/sponsorship/listings/", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getSponsorshipListing(id: string): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/`);
-}
-
-export async function updateSponsorshipListing(
-  id: string,
-  patch: { projectName?: string; pitchHtml?: string; videoId?: string | null; rewardTypes?: SponsorshipRewardType[] },
-): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-  });
-}
-
-export async function submitSponsorshipListing(id: string): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/submit/`, { method: "POST" });
-}
-
-export async function withdrawSponsorshipListing(id: string): Promise<SponsorshipListing> {
-  return sponsorshipFetch<SponsorshipListing>(`/api/sponsorship/listings/${id}/withdraw/`, { method: "POST" });
-}
-
-/* ---------------- Organisation verification (2026-09-17) ------------------ */
-// Real for a real organisation only — no mock counterpart. The free half of
-// docs/DEVELOPMENT-PLAN.md's 2026-09-17 entry: ABN Lookup, documents and the
-// declaration/submission gate. ID verification, bank validation and risk screening are
-// deliberately not built here (paid vendors, not yet approved).
-
-export interface OrganizationVerification {
-  organizationId: string;
-  legalEntityName: string | null;
-  tradingName: string | null;
-  abn: string | null;
-  acn: string | null;
-  entityType: string | null;
-  gstRegistered: boolean | null;
-  businessRegistrationDate: string | null;
-  countryOfRegistration: string;
-  registeredAddress: string | null;
-  principalAddress: string | null;
-  operatingLocations: string | null;
-  addressSameAsRegistered: boolean;
-  contactFullName: string | null;
-  contactPosition: string | null;
-  contactEmail: string | null;
-  contactMobile: string | null;
-  authorisedPersonName: string | null;
-  authorisedPersonPosition: string | null;
-  industry: string | null;
-  businessDescription: string | null;
-  website: string | null;
-  platforms: string[];
-  productsServices: string | null;
-  informationAccurate: boolean;
-  authorityConfirmed: boolean;
-  termsAccepted: boolean;
-  privacyAccepted: boolean;
-  abnLookupCheckedAt: string | null;
-  abnLookupStatus: string | null;
-  abnLookupEntityName: string | null;
-  abnLookupEntityType: string | null;
-  abnLookupGstEffectiveFrom: string | null;
-  abnLookupState: string | null;
-  abnLookupPostcode: string | null;
-  abnLookupAcn: string | null;
-  abnLookupStatusEffectiveFrom: string | null;
-  submittedAt: string | null;
-  status: string;
-}
-
-export type OrganizationVerificationDraft = Partial<
-  Omit<
-    OrganizationVerification,
-    | "organizationId"
-    | "abnLookupCheckedAt"
-    | "abnLookupStatus"
-    | "abnLookupEntityName"
-    | "abnLookupEntityType"
-    | "abnLookupGstEffectiveFrom"
-    | "abnLookupState"
-    | "abnLookupPostcode"
-    | "abnLookupAcn"
-    | "abnLookupStatusEffectiveFrom"
-    | "submittedAt"
-    | "status"
-  >
->;
-
-export interface AbnLookupResult {
-  found: boolean;
-  message: string;
-  abn: string;
-  abnStatus: string;
-  abnStatusEffectiveFrom: string | null;
-  acn: string;
-  entityName: string;
-  entityTypeCode: string;
-  entityTypeName: string;
-  gstEffectiveFrom: string | null;
-  addressState: string;
-  addressPostcode: string;
-}
-
-export interface VerificationDocument {
-  id: string;
-  documentType: string;
-  fileName: string;
-  uploadedAt: string;
-  url: string;
-}
-
-async function verificationFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${path} failed with ${res.status}`);
-  }
-  return res.json() as Promise<T>;
-}
-
-export async function getOrganizationVerification(organizationId: string): Promise<OrganizationVerification> {
-  if (looksLikeRealId(organizationId)) {
-    return verificationFetch<OrganizationVerification>(
-      `/api/studio/organization/verification/?organizationId=${encodeURIComponent(organizationId)}`,
-    );
-  }
-  const channel = store.channels.find((c) => c.id === organizationId || c.handle === organizationId);
-  return {
-    organizationId,
-    legalEntityName: "Nexus Enterprise Demo Pty Ltd",
-    tradingName: null,
-    abn: "51 824 753 556",
-    acn: null,
-    entityType: "Company",
-    gstRegistered: true,
-    businessRegistrationDate: null,
-    countryOfRegistration: "AU",
-    registeredAddress: null,
-    principalAddress: null,
-    operatingLocations: null,
-    addressSameAsRegistered: true,
-    contactFullName: null,
-    contactPosition: null,
-    contactEmail: null,
-    contactMobile: null,
-    authorisedPersonName: null,
-    authorisedPersonPosition: null,
-    industry: null,
-    businessDescription: null,
-    website: null,
-    platforms: [],
-    productsServices: null,
-    informationAccurate: false,
-    authorityConfirmed: false,
-    termsAccepted: false,
-    privacyAccepted: false,
-    abnLookupCheckedAt: null,
-    abnLookupStatus: null,
-    abnLookupEntityName: null,
-    abnLookupEntityType: null,
-    abnLookupGstEffectiveFrom: null,
-    abnLookupState: null,
-    abnLookupPostcode: null,
-    abnLookupAcn: null,
-    abnLookupStatusEffectiveFrom: null,
-    submittedAt: null,
-    status: channel?.verificationStatus ?? "unverified",
-  };
-}
-
-export async function saveOrganizationVerificationDraft(
-  organizationId: string,
-  draft: OrganizationVerificationDraft,
-): Promise<void> {
-  if (looksLikeRealId(organizationId)) {
-    await verificationFetch("/api/studio/organization/verification/", {
-      method: "PATCH",
-      body: JSON.stringify({ organizationId, ...draft }),
-    });
-  }
-}
 
 export async function runOrganizationAbnLookup(organizationId: string, abn: string): Promise<AbnLookupResult> {
   if (looksLikeRealId(organizationId)) {

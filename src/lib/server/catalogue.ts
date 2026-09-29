@@ -501,8 +501,8 @@ export interface FeaturedCatalogue {
  * "hero" is the most-viewed published videos rather than an editorial pick — a
  * defensible, data-driven stand-in for what a human curator would otherwise choose.
  */
-export async function getFeaturedRails(accountId: string | null): Promise<FeaturedCatalogue> {
-  const continueEntries = accountId ? await getContinueWatchingVideos(accountId) : [];
+export async function getFeaturedRails(accountId: string | null, profileId: string | null = null): Promise<FeaturedCatalogue> {
+  const continueEntries = accountId ? await getContinueWatchingVideos(accountId, profileId) : [];
   const continueVideos = continueEntries
     .filter((entry) => !entry.progress.completed)
     .map((entry) => entry.video)
