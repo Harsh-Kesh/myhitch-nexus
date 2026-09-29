@@ -14,6 +14,7 @@ import { MultiSelect } from "@/components/ui/multi-select";
 import { useToast } from "@/components/ui/toast";
 import { Poster } from "@/components/video/poster";
 import { looksLikeRealId } from "@/lib/mock-api";
+import type { ChannelKind } from "@/lib/mock-api/types";
 import { CHANNEL_KIND_LABELS } from "@/lib/mock-api/data/channels";
 import { useChannel, useOwnedChannelId, useUpdateChannel } from "@/lib/mock-api/hooks";
 import type { TeamOverview } from "@/lib/server/teamInvitations";
@@ -115,7 +116,7 @@ export default function ChannelSettingsPage() {
 
   const saveProfile = () => {
     updateChannel.mutate(
-      { name, handle, tagline, about, contactEmail, languages, country, kind },
+      { name, handle, tagline, about, contactEmail, languages, country, kind: kind as ChannelKind },
       {
         onSuccess: () => toast({ title: "Channel settings saved" }),
         onError: (error) =>

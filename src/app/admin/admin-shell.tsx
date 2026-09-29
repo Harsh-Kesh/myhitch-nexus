@@ -38,7 +38,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // the same render pass as this shell, before that hydration has happened, and
   // permanently cache the wrong (mock) branch's result — found by actually logging
   // in as a real admin and seeing the seeded mock queue instead of the real one.
-  const { data: currentUser, isLoading: isUserLoading } = useCurrentUser();
+  const { isLoading: isUserLoading } = useCurrentUser();
   const { data: summary } = useAdminSummary();
 
     const reviewCount =

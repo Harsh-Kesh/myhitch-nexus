@@ -2,7 +2,6 @@
 
 import {
   IconBroadcast,
-  IconBuildingCommunity,
   IconCoin,
   IconCopyright,
   IconFlag,
