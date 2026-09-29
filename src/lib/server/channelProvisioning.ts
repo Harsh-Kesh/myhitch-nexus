@@ -37,10 +37,21 @@ const ROLE_TO_ORG_TYPE: Partial<Record<string, string>> = {
 export async function provisionChannelForRole(
   accountId: string,
   dbRole: string,
-  input: { name: string; country: string | null; email: string; orgName?: string; abn?: string; acn?: string },
+  input: { name: string; country: string | null; email: string; orgName?: string; abn?: string; acn?: string; industry?: string },
 ): Promise<string | null> {
   const orgType = ROLE_TO_ORG_TYPE[dbRole];
   if (!orgType) return null;
+
+  let finalOrgType = orgType;
+  if (dbRole === 'business' || dbRole === 'producer' || dbRole === 'advertiser') {
+    if (input.industry === 'film-studio' || input.industry === 'news') {
+      finalOrgType = input.industry;
+    }
+  } else if (dbRole === 'organisation') {
+    if (input.industry === 'government') {
+      finalOrgType = 'government';
+    }
+  }
 
   // A business/enterprise registrant's own name and their company's name are two
   // different things (the registration wizard's "Organisation" step collects orgName
@@ -55,8 +66,8 @@ export async function provisionChannelForRole(
   // applicable," not "pending."
   const enterpriseStatus = orgType === "producer" ? "pending" : null;
 
-  const isBusinessOrEnterprise = orgType === "business" || orgType === "producer";
-  const isEducationOrOrg = orgType === "education" || orgType === "nonprofit" || orgType === "government";
+  const isBusinessOrEnterprise = dbRole === "business" || dbRole === "producer" || dbRole === "advertiser";
+  const isEducationOrOrg = dbRole === "education" || dbRole === "organisation";
 
   let verificationStatus = isBusinessOrEnterprise ? "verified" : "unverified";
   let abnLookupStatus: string | null = null;
@@ -91,7 +102,7 @@ export async function provisionChannelForRole(
      returning id`,
     [
       orgName,
-      orgType,
+      finalOrgType,
       input.country,
       input.email,
       pickGradient(`${accountId}:banner`),

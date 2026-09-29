@@ -48,6 +48,7 @@ interface RegisterBody {
   orgName?: string;
   abn?: string;
   acn?: string;
+  industry?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
     orgName: body.orgName?.trim(),
     abn,
     acn: body.acn?.trim(),
+    industry: body.industry?.trim(),
   });
 
   // Enterprise has no self-serve checkout — registering with this role is the sales

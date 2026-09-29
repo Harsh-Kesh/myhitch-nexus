@@ -183,6 +183,7 @@ export default function RegisterPage() {
   // Organisation
   const [orgName, setOrgName] = React.useState("");
   const [orgNumber, setOrgNumber] = React.useState("");
+  const [industry, setIndustry] = React.useState("");
   const [acn, setAcn] = React.useState("");
   const [orgRep, setOrgRep] = React.useState("");
   const [orgRepEmail, setOrgRepEmail] = React.useState("");
@@ -277,7 +278,7 @@ export default function RegisterPage() {
         role,
         country,
         acceptedTerms,
-        ...(needsOrg ? { orgName, abn: needsAbn ? orgNumber : undefined, acn: needsAbn ? acn : undefined } : {}),
+        ...(needsOrg ? { orgName, abn: needsAbn ? orgNumber : undefined, acn: needsAbn ? acn : undefined, industry: industry || undefined } : {}),
       });
       toast({
         title: "Account created",
@@ -678,7 +679,31 @@ export default function RegisterPage() {
                   placeholder={needsAbn ? "51 824 753 556" : "GB-CO-07741220"}
                 />
               </Field>
-              {needsAbn ? (
+
+            {role !== "education" && (
+              <Field label="Industry vertical" htmlFor="industry" hint="Optional. Helps us categorize your channel content.">
+                <Select
+                  id="industry"
+                  value={industry}
+                  onChange={(event) => setIndustry(event.target.value)}
+                >
+                  {role === "organisation" ? (
+                    <>
+                      <option value="">Non-profit (Default)</option>
+                      <option value="government">Government</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="">General</option>
+                      <option value="film-studio">Film studio</option>
+                      <option value="news">News organisation</option>
+                    </>
+                  )}
+                </Select>
+              </Field>
+            )}
+
+{needsAbn ? (
                 <Field label="ACN" htmlFor="org-acn" hint="If your business has one.">
                   <Input id="org-acn" value={acn} onChange={(event) => setAcn(event.target.value)} placeholder="000 000 000" />
                 </Field>
@@ -852,6 +877,7 @@ export default function RegisterPage() {
                   {needsOrg ? (
                     <>
                       <Row label="Organisation" value={orgName || "—"} />
+                        {industry && <Row label="Industry" value={industry} />}
                       <Row label={needsAbn ? "ABN" : "Registration number"} value={orgNumber || "—"} />
                       {!needsAbn ? (
                         <Row

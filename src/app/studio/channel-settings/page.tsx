@@ -57,6 +57,7 @@ export default function ChannelSettingsPage() {
   const [contactEmail, setContactEmail] = React.useState("");
   const [languages, setLanguages] = React.useState<string[]>([]);
   const [country, setCountry] = React.useState("GB");
+  const [kind, setKind] = React.useState("");
 
   const [adsEnabled, setAdsEnabled] = React.useState(true);
   const [commentsEnabled, setCommentsEnabled] = React.useState(true);
@@ -94,6 +95,7 @@ export default function ChannelSettingsPage() {
     setContactEmail(channel.contactEmail);
     setLanguages(channel.languages);
     setCountry(channel.country);
+    setKind(channel.kind);
   }, [channel]);
 
   React.useEffect(resetFromChannel, [resetFromChannel]);
@@ -113,7 +115,7 @@ export default function ChannelSettingsPage() {
 
   const saveProfile = () => {
     updateChannel.mutate(
-      { name, handle, tagline, about, contactEmail, languages, country },
+      { name, handle, tagline, about, contactEmail, languages, country, kind },
       {
         onSuccess: () => toast({ title: "Channel settings saved" }),
         onError: (error) =>
