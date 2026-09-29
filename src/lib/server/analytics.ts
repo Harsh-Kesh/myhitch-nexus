@@ -207,6 +207,7 @@ function pctChange(current: number, previous: number): number | null {
 export async function getRealCreatorAnalytics(
   channelId: string,
   range: AnalyticsRange,
+  videoId?: string | null
 ): Promise<RealCreatorAnalytics> {
   const days = RANGE_DAYS[range];
   const now = new Date();
@@ -501,6 +502,7 @@ export async function getPlatformAnalytics(range: AnalyticsRange): Promise<Platf
   const prior = sumTotals(priorRows);
 
   const topVideos = [...currentRows]
+    .filter((row) => !videoId || row.video_id === videoId)
     .map((row) => ({
       videoId: row.video_id,
       title: row.title,
