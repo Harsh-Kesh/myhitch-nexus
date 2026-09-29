@@ -350,14 +350,40 @@ export function SiteHeader() {
                     <p className="truncate text-xs text-fg-subtle">{user.email}</p>
                   </div>
                   
-                  {hasFamilyPlan ? (
-                    <>
-                      <MenuSeparator />
-                      <MenuItem href="/switch-profile" icon={<IconUsers />}>
-                        Switch Profile
-                      </MenuItem>
-                    </>
-                  ) : null}
+                  {hasFamilyPlan ? (() => {
+  const activeProfile = user.profiles.find((p) => p.id === user.activeProfileId) || user.profiles[0];
+  if (!activeProfile) return null;
+  return (
+    <>
+      <MenuSeparator />
+      <MenuLabel>Viewing as</MenuLabel>
+      <MenuItem
+        active
+        icon={
+          <Avatar
+            name={activeProfile.name}
+            gradient={activeProfile.avatarGradient}
+            src={activeProfile.avatarUrl}
+            size="xs"
+          />
+        }
+        trailing={
+          activeProfile.kind !== "adult" ? (
+            <Badge tone="outline" size="sm">
+              {activeProfile.maxAgeRating}
+            </Badge>
+          ) : undefined
+        }
+      >
+        {activeProfile.name}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem href="/switch-profile" icon={<IconUsers />}>
+        Switch Profile
+      </MenuItem>
+    </>
+  );
+})() : null}
                   <MenuSeparator />
                 </>
                 <MenuItem href="/account/profile" icon={<IconUser />}>

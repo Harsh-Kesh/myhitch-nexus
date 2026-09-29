@@ -1168,7 +1168,11 @@ export function useSwitchProfile() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: api.switchProfile,
-    onSuccess: () => client.invalidateQueries({ queryKey: qk.user }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: qk.user });
+      client.invalidateQueries({ queryKey: qk.featured });
+      client.invalidateQueries({ queryKey: ["continue-watching"] });
+    },
   });
 }
 
