@@ -743,7 +743,7 @@ export async function startCheckout(videoId: string, kind: "buy" | "rent" | "ppv
   }
   
   // Mock behavior
-  await delay(800);
+  await latency("fast");
   // Just simulate success by not throwing
   return;
 }
@@ -4602,3 +4602,4 @@ export async function submitOrganizationVerification(organizationId: string): Pr
 }
 
 export { NOW };
+
