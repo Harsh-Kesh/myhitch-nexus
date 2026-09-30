@@ -1520,7 +1520,7 @@ function PurchaseModal({
               price={`${(video.pricing.rentPrice.amount / 100).toFixed(2)} ${video.pricing.rentPrice.currency}`}
               icon={<IconPlayerPlay />}
               loading={loading}
-              onClick={() => onRentOrBuy("rent")}
+              onSelect={() => onRentOrBuy("rent")}
             />
           )}
           {video.pricing?.buyPrice && (
@@ -1530,7 +1530,7 @@ function PurchaseModal({
               price={`${(video.pricing.buyPrice.amount / 100).toFixed(2)} ${video.pricing.buyPrice.currency}`}
               icon={<IconStarFilled />}
               loading={loading}
-              onClick={() => onRentOrBuy("buy")}
+              onSelect={() => onRentOrBuy("buy")}
             />
           )}
 
