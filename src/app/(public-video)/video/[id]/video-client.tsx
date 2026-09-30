@@ -13,7 +13,7 @@ import {
   IconFlag,
   IconLink,
   IconLoader2,
-  IconPlay,
+  IconPlayerPlay,
   IconPlaylist,
   IconPlus,
   IconShare3,
@@ -1516,7 +1516,7 @@ function PurchaseModal({
               title="Rent Video"
               description={`48-hour access to ${video.title}`}
               price={`${(video.pricing.rentPrice.amount / 100).toFixed(2)} ${video.pricing.rentPrice.currency}`}
-              icon={<IconPlay />}
+              icon={<IconPlayerPlay />}
               loading={loading}
               onClick={() => onRentOrBuy("rent")}
             />
@@ -1996,3 +1996,5 @@ function ReportModal({
     </Modal>
   );
 }
+
+
