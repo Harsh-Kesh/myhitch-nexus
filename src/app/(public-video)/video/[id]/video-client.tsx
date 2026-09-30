@@ -1490,12 +1490,14 @@ function PurchaseModal({
   video,
   loading,
   onSubscribe,
-}: {
+    onRentOrBuy,
+  }: {
   open: boolean;
   onClose: () => void;
   video: Video;
   loading: boolean;
   onSubscribe: (plan: "premium" | "family") => void;
+    onRentOrBuy: (kind: "rent" | "buy") => void;
 }) {
   return (
     <Modal
@@ -1996,6 +1998,8 @@ function ReportModal({
     </Modal>
   );
 }
+
+
 
 
 
