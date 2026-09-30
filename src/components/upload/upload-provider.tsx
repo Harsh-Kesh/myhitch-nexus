@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/progress";
 import { useToast } from "@/components/ui/toast";
+import { useCurrentUser } from "@/lib/mock-api/hooks";
 
 export interface UploadDraftData {
   title: string;
@@ -48,6 +49,7 @@ export interface ActiveUpload {
   furthestStep: number;
   draftData: UploadDraftData;
   startedAt: string;
+  accountId?: string;
 }
 
 interface UploadContextValue {
@@ -97,6 +99,9 @@ export const useUploadContext = () => React.useContext(UploadContext);
 export function UploadProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { toast } = useToast();
+  const { data: currentUser } = useCurrentUser();
+  const currentUserIdRef = React.useRef(currentUser?.id);
+  React.useEffect(() => { currentUserIdRef.current = currentUser?.id; }, [currentUser?.id]);
 
   const [activeUpload, setActiveUpload] = React.useState<ActiveUpload | null>(null);
   const [widgetDismissed, setWidgetDismissed] = React.useState(false);
@@ -149,7 +154,8 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
           nextPhase = "ready";
           if (!toastFiredRef.current) {
             toastFiredRef.current = true;
-            toast({
+            if (!current.accountId || current.accountId === currentUserIdRef.current) {
+              toast({
               title: "Upload & Transcoding Complete!",
               description: `'${current.draftData.title || current.fileName}' has finished processing and is saved as a draft. Click to review & publish.`,
             });
@@ -176,6 +182,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
 
       const newUpload: ActiveUpload = {
         id: `upload_${Date.now()}`,
+        accountId: currentUserIdRef.current,
         fileName: file.name,
         fileSize: file.size,
         kind: file.kind ?? "video",
@@ -280,7 +287,7 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
       {children}
 
       {/* Floating Background Upload Progress Widget */}
-      {activeUpload && !widgetDismissed && activeUpload.phase !== "idle" ? (
+      {activeUpload && !widgetDismissed && activeUpload.phase !== "idle" && (!activeUpload.accountId || activeUpload.accountId === currentUser?.id) ? (
         <div className="fixed bottom-5 right-5 z-[99] flex w-80 max-w-[calc(100vw-2.5rem)] flex-col gap-2 rounded-xl border border-border bg-surface-2/95 p-3.5 shadow-2xl backdrop-blur-md transition-all animate-slide-up">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
