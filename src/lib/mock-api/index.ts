@@ -723,6 +723,31 @@ function buildSubscriptionSnapshot(
  * only ever starts or changes one of the three paid platform plans. `interval` defaults
  * to monthly; Family has no yearly option in the pricing model, same restriction the
  * real checkout route enforces. */
+
+export async function startCheckout(videoId: string, kind: "buy" | "rent" | "ppv"): Promise<void> {
+  if (store.loggedIn && looksLikeRealId(store.user.id)) {
+    const res = await fetch(`/api/videos/${videoId}/checkout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return new Promise<void>(() => {});
+      }
+    }
+    const err = await res.json().catch(() => ({ error: "Checkout failed" }));
+    throw new Error(err.error || "Checkout failed");
+  }
+  
+  // Mock behavior
+  await delay(800);
+  // Just simulate success by not throwing
+  return;
+}
+
 export async function startSubscription(
   plan: "premium" | "family" | "business",
   interval: "month" | "year" = "month",

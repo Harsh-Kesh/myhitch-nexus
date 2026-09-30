@@ -13,6 +13,7 @@ import {
   IconFlag,
   IconLink,
   IconLoader2,
+  IconPlay,
   IconPlaylist,
   IconPlus,
   IconShare3,
@@ -64,6 +65,7 @@ import {
   useReportVideo,
   useToggleCommentLike,
   useStartSubscription,
+  useCheckout,
   useToggleFollow,
   useToggleWatchlist,
   useVideo,
@@ -120,6 +122,7 @@ export function VideoDetailClient() {
   const replyToComment = useReplyToComment(videoId);
   const toggleCommentLike = useToggleCommentLike(videoId);
   const startSubscription = useStartSubscription();
+  const checkout = useCheckout();
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -372,6 +375,21 @@ export function VideoDetailClient() {
   // subscription, not a brand-new signup. Same reasoning as /plans's requestSubscribe:
   // a fresh signup goes through Stripe Checkout, which is its own confirmation step; a
   // change to an existing subscription has no such step, so this adds one.
+  
+  const handleRentOrBuy = async (kind: "rent" | "buy") => {
+    if (!requireSignIn(`Sign in to ${kind} this video.`)) return;
+    try {
+      await checkout.mutateAsync({ videoId, kind });
+    } catch (err) {
+      toast({
+        title: "Couldn't start checkout",
+        description: err instanceof Error ? err.message : "Something went wrong. Try again.",
+        tone: "error",
+      });
+      return;
+    }
+  };
+
   const requestSubscribe = (plan: "premium" | "family") => {
     if (!requireSignIn("Sign in to subscribe to a plan.")) return;
     const activePaidSub = subscriptions.find(
@@ -1078,8 +1096,9 @@ export function VideoDetailClient() {
         open={purchaseOpen}
         onClose={() => setPurchaseOpen(false)}
         video={video}
-        loading={startSubscription.isPending}
+        loading={startSubscription.isPending || checkout.isPending}
         onSubscribe={requestSubscribe}
+          onRentOrBuy={handleRentOrBuy}
       />
 
       <ConfirmModal
@@ -1098,7 +1117,7 @@ export function VideoDetailClient() {
         }
         confirmLabel="Switch & confirm"
         tone="default"
-        loading={startSubscription.isPending}
+        loading={startSubscription.isPending || checkout.isPending}
       />
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} video={video} />
@@ -1491,8 +1510,30 @@ function PurchaseModal({
       size="md"
     >
       <div className="space-y-3">
-        <OfferRow
-          title="Nexus Premium"
+        
+          {video.pricing?.rentPrice && (
+            <OfferRow
+              title="Rent Video"
+              description={`48-hour access to ${video.title}`}
+              price={`${(video.pricing.rentPrice.amount / 100).toFixed(2)} ${video.pricing.rentPrice.currency}`}
+              icon={<IconPlay />}
+              loading={loading}
+              onClick={() => onRentOrBuy("rent")}
+            />
+          )}
+          {video.pricing?.buyPrice && (
+            <OfferRow
+              title="Buy Video"
+              description={`Lifetime access to ${video.title}`}
+              price={`${(video.pricing.buyPrice.amount / 100).toFixed(2)} ${video.pricing.buyPrice.currency}`}
+              icon={<IconStarFilled />}
+              loading={loading}
+              onClick={() => onRentOrBuy("buy")}
+            />
+          )}
+
+          <OfferRow
+            title="Nexus Premium"
           description="All videos, music & live streams, ad-free, plus the rest of the included catalogue."
           price="$9.99 / month"
           icon={<IconStarFilled />}

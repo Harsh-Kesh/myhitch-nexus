@@ -229,6 +229,14 @@ export function useSetRequestCountry() {
   });
 }
 
+
+export function useCheckout() {
+  return useMutation({
+    mutationFn: ({ videoId, kind }: { videoId: string; kind: "buy" | "rent" | "ppv" }) => 
+      api.startCheckout(videoId, kind),
+  });
+}
+
 export function useStartSubscription() {
   const client = useQueryClient();
   return useMutation({
