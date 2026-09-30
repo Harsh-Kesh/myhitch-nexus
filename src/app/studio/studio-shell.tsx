@@ -122,12 +122,10 @@ export function StudioShell({ children }: { children: React.ReactNode }) {
         {
           title: "Measure",
           items: [
-            {
-              href: "/studio/analytics",
-              label: "Analytics",
-              icon: <IconChartHistogram />,
-            },
-            { href: "/studio/revenue", label: "Revenue", icon: <IconCoin /> },
+            ...(user?.roles.includes("viewer") ? [] : [
+              { href: "/studio/analytics", label: "Analytics", icon: <IconChartHistogram /> },
+              { href: "/studio/revenue", label: "Revenue", icon: <IconCoin /> },
+            ])
           ],
         },
         {

@@ -255,9 +255,7 @@ export default function RegisterPage() {
             ? "Your organisation is pending verification. You can browse while it is reviewed."
             : "Welcome to Nexus.",
       });
-      router.push(
-          role === "business" ? "/studio/dashboard" : "/"
-        );
+      router.push("/plans");
     } catch (err) {
       toast({
         title: "Couldn't create your account",

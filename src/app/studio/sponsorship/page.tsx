@@ -63,10 +63,10 @@ export default function StudioSponsorshipPage() {
         title="Exchange Hub"
         description="Pitch your film or project for sponsorship — a trailer, your analysis, and what a sponsor gets in return. Submitted to MYHitch Connect once you're ready."
         actions={
-          <Button variant="primary" onClick={() => setOpen(true)}>
-            <IconPlus />
-            New listing
-          </Button>
+          <Button variant="primary" onClick={() => window.open("https://connect.myhitch.com", "_blank")}>
+              <IconPlus />
+              Create on MYHitch Connect
+            </Button>
         }
       />
 

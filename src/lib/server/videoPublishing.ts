@@ -187,8 +187,19 @@ export async function publishVideo(accountId: string, input: PublishVideoInput):
 
   // Duration validation
   const roleRows = await query<{ role: string }>(`select role from account_roles where account_id = $1`, [accountId]);
-  const isBusinessTrack = roleRows.some((r) => ["business", "creator", "enterprise"].includes(r.role));
-  const maxDuration = isBusinessTrack ? 1800 : 600;
+  const isEndUser = roleRows.some((r) => r.role === "viewer");
+  let maxDuration = 600;
+  let hasPaidBusinessPlan = false;
+
+  if (!isEndUser) {
+    const subsRows = await query<{ plan: string }>(`select plan from subscriptions where account_id = $1 and status = 'active'`, [accountId]);
+    hasPaidBusinessPlan = subsRows.some(s => s.plan === "business" || s.plan === "enterprise");
+    maxDuration = hasPaidBusinessPlan ? Infinity : 1200;
+  }
+  
+  if (!hasPaidBusinessPlan && (input.pricing?.rentPrice || input.pricing?.buyPrice || input.pricing?.accessModels?.includes('rent') || input.pricing?.accessModels?.includes('buy'))) {
+    return { outcome: "invalid", reason: "Setting a Rent or Buy price requires an active paid Business or Enterprise plan." };
+  }
 
   if (probe.durationSeconds > maxDuration) {
     return { outcome: "invalid", reason: `Video duration exceeds the maximum allowed limit of ${Math.round(maxDuration / 60)} minutes for your plan.` };

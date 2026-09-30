@@ -87,6 +87,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "An ABN is required for Business and Enterprise accounts." }, { status: 400 });
   }
 
+  // Automated ABN verification
+  if (abn) {
+    // Basic format check: ABN must be 11 digits (with or without spaces)
+    const cleanedAbn = abn.replace(/\s+/g, '');
+    if (!/^\d{11}$/.test(cleanedAbn)) {
+      return NextResponse.json({ error: "Invalid ABN format. An ABN must be 11 digits." }, { status: 400 });
+    }
+    // Mock failure: any ABN starting with 000 fails verification
+    if (cleanedAbn.startsWith("000")) {
+      return NextResponse.json({ error: "ABN Verification Failed. The business number could not be validated." }, { status: 403 });
+    }
+  }
+
   if (await emailIsRegistered(email)) {
     return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
   }

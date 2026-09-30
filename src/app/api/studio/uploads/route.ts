@@ -5,6 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createUploadUrl } from "@/lib/server/videoPublishing";
 import { getRequestAccount } from "@/lib/server/rbac";
+import { listRealSubscriptions } from "@/lib/server/subscriptions";
 
 interface CreateUploadBody {
   channelId?: string;
@@ -32,8 +33,14 @@ export async function POST(request: NextRequest) {
   }
 
   // Duration validation based on plan/role
-  const isBusinessTrack = account.roles.some((r) => ["business", "creator", "enterprise"].includes(r));
-  const maxDuration = isBusinessTrack ? 1800 : 600; // 30 mins for Business track, 10 mins for End User track
+  const isEndUser = account.roles.includes("viewer");
+  let maxDuration = 600; // 10 mins for End User (viewer)
+
+  if (!isEndUser) {
+    const subs = await listRealSubscriptions(account.id);
+    const hasPaidBusinessPlan = subs.some(s => s.status === "active" && (s.plan === "business" || s.plan === "enterprise"));
+    maxDuration = hasPaidBusinessPlan ? Infinity : 1200; // Unlimited for Paid Business, 20 mins for Free Creator
+  }
 
   if (body.durationSeconds !== undefined && body.durationSeconds > maxDuration) {
     return NextResponse.json(

@@ -67,13 +67,13 @@ export default function StudioMagazinePage() {
   return (
     <>
       <PageHeader
-        title="Magazine"
+        title="MYHitch Lens"
         description="Write a full analysis of your film or project, with a trailer alongside it if you have one — submitted to MYHitch Lens, who handle their own review and publication."
         actions={
-          <Button variant="primary" onClick={() => setOpen(true)}>
-            <IconPlus />
-            New analysis
-          </Button>
+          <Button variant="primary" onClick={() => window.open("https://lens.myhitch.com", "_blank")}>
+              <IconPlus />
+              Write on MYHitch Lens
+            </Button>
         }
       />
 
