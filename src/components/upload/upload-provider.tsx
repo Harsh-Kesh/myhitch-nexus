@@ -156,9 +156,10 @@ export function UploadProvider({ children }: { children: React.ReactNode }) {
             toastFiredRef.current = true;
             if (!current.accountId || current.accountId === currentUserIdRef.current) {
               toast({
-              title: "Upload & Transcoding Complete!",
-              description: `'${current.draftData.title || current.fileName}' has finished processing and is saved as a draft. Click to review & publish.`,
-            });
+                title: "Upload & Transcoding Complete!",
+                description: `'${current.draftData.title || current.fileName}' has finished processing and is saved as a draft. Click to review & publish.`,
+              });
+            }
           }
         }
 
