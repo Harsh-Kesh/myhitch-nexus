@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { query } from "@/lib/server/db";
 import { getRequestAccount } from "@/lib/server/rbac";
-import { verifyOwnProfileId } from "@/lib/server/familyProfiles";
 
 export async function GET(request: NextRequest) {
   const account = await getRequestAccount(request);
