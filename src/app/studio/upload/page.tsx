@@ -53,7 +53,6 @@ import {
   useUploadThumbnailFile,
 } from "@/lib/mock-api/hooks";
 import type {
-  AccessModel,
   AgeRating,
   BulkImportRow,
   ContentStatus,

@@ -2356,6 +2356,8 @@ export async function getSeriesDetail(seriesId: string): Promise<RealSeriesDetai
 export async function getCreatorAnalytics(
   channelId: string,
   range: AnalyticsRange = "28d",
+  // Per-video analytics aren't served yet - accepted so callers needn't change.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   videoId: string | null = null
 ): Promise<CreatorAnalytics> {
   if (looksLikeRealId(channelId)) {
@@ -3856,7 +3858,7 @@ export async function updateUser(patch: Partial<User>): Promise<User> {
   Object.assign(store.user, patch);
 
   if (looksLikeRealId(store.user.id)) {
-    const settingsPatch: any = {};
+    const settingsPatch: Record<string, unknown> = {};
     if ("notificationPreferences" in patch) settingsPatch.notificationPreferences = patch.notificationPreferences;
     if ("privacy" in patch) settingsPatch.privacy = patch.privacy;
     if ("parentalControls" in patch) settingsPatch.parentalControls = patch.parentalControls;

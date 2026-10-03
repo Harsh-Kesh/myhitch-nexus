@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
       if (!body.orgName?.trim()) {
         body.orgName = result.entityName;
       }
-    } catch (err: any) {
-      if (err.message?.includes("isn't configured")) {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("isn't configured")) {
         // Fallback to mock for local dev if no GUID is set
         if (cleanedAbn.startsWith("000")) {
           return NextResponse.json({ error: "ABN Verification Failed (Mock). The business number could not be validated." }, { status: 403 });

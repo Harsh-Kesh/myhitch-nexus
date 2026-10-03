@@ -55,7 +55,7 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json();
   const updates: string[] = [];
-  const values: any[] = [];
+  const values: unknown[] = [];
   let paramIndex = 1;
 
   if (body.notificationPreferences !== undefined) {

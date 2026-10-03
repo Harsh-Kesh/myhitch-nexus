@@ -128,6 +128,9 @@ export function SiteHeader() {
   // a switch: this dropdown's own profile rows switched straight through with no PIN
   // check at all, unlike switch-profile/page.tsx's identical list, which correctly
   // prompts for one. Same gate as that page's handleSelectProfile().
+  // The dropdown no longer lists profiles (it links to Switch Profile), so this
+  // is unused for now - kept, with its PIN dialog below, for when it does again.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleSelectProfile = (profile: ViewerProfile) => {
     if ((profile.hasPinSet || profile.pinCode) && profile.id !== user?.activeProfileId) {
       setPinChallengeProfile(profile);
