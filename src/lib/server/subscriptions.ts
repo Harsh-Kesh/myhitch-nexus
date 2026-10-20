@@ -9,6 +9,7 @@ import type Stripe from "stripe";
 import { query, queryOne } from "./db";
 import { getStripe, StripeNotConfiguredError } from "./stripeClient";
 import { emitNotification } from "./notifications";
+import { invoiceClientSecret } from "./appPayments";
 import { SITE_URL } from "@/lib/utils";
 
 export type PlanId = "premium" | "family" | "business" | "enterprise";
@@ -77,6 +78,28 @@ async function getOrCreatePlanProduct(plan: PlanId): Promise<string> {
   return productId;
 }
 
+/** Any existing active/past_due row for this account on ANY plan — not just the one
+ * being requested. Whether this is a brand-new subscription or a change to one already
+ * running hinges on whether the account has a paid subscription at all, never on which
+ * plan it happens to be. Found live 2026-09-25: the previous version of this check only
+ * looked for an existing row on the SAME plan, so switching Premium -> Family sailed
+ * straight through to a brand-new Checkout Session — a second, independent Stripe
+ * subscription billing in parallel with the first, instead of replacing it. Shared with
+ * startAppSubscription() below so the website and the MYHitch app decide "new vs change"
+ * identically. */
+async function findActivePaidSubscription(accountId: string) {
+  return queryOne<{
+    id: string;
+    plan: PlanId;
+    billing_interval: BillingInterval;
+    stripe_subscription_id: string;
+  }>(
+    `select id, plan, billing_interval, stripe_subscription_id from subscriptions
+     where account_id = $1 and status in ('active', 'past_due') limit 1`,
+    [accountId],
+  );
+}
+
 /** The one place "subscribe" and "change plan" both go through. `returnPath` is where
  * the page the request came from wants a Checkout redirect to land back on — unused for
  * the in-place-change branch, which never redirects at all (the existing subscription's
@@ -95,23 +118,7 @@ export async function startOrChangePlan(
   const unitAmount = definition.prices[interval];
   if (!unitAmount) return { outcome: "invalid_interval" };
 
-  // Any existing active/past_due row for this account on ANY plan — not just this one.
-  // Whether this is a brand-new subscription or a change to one already running hinges
-  // on whether the account has a paid subscription at all, never on which plan it
-  // happens to be. Found live 2026-09-25: the previous version of this check only looked
-  // for an existing row on the SAME plan, so switching Premium -> Family sailed straight
-  // through to a brand-new Checkout Session — a second, independent Stripe subscription
-  // billing in parallel with the first, instead of replacing it.
-  const existing = await queryOne<{
-    id: string;
-    plan: PlanId;
-    billing_interval: BillingInterval;
-    stripe_subscription_id: string;
-  }>(
-    `select id, plan, billing_interval, stripe_subscription_id from subscriptions
-     where account_id = $1 and status in ('active', 'past_due') limit 1`,
-    [accountId],
-  );
+  const existing = await findActivePaidSubscription(accountId);
 
   if (existing && existing.plan === plan && existing.billing_interval === interval) {
     return { outcome: "already_subscribed" };
@@ -187,6 +194,171 @@ export async function startOrChangePlan(
   });
   if (!session.url) throw new Error("Stripe did not return a Checkout URL.");
   return { outcome: "checkout_required", url: session.url };
+}
+
+export type StartAppSubscriptionResult =
+  | { outcome: "invalid_interval" }
+  | { outcome: "already_subscribed" }
+  | { outcome: "changed"; plan: PlanId; currentPeriodEnd: string | null }
+  | { outcome: "payment_required"; clientSecret: string; customerId: string; subscriptionId: string }
+  | { outcome: "active"; customerId: string; subscriptionId: string };
+
+function isCatalogPlan(value: string | undefined): value is PlanId {
+  return Boolean(value) && Object.prototype.hasOwnProperty.call(PLAN_CATALOG, value as string);
+}
+
+/** The Stripe Customer the MYHitch app's PaymentSheet pays as — it has to be a real
+ * Customer (unlike the website's Checkout, which only passes `customer_email` and lets
+ * Stripe make one per session) so the sheet can list and save cards. No schema change:
+ * a customer this flow created is tagged `metadata.accountId` and found again by email;
+ * failing that, the customer behind this account's most recent website-bought plan is
+ * reused (its saved card shows up in the sheet), checked against Stripe first since a
+ * seeded demo row may carry a made-up id; otherwise a new one is created. */
+async function ensurePlanCustomer(accountId: string, accountEmail: string): Promise<string> {
+  const stripe = getStripe();
+  if (accountEmail) {
+    const byEmail = await stripe.customers.list({ email: accountEmail, limit: 100 });
+    const tagged = byEmail.data.find((customer) => customer.metadata?.accountId === accountId);
+    if (tagged) return tagged.id;
+  }
+
+  const previous = await queryOne<{ stripe_customer_id: string }>(
+    `select stripe_customer_id from subscriptions
+     where account_id = $1 and channel_id is null
+     order by created_at desc limit 1`,
+    [accountId],
+  );
+  if (previous) {
+    try {
+      const customer = await stripe.customers.retrieve(previous.stripe_customer_id);
+      if (!("deleted" in customer && customer.deleted)) return customer.id;
+    } catch (err) {
+      if ((err as { code?: string }).code !== "resource_missing") throw err;
+    }
+  }
+
+  const created = await stripe.customers.create({
+    email: accountEmail || undefined,
+    metadata: { accountId },
+  });
+  return created.id;
+}
+
+/** True when `customerId` is one of this account's own Stripe Customers — either one
+ * already on a `subscriptions` row of theirs, or one ensurePlanCustomer() tagged. */
+async function accountOwnsCustomer(accountId: string, customerId: string): Promise<boolean> {
+  const known = await queryOne(
+    `select 1 from subscriptions where account_id = $1 and stripe_customer_id = $2 limit 1`,
+    [accountId, customerId],
+  );
+  if (known) return true;
+  try {
+    const customer = await getStripe().customers.retrieve(customerId);
+    if ("deleted" in customer && customer.deleted) return false;
+    return customer.metadata?.accountId === accountId;
+  } catch (err) {
+    if ((err as { code?: string }).code === "resource_missing") return false;
+    throw err;
+  }
+}
+
+/** The MYHitch app's counterpart of startOrChangePlan(): same "new vs change" decision
+ * and same in-place change (delegated to startOrChangePlan(), which never reaches its
+ * Checkout branch while a paid row exists), but a brand-new plan is paid for in the app
+ * with Stripe's native PaymentSheet instead of a Checkout redirect. The subscription is
+ * created `default_incomplete` and its first invoice's client secret handed back; it
+ * carries the same `{ accountId, plan }` metadata as a Checkout-made one, so the
+ * webhook's customer.subscription.updated / invoice.paid handling records it exactly the
+ * same way once it's paid (upsertSubscriptionFromStripe() deliberately skips it while
+ * it's still unpaid — see there). */
+export async function startAppSubscription(
+  accountId: string,
+  accountEmail: string,
+  plan: PlanId,
+  interval: BillingInterval,
+): Promise<StartAppSubscriptionResult> {
+  const definition = PLAN_CATALOG[plan];
+  const unitAmount = definition.prices[interval];
+  if (!unitAmount) return { outcome: "invalid_interval" };
+
+  if (await findActivePaidSubscription(accountId)) {
+    const result = await startOrChangePlan(accountId, accountEmail, plan, interval, "/");
+    // Only reachable if the paid row vanished between the two reads (a concurrent
+    // cancellation) — never answer the app with a web Checkout URL it can't use.
+    if (result.outcome === "checkout_required") throw new Error("Paid subscription disappeared mid-change.");
+    return result;
+  }
+
+  const stripe = getStripe();
+  const customerId = await ensurePlanCustomer(accountId, accountEmail);
+
+  // An earlier attempt the user backed out of leaves an `incomplete` subscription
+  // behind (Stripe expires it after ~23h). Cancel this account's plan ones first so a
+  // repeat tap — possibly for a different plan — never leaves two that could both be
+  // paid. Channel memberships/patron tips on the same customer are left alone.
+  const abandoned = await stripe.subscriptions.list({ customer: customerId, status: "incomplete", limit: 100 });
+  for (const stale of abandoned.data) {
+    if (stale.metadata?.accountId === accountId && !stale.metadata?.channelId && isCatalogPlan(stale.metadata?.plan)) {
+      await stripe.subscriptions.cancel(stale.id);
+    }
+  }
+
+  const productId = await getOrCreatePlanProduct(plan);
+  const subscription = await stripe.subscriptions.create({
+    customer: customerId,
+    items: [
+      {
+        price_data: {
+          currency: definition.currency,
+          product: productId,
+          unit_amount: unitAmount,
+          recurring: { interval },
+        },
+      },
+    ],
+    payment_behavior: "default_incomplete",
+    payment_settings: { save_default_payment_method: "on_subscription" },
+    metadata: { accountId, plan },
+    expand: ["latest_invoice.confirmation_secret"],
+  });
+
+  const clientSecret = invoiceClientSecret(subscription.latest_invoice);
+  if (clientSecret) {
+    return { outcome: "payment_required", clientSecret, customerId, subscriptionId: subscription.id };
+  }
+  // Nothing to pay (e.g. a customer credit balance covered the first invoice), so it's
+  // already live — record it now rather than waiting on the webhook.
+  if (subscription.status === "active" || subscription.status === "trialing") {
+    await upsertSubscriptionFromStripe(subscription);
+    return { outcome: "active", customerId, subscriptionId: subscription.id };
+  }
+  throw new Error(`Stripe subscription ${subscription.id} has no payment to confirm.`);
+}
+
+export type ConfirmAppSubscriptionResult = { outcome: "confirmed" } | { outcome: "not_found" };
+
+/** Called by the MYHitch app once its PaymentSheet finishes, so the plan shows up right
+ * away instead of waiting on the webhook — the app's equivalent of
+ * verifySubscriptionSession() for a Checkout return. A client-supplied id is never
+ * trusted: it must be this account's subscription on one of this account's customers. */
+export async function confirmAppSubscription(
+  accountId: string,
+  subscriptionId: string,
+): Promise<ConfirmAppSubscriptionResult> {
+  let subscription: Stripe.Subscription;
+  try {
+    subscription = await getStripe().subscriptions.retrieve(subscriptionId);
+  } catch (err) {
+    const { statusCode, code } = err as { statusCode?: number; code?: string };
+    if (statusCode === 404 || code === "resource_missing") return { outcome: "not_found" };
+    throw err;
+  }
+  const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+  if (subscription.metadata?.accountId !== accountId || !(await accountOwnsCustomer(accountId, customerId))) {
+    return { outcome: "not_found" };
+  }
+  await upsertSubscriptionFromStripe(subscription);
+  return { outcome: "confirmed" };
 }
 
 export type StartEnterpriseSubscriptionResult =
@@ -310,6 +482,18 @@ export async function upsertSubscriptionFromStripe(subscription: Stripe.Subscrip
   if (!accountId) {
     console.error("Stripe subscription missing accountId metadata", subscription.id);
     return;
+  }
+  // A subscription that was never paid for — the MYHitch app's PaymentSheet flow
+  // (startAppSubscription()) creates one `incomplete` before payment, and it ends up
+  // `incomplete_expired` or cancelled if the user backs out — never granted anything,
+  // so it gets no row (and no "subscription updated" notification). Stripe never moves
+  // a subscription back to `incomplete` once paid, so skipping that status also keeps a
+  // late, out-of-order customer.subscription.created snapshot from regressing a row
+  // that's already active. A cancellation only updates a row that already exists.
+  if (subscription.status === "incomplete" || subscription.status === "incomplete_expired") return;
+  if (subscription.status === "canceled") {
+    const known = await queryOne(`select 1 from subscriptions where stripe_subscription_id = $1`, [subscription.id]);
+    if (!known) return;
   }
   const item = subscription.items.data[0];
   const priceMinor = item?.price.unit_amount ?? PLAN_CATALOG[plan].prices.month ?? 0;
