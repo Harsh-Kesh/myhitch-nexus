@@ -9,10 +9,10 @@
 //
 // The account has no Nexus password (password_hash null): it's only ever opened through
 // the Business Portal login.
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { provisionChannelForRole } from "@/lib/server/channelProvisioning";
 import { query, queryOne } from "@/lib/server/db";
+import { hubKeyMatches } from "@/lib/server/hubAuth";
 import { createSession } from "@/lib/server/session";
 
 interface HubSessionBody {
@@ -23,15 +23,6 @@ interface HubSessionBody {
   abn?: string;
   acn?: string;
   country?: string;
-}
-
-function hubKeyMatches(provided: string | null): boolean {
-  const expected = process.env.HUB_API_KEY;
-  if (!expected || !provided) return false;
-  // Hash both so the comparison is constant-time whatever their lengths.
-  const a = createHash("sha256").update(provided).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
 }
 
 export async function POST(request: NextRequest) {

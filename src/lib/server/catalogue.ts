@@ -1120,3 +1120,55 @@ export async function getChannelVideos(
   );
   return rows.map(mapVideoSummary);
 }
+
+/** Published videos (not audio) whose creator sells them — `video_pricing.access_models`
+ * includes "rent" and/or "buy" — newest first: the MYHitch app's movie catalogue
+ * (appViewers.ts). `ids` narrows it to those videos (a movie's detail page); a video that
+ * isn't published or isn't for rent/buy is simply absent. Callers still check each price
+ * is actually set — an access model without a price can't be sold (commerce.ts). */
+export async function listVideosForSale(opts: { ids?: string[]; limit?: number } = {}): Promise<VideoSummary[]> {
+  await activateScheduledVideos();
+  const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+  const rows = await query<VideoSummaryRow>(
+    `select ${VIDEO_SUMMARY_COLUMNS}
+     from videos v
+     ${VIDEO_SUMMARY_JOINS}
+     where v.status = 'published' and v.kind = 'video'
+       and p.access_models && array['rent', 'buy']::text[]
+       and ($1::uuid[] is null or v.id = any($1::uuid[]))
+     order by v.published_at desc nulls last
+     limit $2`,
+    [opts.ids ?? null, limit],
+  );
+  return rows.map(mapVideoSummary);
+}
+
+export interface VideoCreditsAndGenres {
+  credits: Array<{ role: string; name: string }>;
+  /** Category names and slugs, then tags — what a video's genre is read from. */
+  genreHints: string[];
+}
+
+/** Credits (cast/crew) and category/tag names for several videos in three queries, not
+ * three per video — the app's movie list shows a director, cast and genre for each. */
+export async function getVideoCreditsAndGenres(ids: string[]): Promise<Map<string, VideoCreditsAndGenres>> {
+  const out = new Map<string, VideoCreditsAndGenres>(ids.map((id) => [id, { credits: [], genreHints: [] }]));
+  if (ids.length === 0) return out;
+  const [credits, categories, tags] = await Promise.all([
+    query<{ video_id: string; role: string; name: string }>(
+      `select video_id, role, name from video_credits where video_id = any($1::uuid[]) order by video_id, ordering`,
+      [ids],
+    ),
+    query<{ video_id: string; name: string; slug: string }>(
+      `select vc.video_id, c.name, c.slug from video_categories vc
+       join categories c on c.id = vc.category_id
+       where vc.video_id = any($1::uuid[])`,
+      [ids],
+    ),
+    query<{ video_id: string; tag: string }>(`select video_id, tag from video_tags where video_id = any($1::uuid[])`, [ids]),
+  ]);
+  for (const c of credits) out.get(c.video_id)?.credits.push({ role: c.role, name: c.name });
+  for (const c of categories) out.get(c.video_id)?.genreHints.push(c.name, c.slug);
+  for (const t of tags) out.get(t.video_id)?.genreHints.push(t.tag);
+  return out;
+}
