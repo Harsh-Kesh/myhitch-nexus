@@ -74,7 +74,15 @@ export type CreateCheckoutSessionResult =
   | { outcome: "unsupported_currency"; currency: string };
 
 export type ResolveVideoSaleResult =
-  | { outcome: "ok"; title: string; amountMinor: number; currency: string; rentalWindowHours: number }
+  | {
+      outcome: "ok";
+      title: string;
+      amountMinor: number;
+      currency: string;
+      rentalWindowHours: number;
+      /** The channel (organization) that sells the video — who is paid for it. */
+      channelId: string;
+    }
   | Exclude<CreateCheckoutSessionResult, { outcome: "success" }>;
 
 /** Every check that decides whether `accountId` may pay for `kind` access to `videoId`,
@@ -113,6 +121,7 @@ export async function resolveVideoSale(
     amountMinor: price.amountMinor,
     currency: price.currency,
     rentalWindowHours: row.rental_window_hours ?? 48,
+    channelId: row.channel_id,
   };
 }
 
@@ -218,6 +227,36 @@ export async function grantFreeVideoEntitlement(
   paymentKey: string,
 ): Promise<boolean> {
   return grantEntitlement({ accountId, videoId, kind, amountMinor: 0, currency: "AUD", paymentKey, paymentIntentId: null });
+}
+
+/** The entitlement key of a rent/buy paid from the MYHitch Wallet: `wallet_<quote id>`,
+ * stored in stripe_checkout_session_id like every other payment key (it can never collide
+ * with a `cs_...`/`pi_...`/`free_...` one). There is no Nexus PaymentIntent, so
+ * stripe_payment_intent_id stays null — no Stripe receipt is looked up for it. */
+export function walletPaymentKey(quoteId: string): string {
+  return `wallet_${quoteId}`;
+}
+
+/** A rent/buy the customer paid from their MYHitch Wallet (hubWallet.ts's confirm) —
+ * the same entitlement, rental window and receipt notification as a paid card checkout,
+ * idempotent on the quote. Returns whether this call granted it. */
+export async function grantWalletVideoEntitlement(input: {
+  accountId: string;
+  videoId: string;
+  kind: "rent" | "buy";
+  amountMinor: number;
+  currency: string;
+  quoteId: string;
+}): Promise<boolean> {
+  return grantEntitlement({
+    accountId: input.accountId,
+    videoId: input.videoId,
+    kind: input.kind,
+    amountMinor: input.amountMinor,
+    currency: input.currency,
+    paymentKey: walletPaymentKey(input.quoteId),
+    paymentIntentId: null,
+  });
 }
 
 /** Records a paid unlock; a rental's window (the video's rental_window_hours, default 48)

@@ -267,20 +267,56 @@ async function cancelQuietly(id: string): Promise<void> {
   }
 }
 
-export type AppCheckoutResult =
-  | { outcome: "payment"; clientSecret: string; customerId: string; ephemeralKey: string; paymentIntentId: string }
-  | { outcome: "free" }
+/** Why the app can't rent/buy a movie — the same refusals for a card checkout and a
+ * MYHitch Wallet quote (hubWallet.ts), answered the same way (appSaleRefusal()). */
+export type AppSaleRefusal =
   | { outcome: "not_found" }
   | { outcome: "not_for_sale" }
   | { outcome: "own_video" }
   | { outcome: "already_entitled" }
   | { outcome: "payment_in_progress" };
 
-/** Starts renting/buying `videoId` for the viewer: prices it from the creator's own
- * video_pricing (never from the app), refuses what the website refuses, then creates a
- * fresh PaymentIntent — cancelling any earlier sheet for the same movie that was never
- * paid — plus an ephemeral key for the PaymentSheet. */
-export async function startAppCheckout(viewer: AppViewer, videoId: string, kind: AppKind): Promise<AppCheckoutResult> {
+export type AppSale = {
+  outcome: "ok";
+  movie: AppMovie;
+  title: string;
+  amountMinor: number;
+  currency: "AUD";
+  rentalWindowHours: number;
+  channelId: string;
+};
+
+/** The body's `kind` ("rent" | "buy"), or the 400 the checkout route has always sent. */
+export function parseAppKind(kind: unknown): { kind: AppKind; response?: undefined } | { kind?: undefined; response: NextResponse } {
+  if (kind === "rent" || kind === "buy") return { kind };
+  return { response: NextResponse.json({ error: "Choose to rent or buy this movie." }, { status: 400 }) };
+}
+
+/** The response for a refusal — exactly what POST movies/[id]/checkout/ has always sent. */
+export function appSaleRefusal(refusal: AppSaleRefusal, kind: AppKind): NextResponse {
+  switch (refusal.outcome) {
+    case "not_found":
+      return NextResponse.json({ error: "This movie isn't available." }, { status: 404 });
+    case "not_for_sale":
+      return NextResponse.json(
+        { error: kind === "rent" ? "This movie can't be rented." : "This movie can't be bought." },
+        { status: 400 },
+      );
+    case "own_video":
+      return NextResponse.json({ error: "This is your own movie - you can already watch it." }, { status: 400 });
+    case "already_entitled":
+      return NextResponse.json({ error: "You already own this movie." }, { status: 409 });
+    case "payment_in_progress":
+      return NextResponse.json({ error: "Your payment for this movie is still going through." }, { status: 409 });
+  }
+}
+
+/** Whether the viewer may rent/buy `videoId` in the app, and for how much: priced from
+ * the creator's own video_pricing (never from the app), refusing what the website
+ * refuses (commerce.ts's resolveVideoSale()) plus anything the app can't show (a price
+ * that isn't AUD, a kind the creator doesn't offer). Shared by the card checkout and the
+ * MYHitch Wallet quote, so both charge the same total for the same movie. */
+export async function resolveAppSale(viewer: AppViewer, videoId: string, kind: AppKind): Promise<AppSale | AppSaleRefusal> {
   const movie = await getAppMovie(videoId);
   if (!movie) return { outcome: "not_found" };
 
@@ -293,6 +329,89 @@ export async function startAppCheckout(viewer: AppViewer, videoId: string, kind:
   if (sale.currency.toUpperCase() !== "AUD" || (kind === "rent" ? movie.rentPrice : movie.buyPrice) == null) {
     return { outcome: "not_for_sale" };
   }
+  return {
+    outcome: "ok",
+    movie,
+    title: sale.title,
+    amountMinor: sale.amountMinor,
+    currency: "AUD",
+    rentalWindowHours: sale.rentalWindowHours,
+    channelId: sale.channelId,
+  };
+}
+
+/** Looks at the viewer's recent app card payments for `movieId`: one that's paid but not
+ * yet recorded is recorded now ("already_entitled"), one still processing blocks paying
+ * again ("payment_in_progress"); unpaid sheets are cancelled when `cancelUnpaid`. */
+async function settleEarlierAppPayments(
+  customerId: string,
+  viewer: AppViewer,
+  movieId: string,
+  { cancelUnpaid }: { cancelUnpaid: boolean },
+): Promise<"already_entitled" | "payment_in_progress" | null> {
+  for (const pi of await recentAppPayments(customerId, viewer.accountId)) {
+    if (pi.metadata.videoId !== movieId) continue;
+    if (pi.status === "succeeded") {
+      // Paid, but neither the webhook nor a read-back has recorded it yet.
+      if (await fulfillPaymentIntent(pi)) return "already_entitled";
+    } else if (pi.status === "processing") {
+      return "payment_in_progress";
+    } else if (cancelUnpaid && UNPAID_STATUSES.has(pi.status)) {
+      await cancelQuietly(pi.id);
+    }
+  }
+  return null;
+}
+
+/** Before a MYHitch Wallet quote: a card payment for the same movie that's already paid
+ * (recorded now) or still processing refuses the quote, like a second card checkout
+ * would. Best effort — Nexus's Stripe being unreachable doesn't stop the wallet (confirm
+ * re-checks ownership before granting). Open, unpaid sheets are left alone here; they're
+ * cancelled once the wallet payment is confirmed (cancelUnpaidAppSheets()). */
+export async function checkAppCardPayments(
+  viewer: AppViewer,
+  movieId: string,
+): Promise<"already_entitled" | "payment_in_progress" | null> {
+  try {
+    const customerId = await findViewerCustomer(viewer);
+    if (!customerId) return null;
+    return await settleEarlierAppPayments(customerId, viewer, movieId, { cancelUnpaid: false });
+  } catch (err) {
+    if (!(err instanceof StripeNotConfiguredError)) {
+      console.error("Could not check the viewer's card payments before a wallet quote", err);
+    }
+    return null;
+  }
+}
+
+/** After a MYHitch Wallet payment for `movieId` is confirmed: cancels any card sheet for
+ * the same movie that's still open, so it can't be paid as well. Best effort. */
+export async function cancelUnpaidAppSheets(viewer: AppViewer, movieId: string): Promise<void> {
+  try {
+    const customerId = await findViewerCustomer(viewer);
+    if (!customerId) return;
+    for (const pi of await recentAppPayments(customerId, viewer.accountId)) {
+      if (pi.metadata.videoId === movieId && UNPAID_STATUSES.has(pi.status)) await cancelQuietly(pi.id);
+    }
+  } catch (err) {
+    if (!(err instanceof StripeNotConfiguredError)) {
+      console.error("Could not cancel the viewer's open card sheets after a wallet payment", err);
+    }
+  }
+}
+
+export type AppCheckoutResult =
+  | { outcome: "payment"; clientSecret: string; customerId: string; ephemeralKey: string; paymentIntentId: string }
+  | { outcome: "free" }
+  | AppSaleRefusal;
+
+/** Starts renting/buying `videoId` for the viewer: prices it (resolveAppSale()), then
+ * creates a fresh PaymentIntent — cancelling any earlier sheet for the same movie that
+ * was never paid — plus an ephemeral key for the PaymentSheet. */
+export async function startAppCheckout(viewer: AppViewer, videoId: string, kind: AppKind): Promise<AppCheckoutResult> {
+  const sale = await resolveAppSale(viewer, videoId, kind);
+  if (sale.outcome !== "ok") return sale;
+  const { movie } = sale;
 
   if (sale.amountMinor === 0) {
     await grantFreeVideoEntitlement(viewer.accountId, movie.id, kind, `free_${randomUUID()}`);
@@ -301,17 +420,8 @@ export async function startAppCheckout(viewer: AppViewer, videoId: string, kind:
 
   const stripe = getStripe();
   const customerId = await ensureViewerCustomer(viewer);
-  for (const pi of await recentAppPayments(customerId, viewer.accountId)) {
-    if (pi.metadata.videoId !== movie.id) continue;
-    if (pi.status === "succeeded") {
-      // Paid, but neither the webhook nor a read-back has recorded it yet.
-      if (await fulfillPaymentIntent(pi)) return { outcome: "already_entitled" };
-    } else if (pi.status === "processing") {
-      return { outcome: "payment_in_progress" };
-    } else if (UNPAID_STATUSES.has(pi.status)) {
-      await cancelQuietly(pi.id);
-    }
-  }
+  const blocked = await settleEarlierAppPayments(customerId, viewer, movie.id, { cancelUnpaid: true });
+  if (blocked) return { outcome: blocked };
 
   const intent = await stripe.paymentIntents.create({
     amount: sale.amountMinor,
@@ -402,28 +512,33 @@ export async function listAppPurchases(viewer: AppViewer): Promise<AppPurchase[]
      where status = 'active' and kind = 'rent' and expires_at <= now() and account_id = $1`,
     [viewer.accountId],
   );
-  const rows = await query<{
-    id: string;
-    video_id: string;
-    kind: AppKind;
-    status: string;
-    created_at: string | Date;
-    expires_at: string | Date | null;
-  }>(
+  const rows = await query<AppEntitlementRow>(
     `select id, video_id, kind, status, created_at, expires_at from entitlements
      where account_id = $1 and kind in ('rent', 'buy')
      order by created_at desc`,
     [viewer.accountId],
   );
-  return [
-    ...inFlight,
-    ...rows.map((row) => ({
-      id: row.id,
-      movieId: row.video_id,
-      kind: row.kind,
-      status: row.status === "refunded" ? ("refunded" as const) : ("paid" as const),
-      purchasedAt: new Date(row.created_at).toISOString(),
-      expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
-    })),
-  ];
+  return [...inFlight, ...rows.map(entitlementPurchase)];
+}
+
+export interface AppEntitlementRow {
+  id: string;
+  video_id: string;
+  kind: AppKind;
+  status: string;
+  created_at: string | Date;
+  expires_at: string | Date | null;
+}
+
+/** An `entitlements` row as one of GET purchases' items — also what a MYHitch Wallet
+ * confirm answers with (hubWallet.ts), so the app reads both the same way. */
+export function entitlementPurchase(row: AppEntitlementRow): AppPurchase {
+  return {
+    id: row.id,
+    movieId: row.video_id,
+    kind: row.kind,
+    status: row.status === "refunded" ? "refunded" : "paid",
+    purchasedAt: new Date(row.created_at).toISOString(),
+    expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null,
+  };
 }
