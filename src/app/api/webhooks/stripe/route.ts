@@ -7,7 +7,7 @@
 // redirects — every delivery silently failed until this was found and fixed.
 import { NextResponse, type NextRequest } from "next/server";
 import Stripe from "stripe";
-import { fulfillCheckoutSession, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
+import { fulfillCheckoutSession, fulfillPaymentIntent, getStripe, StripeNotConfiguredError } from "@/lib/server/commerce";
 import { recordSubscriptionPaymentFromInvoice, upsertSubscriptionFromStripe } from "@/lib/server/subscriptions";
 import { recordMembershipPaymentFromInvoice } from "@/lib/server/channelMemberships";
 import { upsertPayoutAccountFromStripe } from "@/lib/server/payouts";
@@ -72,6 +72,11 @@ export async function POST(request: NextRequest) {
         recordSubscriptionPaymentFromInvoice(invoice),
         recordPatronRenewalFromInvoice(invoice),
       ]);
+    } else if (event.type === "payment_intent.succeeded") {
+      // A rent/buy paid in the MYHitch app (PaymentSheet, not Checkout). A no-op for every
+      // other PaymentIntent (Checkout's, invoices', tips'): only ones tagged
+      // nexus_action = "app_video" are fulfilled (commerce.ts's fulfillPaymentIntent()).
+      await fulfillPaymentIntent(event.data.object as Stripe.PaymentIntent);
     } else if (event.type === "account.updated") {
       await upsertPayoutAccountFromStripe(event.data.object as Stripe.Account);
     }

@@ -14,6 +14,7 @@ import { isChannelMember } from "./channelSettings";
 import { checkRealEntitlement, isBlockedByProfileAgeRating } from "./commerce";
 import { checkRealContentAccess } from "./subscriptions";
 import { createMasterDownloadUrl } from "./storage";
+import { absoluteUrl } from "@/lib/utils";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -167,4 +168,51 @@ export async function mintVideoDownloadUrl(
 
   const url = await createMasterDownloadUrl(video.master_asset_path, video.kind, 3600);
   return { outcome: "success", url, expiresAt: new Date(Date.now() + 3600 * 1000).toISOString() };
+}
+
+export type MintStreamUrlResult =
+  | { outcome: "success"; url: string; expiresAt: string }
+  | { outcome: "not_found" }
+  | { outcome: "not_entitled"; blockReason: NonNullable<PlaybackAuthResult["blockReason"]> }
+  | { outcome: "not_processed" };
+
+/** A short-lived link to *watch* a video — the MYHitch app's player (appViewers.ts) —
+ * behind the same single gate as the website (authorizeVideoAccess(): owner, geo, age,
+ * then a real entitlement via checkRealEntitlement(), which lazily expires a rental that
+ * ran out). Unlike mintVideoDownloadUrl() there's no Premium requirement: renting or
+ * buying the video is the right to stream it. Plays the uploaded master (signed, like a
+ * download) or, for seeded catalogue rows with no upload, their sample media. The link
+ * lasts the video's length plus an hour (2-12 h) so a player making range requests
+ * through a whole film isn't cut off part-way. */
+export async function mintVideoStreamUrl(
+  accountId: string,
+  videoId: string,
+  country: string | null,
+): Promise<MintStreamUrlResult> {
+  const access = await authorizeVideoAccess({ accountId, videoId, profileId: null, country });
+  if (!access.granted) {
+    if (access.blockReason === "unavailable") return { outcome: "not_found" };
+    return { outcome: "not_entitled", blockReason: access.blockReason ?? "entitlement-required" };
+  }
+
+  const video = await queryOne<{
+    master_asset_path: string | null;
+    kind: "video" | "audio";
+    sample_src: string | null;
+    duration_seconds: number | null;
+  }>(
+    `select master_asset_path, kind, sample_src, duration_seconds from videos where id = $1 and status = 'published'`,
+    [videoId],
+  );
+  if (!video) return { outcome: "not_found" };
+
+  const ttlSeconds = Math.min(Math.max((video.duration_seconds ?? 0) + 3600, 7200), 43_200);
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  if (video.master_asset_path) {
+    const url = await createMasterDownloadUrl(video.master_asset_path, video.kind, ttlSeconds);
+    return { outcome: "success", url, expiresAt };
+  }
+  const sample = absoluteUrl(video.sample_src);
+  if (sample) return { outcome: "success", url: sample, expiresAt };
+  return { outcome: "not_processed" };
 }

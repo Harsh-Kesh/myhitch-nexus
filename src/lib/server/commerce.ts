@@ -73,11 +73,19 @@ export type CreateCheckoutSessionResult =
   | { outcome: "own_video" }
   | { outcome: "unsupported_currency"; currency: string };
 
-export async function createCheckoutSession(
+export type ResolveVideoSaleResult =
+  | { outcome: "ok"; title: string; amountMinor: number; currency: string; rentalWindowHours: number }
+  | Exclude<CreateCheckoutSessionResult, { outcome: "success" }>;
+
+/** Every check that decides whether `accountId` may pay for `kind` access to `videoId`,
+ * and at what price — the video's own `video_pricing` row, never a client-sent amount.
+ * Shared by the website's Checkout (createCheckoutSession() below) and the MYHitch app's
+ * PaymentSheet flow (appViewers.ts), so both refuse exactly the same cases. */
+export async function resolveVideoSale(
   accountId: string,
   videoId: string,
   kind: CheckoutKind,
-): Promise<CreateCheckoutSessionResult> {
+): Promise<ResolveVideoSaleResult> {
   const row = await getVideoPriceRow(videoId);
   if (!row) return { outcome: "video_not_found" };
   if (row.channel_id) {
@@ -98,6 +106,25 @@ export async function createCheckoutSession(
 
   const existing = await checkRealEntitlement(accountId, videoId);
   if (existing.granted) return { outcome: "already_entitled" };
+
+  return {
+    outcome: "ok",
+    title: row.title,
+    amountMinor: price.amountMinor,
+    currency: price.currency,
+    rentalWindowHours: row.rental_window_hours ?? 48,
+  };
+}
+
+export async function createCheckoutSession(
+  accountId: string,
+  videoId: string,
+  kind: CheckoutKind,
+): Promise<CreateCheckoutSessionResult> {
+  const sale = await resolveVideoSale(accountId, videoId, kind);
+  if (sale.outcome !== "ok") return sale;
+  const price = { amountMinor: sale.amountMinor, currency: sale.currency };
+  const row = { title: sale.title };
 
   const kindLabel = kind === "buy" ? "Purchase" : kind === "rent" ? "Rental" : "Pay-per-view access";
   const session = await getStripe().checkout.sessions.create({
@@ -141,40 +168,109 @@ export async function fulfillCheckoutSession(session: Stripe.Checkout.Session): 
     return;
   }
 
+  await grantEntitlement({
+    accountId,
+    videoId,
+    kind,
+    amountMinor: session.amount_total ?? 0,
+    currency: session.currency ?? "aud",
+    paymentKey: session.id,
+    paymentIntentId:
+      typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null),
+  });
+}
+
+/** `metadata.nexus_action` on a PaymentIntent the MYHitch app's PaymentSheet pays for a
+ * video (appViewers.ts) — how the webhook tells it apart from every other PaymentIntent
+ * on the Stripe account (Checkout's, subscription invoices', tips'). */
+export const APP_VIDEO_PAYMENT_ACTION = "app_video";
+
+/** The PaymentIntent counterpart of fulfillCheckoutSession(), for a rent/buy paid in the
+ * MYHitch app. Same idempotency: the PaymentIntent id stands in as the entitlement's
+ * unique payment key (stripe_checkout_session_id — a `pi_...` id can never collide with a
+ * `cs_...` one, so no schema change), so the webhook and the app's own read-back racing
+ * each other grant it once. Returns whether this call granted it. */
+export async function fulfillPaymentIntent(intent: Stripe.PaymentIntent): Promise<boolean> {
+  if (intent.status !== "succeeded") return false;
+  if (intent.metadata?.nexus_action !== APP_VIDEO_PAYMENT_ACTION) return false;
+  const { accountId, videoId, kind } = intent.metadata as { accountId?: string; videoId?: string; kind?: string };
+  if (!accountId || !videoId || (kind !== "rent" && kind !== "buy")) {
+    console.error("Stripe payment intent missing required metadata", intent.id);
+    return false;
+  }
+  return grantEntitlement({
+    accountId,
+    videoId,
+    kind,
+    amountMinor: intent.amount_received || intent.amount,
+    currency: intent.currency,
+    paymentKey: intent.id,
+    paymentIntentId: intent.id,
+  });
+}
+
+/** A rent/buy of a video its creator priced at zero — nothing to pay, so it is recorded
+ * straight away. `paymentKey` must be unique (there is no Stripe id to use). */
+export async function grantFreeVideoEntitlement(
+  accountId: string,
+  videoId: string,
+  kind: CheckoutKind,
+  paymentKey: string,
+): Promise<boolean> {
+  return grantEntitlement({ accountId, videoId, kind, amountMinor: 0, currency: "AUD", paymentKey, paymentIntentId: null });
+}
+
+/** Records a paid unlock; a rental's window (the video's rental_window_hours, default 48)
+ * starts now. `paymentKey` is unique per payment, so granting the same payment twice is a
+ * no-op — returns whether a row was actually written (only then is the receipt
+ * notification sent, so the webhook and a read-back racing don't send it twice). */
+async function grantEntitlement(input: {
+  accountId: string;
+  videoId: string;
+  kind: CheckoutKind;
+  amountMinor: number;
+  currency: string;
+  paymentKey: string;
+  paymentIntentId: string | null;
+}): Promise<boolean> {
+  const { accountId, videoId, kind } = input;
   const row = await getVideoPriceRow(videoId);
   const windowHours = row?.rental_window_hours ?? 48;
   const expiresAt = kind === "rent" ? new Date(Date.now() + windowHours * 3_600_000) : null;
   const invoiceRow = await queryOne<{ n: number }>(`select nextval('invoice_number_seq') as n`);
   const invoiceNumber = `NX-${new Date().getFullYear()}-${String(invoiceRow!.n).padStart(6, "0")}`;
 
-  await query(
+  const inserted = await query<{ id: string }>(
     `insert into entitlements (
        account_id, video_id, kind, amount_minor, currency, status, invoice_number,
        stripe_checkout_session_id, stripe_payment_intent_id, expires_at
      ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-     on conflict (stripe_checkout_session_id) do nothing`,
+     on conflict (stripe_checkout_session_id) do nothing
+     returning id`,
     [
       accountId,
       videoId,
       kind,
-      session.amount_total ?? 0,
-      (session.currency ?? "aud").toUpperCase(),
+      input.amountMinor,
+      input.currency.toUpperCase(),
       kind === "rent" ? "active" : "completed",
       invoiceNumber,
-      session.id,
-      typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null),
-        expiresAt,
-      ],
-    );
+      input.paymentKey,
+      input.paymentIntentId,
+      expiresAt,
+    ],
+  );
+  if (inserted.length === 0) return false;
 
-    await emitNotification(
-      accountId,
-      "purchase-receipt",
-      kind === "rent" ? "Video Rental Confirmed" : "Video Purchase Confirmed",
-      kind === "rent" ? "Your rental window begins when you start playback." : "Thank you for your purchase.",
-      "/video/" + videoId
-    );
-  }
+  await emitNotification(
+    accountId,
+    "purchase-receipt",
+    kind === "rent" ? "Video Rental Confirmed" : "Video Purchase Confirmed",
+    kind === "rent" ? "Your rental window begins when you start playback." : "Thank you for your purchase.",
+    "/video/" + videoId
+  );
+  return true;
+}
 
 export type VerifyCheckoutSessionResult = { granted: boolean } | { outcome: "not_your_session" };
 
