@@ -5,8 +5,9 @@
 // is recorded until it's paid — the Stripe webhook (payment_intent.succeeded) or the
 // app's own read-back of GET /api/hub/app/purchases/ does that (appViewers.ts). A movie
 // priced at zero is unlocked at once and the response has no clientSecret.
+// The same pricing and refusals back the MYHitch Wallet quote (../../../wallet/quote/).
 import { NextResponse, type NextRequest } from "next/server";
-import { requireHubViewer, startAppCheckout } from "@/lib/server/appViewers";
+import { appSaleRefusal, parseAppKind, requireHubViewer, startAppCheckout } from "@/lib/server/appViewers";
 import { StripeNotConfiguredError } from "@/lib/server/commerce";
 
 function billingNotConfigured() {
@@ -27,10 +28,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
-  const kind = body?.kind;
-  if (kind !== "rent" && kind !== "buy") {
-    return NextResponse.json({ error: "Choose to rent or buy this movie." }, { status: 400 });
-  }
+  const parsed = parseAppKind(body?.kind);
+  if (parsed.response) return parsed.response;
+  const { kind } = parsed;
 
   // Nexus had no publishable key before the app (website payments are hosted Checkout).
   const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY;
@@ -39,19 +39,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const result = await startAppCheckout(viewer, id, kind);
     switch (result.outcome) {
-      case "not_found":
-        return NextResponse.json({ error: "This movie isn't available." }, { status: 404 });
-      case "not_for_sale":
-        return NextResponse.json(
-          { error: kind === "rent" ? "This movie can't be rented." : "This movie can't be bought." },
-          { status: 400 },
-        );
-      case "own_video":
-        return NextResponse.json({ error: "This is your own movie - you can already watch it." }, { status: 400 });
-      case "already_entitled":
-        return NextResponse.json({ error: "You already own this movie." }, { status: 409 });
-      case "payment_in_progress":
-        return NextResponse.json({ error: "Your payment for this movie is still going through." }, { status: 409 });
       case "free":
         return NextResponse.json({ publishableKey });
       case "payment":
@@ -62,6 +49,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           ephemeralKey: result.ephemeralKey,
           paymentIntentId: result.paymentIntentId,
         });
+      default:
+        return appSaleRefusal(result, kind);
     }
   } catch (err) {
     if (err instanceof StripeNotConfiguredError) return billingNotConfigured();

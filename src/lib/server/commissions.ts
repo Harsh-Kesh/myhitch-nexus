@@ -66,6 +66,28 @@ function scopeForEntitlementKind(kind: EntitlementKind): CommissionScope {
   return kind === "ppv" ? "ppv" : "purchase_rental";
 }
 
+/** Platform fee / creator net of one entitlement at `pct` — the one rounding rule, shared
+ * by computeChannelNetRevenue() and splitVideoSale() so a quoted share is always exactly
+ * what the revenue ledger later counts for the same sale. */
+function splitAtPct(amountMinor: number, pct: number): { feeMinor: number; netMinor: number } {
+  const feeMinor = Math.round((amountMinor * pct) / 100);
+  return { feeMinor, netMinor: amountMinor - feeMinor };
+}
+
+/** How a one-off video sale (buy/rent/ppv) of `amountMinor` made at `at` splits between
+ * the platform and the creator — exactly what computeChannelNetRevenue() counts as the
+ * creator's net for that entitlement. hubWallet.ts pays a creator this share up front
+ * when the sale is paid from the MYHitch Wallet. */
+export async function splitVideoSale(
+  kind: EntitlementKind,
+  amountMinor: number,
+  at: Date = new Date(),
+): Promise<{ platformSharePct: number; platformFeeMinor: number; creatorNetMinor: number }> {
+  const pct = pickEffectiveRate(await listCommissionRates(), scopeForEntitlementKind(kind), at);
+  const { feeMinor, netMinor } = splitAtPct(amountMinor, pct);
+  return { platformSharePct: pct, platformFeeMinor: feeMinor, creatorNetMinor: netMinor };
+}
+
 export interface ChannelRevenueEntry {
   id: string;
   kind: RevenueEntryKind;
@@ -158,8 +180,7 @@ export async function computeChannelNetRevenue(organizationId: string): Promise<
 
   for (const row of entitlementRows) {
     const pct = pickEffectiveRate(rates, scopeForEntitlementKind(row.kind), new Date(row.created_at));
-    const feeMinor = Math.round((row.amount_minor * pct) / 100);
-    const rowNetMinor = row.amount_minor - feeMinor;
+    const { feeMinor, netMinor: rowNetMinor } = splitAtPct(row.amount_minor, pct);
     grossMinor += row.amount_minor;
     netMinor += rowNetMinor;
     entries.push({
